@@ -81,20 +81,15 @@ export default function Layout() {
       {/* Logo */}
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Box
+          component="img"
+          src="/logo.png"
+          alt="ControlVector"
           sx={{
             width: 40,
             height: 40,
             borderRadius: 2,
-            background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
           }}
-        >
-          <Typography sx={{ fontWeight: 700, fontSize: '1.2rem', color: colors.navy }}>
-            CV
-          </Typography>
-        </Box>
+        />
         <Box>
           <Typography
             variant="h6"
