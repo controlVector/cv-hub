@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test OAuth Client - Login with Control Vector</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      margin: 0 0 10px 0;
+      font-size: 24px;
+      color: #333;
+    }
+    p {
+      color: #666;
+      margin: 0 0 30px 0;
+    }
+    .login-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .cv-btn {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+    }
+    .cv-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+    }
+    .cv-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+    .user-info {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .user-info h3 {
+      margin: 0 0 15px 0;
+      color: #333;
+    }
+    .user-info pre {
+      background: #1a1a2e;
+      color: #4ade80;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      margin: 0;
+    }
+    .logout-btn {
+      background: #ef4444;
+      color: white;
+      margin-top: 15px;
+    }
+    .logout-btn:hover {
+      background: #dc2626;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .status.error {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+    .status.success {
+      background: #f0fdf4;
+      color: #16a34a;
+      border: 1px solid #bbf7d0;
+    }
+    .config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+    .config label {
+      display: block;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .config input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .config input:focus {
+      outline: none;
+      border-color: #6366f1;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Demo App</h1>
+    <p>Test the OAuth login flow with Control Vector</p>
+
+    <div id="status"></div>
+
+    <div id="logged-out">
+      <button class="login-btn cv-btn" onclick="login()">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+        Login with Control Vector
+      </button>
+
+      <div class="config">
+        <label>Client ID</label>
+        <input type="text" id="clientId" placeholder="Enter your OAuth Client ID">
+        <label>Client Secret (for token exchange)</label>
+        <input type="password" id="clientSecret" placeholder="Enter your OAuth Client Secret">
+      </div>
+    </div>
+
+    <div id="logged-in" style="display: none;">
+      <div class="user-info">
+        <h3>Logged in!</h3>
+        <pre id="userInfo"></pre>
+      </div>
+      <button class="login-btn logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:3000';
+    const REDIRECT_URI = 'http://localhost:3000/test-client.html';
+
+    // PKCE helpers
+    function generateRandomString(length) {
+      const array = new Uint8Array(length);
+      crypto.getRandomValues(array);
+      return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function sha256(plain) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(plain);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return hash;
+    }
+
+    function base64urlencode(arrayBuffer) {
+      const bytes = new Uint8Array(arrayBuffer);
+      let str = '';
+      bytes.forEach(b => str += String.fromCharCode(b));
+      return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    async function generatePKCE() {
+      const verifier = generateRandomString(32);
+      const hashed = await sha256(verifier);
+      const challenge = base64urlencode(hashed);
+      return { verifier, challenge };
+    }
+
+    // Check for auth code in URL on page load
+    async function init() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const error = params.get('error');
+      const state = params.get('state');
+
+      // Load saved client credentials
+      const savedClientId = localStorage.getItem('cv_test_client_id');
+      const savedClientSecret = localStorage.getItem('cv_test_client_secret');
+      if (savedClientId) document.getElementById('clientId').value = savedClientId;
+      if (savedClientSecret) document.getElementById('clientSecret').value = savedClientSecret;
+
+      // Check for existing tokens
+      const tokens = JSON.parse(localStorage.getItem('cv_test_tokens') || 'null');
+      if (tokens) {
+        await showUserInfo(tokens);
+        return;
+      }
+
+      if (error) {
+        showStatus(`Error: ${error} - ${params.get('error_description')}`, 'error');
+        // Clear URL
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      if (code) {
+        // Verify state
+        const savedState = sessionStorage.getItem('oauth_state');
+        if (state !== savedState) {
+          showStatus('State mismatch - possible CSRF attack', 'error');
+          return;
+        }
+
+        // Exchange code for tokens
+        await exchangeCode(code);
+        // Clear URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+
+    async function login() {
+      const clientId = document.getElementById('clientId').value;
+      if (!clientId) {
+        showStatus('Please enter your Client ID', 'error');
+        return;
+      }
+
+      // Save credentials
+      localStorage.setItem('cv_test_client_id', clientId);
+      localStorage.setItem('cv_test_client_secret', document.getElementById('clientSecret').value);
+
+      // Generate PKCE
+      const { verifier, challenge } = await generatePKCE();
+      sessionStorage.setItem('pkce_verifier', verifier);
+
+      // Generate state
+      const state = generateRandomString(16);
+      sessionStorage.setItem('oauth_state', state);
+
+      // Build authorization URL
+      const authUrl = new URL(`${API_URL}/oauth/authorize`);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+      authUrl.searchParams.set('scope', 'openid profile email');
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('code_challenge', challenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+
+      // Redirect to authorization
+      window.location.href = authUrl.toString();
+    }
+
+    async function exchangeCode(code) {
+      const clientId = localStorage.getItem('cv_test_client_id');
+      const clientSecret = localStorage.getItem('cv_test_client_secret');
+      const verifier = sessionStorage.getItem('pkce_verifier');
+
+      showStatus('Exchanging code for tokens...', 'success');
+
+      try {
+        const body = new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code,
+          client_id: clientId,
+          redirect_uri: REDIRECT_URI,
+          code_verifier: verifier,
+        });
+
+        if (clientSecret) {
+          body.append('client_secret', clientSecret);
+        }
+
+        const response = await fetch(`${API_URL}/oauth/token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: body,
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error_description || data.error || 'Token exchange failed');
+        }
+
+        // Save tokens
+        localStorage.setItem('cv_test_tokens', JSON.stringify(data));
+
+        await showUserInfo(data);
+      } catch (err) {
+        showStatus(`Error: ${err.message}`, 'error');
+      }
+    }
+
+    async function showUserInfo(tokens) {
+      document.getElementById('logged-out').style.display = 'none';
+      document.getElementById('logged-in').style.display = 'block';
+
+      // Fetch user info
+      try {
+        const response = await fetch(`${API_URL}/oauth/userinfo`, {
+          headers: {
+            'Authorization': `Bearer ${tokens.access_token}`,
+          },
+        });
+
+        const userInfo = await response.json();
+
+        document.getElementById('userInfo').textContent = JSON.stringify({
+          user: userInfo,
+          tokens: {
+            access_token: tokens.access_token.slice(0, 20) + '...',
+            token_type: tokens.token_type,
+            expires_in: tokens.expires_in,
+            scope: tokens.scope,
+            has_refresh_token: !!tokens.refresh_token,
+            has_id_token: !!tokens.id_token,
+          }
+        }, null, 2);
+
+        showStatus('Successfully logged in!', 'success');
+      } catch (err) {
+        showStatus(`Error fetching user info: ${err.message}`, 'error');
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem('cv_test_tokens');
+      sessionStorage.clear();
+      document.getElementById('logged-out').style.display = 'block';
+      document.getElementById('logged-in').style.display = 'none';
+      document.getElementById('status').innerHTML = '';
+    }
+
+    function showStatus(message, type) {
+      document.getElementById('status').innerHTML = `<div class="status ${type}">${message}</div>`;
+    }
+
+    // Initialize on page load
+    init();
+  </script>
+</body>
+</html>
