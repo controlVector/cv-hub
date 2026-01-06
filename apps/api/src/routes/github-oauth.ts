@@ -78,7 +78,7 @@ github.get('/callback', zValidator('query', callbackSchema), async (c) => {
   if (!userId) {
     logger.warn('general', 'Invalid OAuth state', { state: state.substring(0, 8) + '...' });
     // Redirect to frontend with error
-    return c.redirect(`${env.APP_URL}/settings/connections?error=invalid_state`);
+    return c.redirect(`${env.APP_URL}/dashboard/settings/connections?error=invalid_state`);
   }
 
   try {
@@ -97,10 +97,10 @@ github.get('/callback', zValidator('query', callbackSchema), async (c) => {
     });
 
     // Redirect to frontend success page
-    return c.redirect(`${env.APP_URL}/settings/connections?success=github`);
+    return c.redirect(`${env.APP_URL}/dashboard/settings/connections?success=github`);
   } catch (error) {
     logger.error('general', 'GitHub OAuth callback failed', error as Error);
-    return c.redirect(`${env.APP_URL}/settings/connections?error=oauth_failed`);
+    return c.redirect(`${env.APP_URL}/dashboard/settings/connections?error=oauth_failed`);
   }
 });
 
