@@ -36,6 +36,10 @@ const envSchema = z.object({
   // GitHub API (for release sync)
   GITHUB_TOKEN: z.string().optional(),
 
+  // GitHub OAuth (for user repo connections)
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+
   // Storage (for release assets)
   STORAGE_TYPE: z.enum(['local', 's3', 'github']).default('github'),
   S3_ENDPOINT: z.string().url().optional(),

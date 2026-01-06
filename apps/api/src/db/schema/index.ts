@@ -8,3 +8,4 @@ export * from './organizations';
 export * from './app-store';
 export * from './repositories';
 export * from './embeddings';
+export * from './user-connections';

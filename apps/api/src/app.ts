@@ -21,6 +21,7 @@ import searchRoutes from './routes/search';
 import assistantRoutes from './routes/assistant';
 import prRoutes from './routes/pull-requests';
 import issueRoutes from './routes/issues';
+import { githubOAuthRoutes } from './routes/github-oauth';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -89,6 +90,9 @@ app.route('/api/v1', issueRoutes);
 
 // Storage API (file uploads/downloads)
 app.route('/api/storage', storageRoutes);
+
+// GitHub OAuth (for connecting GitHub accounts)
+app.route('/api/github', githubOAuthRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {
