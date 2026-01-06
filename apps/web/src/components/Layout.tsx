@@ -36,6 +36,7 @@ import {
   Security as SecurityIcon,
   Store as StoreIcon,
   Business as BusinessIcon,
+  Link as LinkIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -360,6 +361,10 @@ export default function Layout() {
             <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/settings/security'); }}>
               <SecurityIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
               Security
+            </MenuItem>
+            <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/settings/connections'); }}>
+              <LinkIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
+              Connections
             </MenuItem>
             <Divider />
             <MenuItem onClick={() => { handleMenuClose(); logout(); }} sx={{ color: colors.coral }}>

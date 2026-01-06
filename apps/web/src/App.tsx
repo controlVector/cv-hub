@@ -23,6 +23,7 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import SecurityPage from './pages/settings/SecurityPage';
 import DeveloperPage from './pages/settings/DeveloperPage';
+import ConnectionsPage from './pages/settings/ConnectionsPage';
 import ConsentPage from './pages/oauth/ConsentPage';
 import SubmitFeatureRequest from './pages/features/SubmitFeatureRequest';
 import MyFeatureRequests from './pages/features/MyFeatureRequests';
@@ -98,6 +99,7 @@ function App() {
                 <Route path="search" element={<Search />} />
                 <Route path="settings/security" element={<SecurityPage />} />
                 <Route path="settings/developer" element={<DeveloperPage />} />
+                <Route path="settings/connections" element={<ConnectionsPage />} />
                 <Route path="features/submit" element={<SubmitFeatureRequest />} />
                 <Route path="features/my-requests" element={<MyFeatureRequests />} />
                 <Route path="orgs" element={<OrganizationList />} />
