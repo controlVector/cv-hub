@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Box,
   Card,
@@ -13,130 +14,50 @@ import {
   Tooltip,
   LinearProgress,
   Collapse,
+  Alert,
 } from '@mui/material';
 import {
   Search as SearchIcon,
   Code,
   InsertDriveFile,
   Functions,
-  History,
-  CallMerge as PRIcon,
   AutoAwesome as AIIcon,
   ExpandMore,
   ExpandLess,
   ContentCopy,
   OpenInNew,
+  CheckCircle,
+  Cancel,
 } from '@mui/icons-material';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { colors } from '../theme';
+import { api } from '../lib/api';
 
 interface SearchResult {
   id: string;
-  type: 'code' | 'file' | 'symbol' | 'commit' | 'pr';
+  type: 'code' | 'file' | 'symbol';
   score: number;
-  repository: string;
+  repositoryId: string;
   path?: string;
+  filePath?: string;
   line?: number;
+  startLine?: number;
   content?: string;
   highlight?: string;
   title?: string;
   language?: string;
+  symbolName?: string;
+  symbolKind?: string;
+  chunkType?: string;
 }
 
-const mockResults: SearchResult[] = [
-  {
-    id: '1',
-    type: 'code',
-    score: 0.95,
-    repository: 'team/cv-git',
-    path: 'src/auth/service.ts',
-    line: 45,
-    language: 'typescript',
-    content: `export async function authenticateUser(
-  credentials: UserCredentials
-): Promise<AuthResult> {
-  const user = await userRepository.findByEmail(credentials.email);
-
-  if (!user || !await verifyPassword(credentials.password, user.passwordHash)) {
-    throw new AuthenticationError('Invalid credentials');
-  }
-
-  return generateAuthTokens(user);
-}`,
-    highlight: 'Main authentication function that validates user credentials',
-  },
-  {
-    id: '2',
-    type: 'code',
-    score: 0.89,
-    repository: 'team/cv-git',
-    path: 'src/middleware/auth.ts',
-    line: 12,
-    language: 'typescript',
-    content: `export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  const token = extractToken(req);
-
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
-  try {
-    const decoded = verifyToken(token);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}`,
-    highlight: 'Authentication middleware for protecting routes',
-  },
-  {
-    id: '3',
-    type: 'symbol',
-    score: 0.85,
-    repository: 'team/cv-git',
-    path: 'src/auth/tokens.ts',
-    line: 23,
-    language: 'typescript',
-    title: 'generateAuthTokens',
-    content: `export function generateAuthTokens(user: User): AuthTokens {
-  const accessToken = signToken({ userId: user.id }, ACCESS_TOKEN_SECRET, '15m');
-  const refreshToken = signToken({ userId: user.id }, REFRESH_TOKEN_SECRET, '7d');
-  return { accessToken, refreshToken };
-}`,
-    highlight: 'Function that generates JWT access and refresh tokens',
-  },
-  {
-    id: '4',
-    type: 'file',
-    score: 0.78,
-    repository: 'team/api-service',
-    path: 'internal/auth/handler.go',
-    language: 'go',
-    title: 'Authentication Handler',
-    highlight: 'Go implementation of authentication endpoints',
-  },
-  {
-    id: '5',
-    type: 'commit',
-    score: 0.72,
-    repository: 'team/cv-git',
-    title: 'feat: implement OAuth2 authentication flow',
-    content: 'Added OAuth2 support for GitHub and Google providers',
-    highlight: 'Commit from 3 days ago by developer@example.com',
-  },
-  {
-    id: '6',
-    type: 'pr',
-    score: 0.68,
-    repository: 'team/cv-git',
-    title: 'PR #38: Add two-factor authentication',
-    content: 'Implements TOTP-based 2FA for enhanced security',
-    highlight: 'Open PR with 5 files changed',
-  },
-];
+interface SearchStatus {
+  embedding: { available: boolean; reason: string };
+  vector: { available: boolean; reason: string };
+  semanticSearch: boolean;
+}
 
 const getResultIcon = (type: string) => {
   switch (type) {
@@ -146,10 +67,6 @@ const getResultIcon = (type: string) => {
       return <InsertDriveFile />;
     case 'symbol':
       return <Functions />;
-    case 'commit':
-      return <History />;
-    case 'pr':
-      return <PRIcon />;
     default:
       return <Code />;
   }
@@ -163,35 +80,161 @@ const getResultTypeColor = (type: string) => {
       return colors.blue;
     case 'symbol':
       return colors.purple;
-    case 'commit':
-      return colors.green;
-    case 'pr':
-      return colors.coral;
     default:
       return colors.textMuted;
   }
 };
 
 export default function Search() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
 
   const [query, setQuery] = useState(initialQuery);
-  const [isSearching, setIsSearching] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>(initialQuery ? mockResults : []);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [tabValue, setTabValue] = useState(0);
-  const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set(['1', '2']));
+  const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
+  const [searchStats, setSearchStats] = useState<{ total: number; searchedRepos: number; method: string } | null>(null);
 
-  const handleSearch = () => {
+  // Check search service status
+  const { data: searchStatus } = useQuery<SearchStatus>({
+    queryKey: ['search-status'],
+    queryFn: async () => {
+      const response = await api.get('/v1/search/status');
+      return response.data;
+    },
+  });
+
+  // Semantic search mutation
+  const semanticSearchMutation = useMutation({
+    mutationFn: async (searchQuery: string) => {
+      const response = await api.post('/v1/search/semantic', {
+        query: searchQuery,
+        limit: 30,
+      });
+      return response.data;
+    },
+  });
+
+  // Symbol search mutation (fallback)
+  const symbolSearchMutation = useMutation({
+    mutationFn: async (searchQuery: string) => {
+      const response = await api.post('/v1/search/symbols', {
+        query: searchQuery,
+        limit: 30,
+      });
+      return response.data;
+    },
+  });
+
+  // Code/file search mutation (fallback)
+  const codeSearchMutation = useMutation({
+    mutationFn: async (searchQuery: string) => {
+      const response = await api.post('/v1/search/code', {
+        query: searchQuery,
+        limit: 30,
+      });
+      return response.data;
+    },
+  });
+
+  const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
-    setIsSearching(true);
-    // Simulate search
-    setTimeout(() => {
-      setResults(mockResults);
-      setIsSearching(false);
-    }, 800);
-  };
+
+    const allResults: SearchResult[] = [];
+    let searchMethod = 'graph';
+    let totalSearchedRepos = 0;
+
+    // Try semantic search first if available
+    if (searchStatus?.semanticSearch) {
+      try {
+        const semanticResults = await semanticSearchMutation.mutateAsync(query);
+        searchMethod = 'semantic';
+        totalSearchedRepos = semanticResults.searchedRepos || 0;
+
+        for (const result of semanticResults.results || []) {
+          allResults.push({
+            id: result.id,
+            type: 'code',
+            score: result.score,
+            repositoryId: result.repositoryId,
+            path: result.filePath,
+            filePath: result.filePath,
+            startLine: result.startLine,
+            line: result.startLine,
+            content: result.content,
+            language: result.language,
+            symbolName: result.symbolName,
+            symbolKind: result.symbolKind,
+            chunkType: result.chunkType,
+            highlight: result.symbolName
+              ? `${result.symbolKind || 'symbol'}: ${result.symbolName}`
+              : `Code in ${result.filePath}`,
+          });
+        }
+      } catch (error) {
+        console.warn('Semantic search failed, falling back to graph search:', error);
+      }
+    }
+
+    // Fall back to graph-based search if semantic not available or failed
+    if (allResults.length === 0) {
+      // Search symbols
+      try {
+        const symbolResults = await symbolSearchMutation.mutateAsync(query);
+        totalSearchedRepos = Math.max(totalSearchedRepos, symbolResults.searchedRepos || 0);
+
+        for (const result of symbolResults.results || []) {
+          allResults.push({
+            id: `symbol-${result.symbol.qualifiedName}`,
+            type: 'symbol',
+            score: 0.8,
+            repositoryId: result.repositoryId,
+            path: result.symbol.file,
+            line: result.symbol.startLine,
+            title: result.symbol.name,
+            highlight: result.symbol.signature || `${result.symbol.kind}: ${result.symbol.qualifiedName}`,
+            language: 'typescript',
+          });
+        }
+      } catch (error) {
+        console.error('Symbol search failed:', error);
+      }
+
+      // Search files
+      try {
+        const codeResults = await codeSearchMutation.mutateAsync(query);
+        totalSearchedRepos = Math.max(totalSearchedRepos, codeResults.searchedRepos || 0);
+
+        for (const result of codeResults.results || []) {
+          allResults.push({
+            id: `file-${result.file.path}`,
+            type: 'file',
+            score: 0.7,
+            repositoryId: result.repositoryId,
+            path: result.file.path,
+            language: result.file.language,
+            highlight: `File matching "${query}"`,
+          });
+        }
+      } catch (error) {
+        console.error('Code search failed:', error);
+      }
+    }
+
+    // Sort by score
+    allResults.sort((a, b) => b.score - a.score);
+
+    setResults(allResults);
+    setSearchStats({
+      total: allResults.length,
+      searchedRepos: totalSearchedRepos,
+      method: searchMethod,
+    });
+
+    // Auto-expand first 2 results with content
+    const withContent = allResults.filter(r => r.content).slice(0, 2).map(r => r.id);
+    setExpandedResults(new Set(withContent));
+  }, [query, searchStatus, semanticSearchMutation, symbolSearchMutation, codeSearchMutation]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -209,12 +252,13 @@ export default function Search() {
     setExpandedResults(newExpanded);
   };
 
+  const isSearching = semanticSearchMutation.isPending || symbolSearchMutation.isPending || codeSearchMutation.isPending;
+
   const filteredResults = results.filter((r) => {
     if (tabValue === 0) return true;
     if (tabValue === 1) return r.type === 'code';
     if (tabValue === 2) return r.type === 'file';
     if (tabValue === 3) return r.type === 'symbol';
-    if (tabValue === 4) return r.type === 'commit' || r.type === 'pr';
     return true;
   });
 
@@ -226,9 +270,38 @@ export default function Search() {
           Search
         </Typography>
         <Typography variant="body1" sx={{ color: colors.textMuted }}>
-          Semantic code search powered by AI embeddings
+          {searchStatus?.semanticSearch
+            ? 'AI-powered semantic code search'
+            : 'Search symbols and files across repositories'}
         </Typography>
       </Box>
+
+      {/* Search Status */}
+      {searchStatus && (
+        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+          <Chip
+            icon={searchStatus.embedding.available ? <CheckCircle /> : <Cancel />}
+            label={`Embeddings: ${searchStatus.embedding.available ? 'Ready' : 'Not configured'}`}
+            size="small"
+            color={searchStatus.embedding.available ? 'success' : 'default'}
+            variant="outlined"
+          />
+          <Chip
+            icon={searchStatus.vector.available ? <CheckCircle /> : <Cancel />}
+            label={`Vector DB: ${searchStatus.vector.available ? 'Connected' : 'Unavailable'}`}
+            size="small"
+            color={searchStatus.vector.available ? 'success' : 'default'}
+            variant="outlined"
+          />
+          <Chip
+            icon={searchStatus.semanticSearch ? <AIIcon /> : <SearchIcon />}
+            label={searchStatus.semanticSearch ? 'Semantic Search Active' : 'Graph Search Only'}
+            size="small"
+            color={searchStatus.semanticSearch ? 'primary' : 'default'}
+            variant="outlined"
+          />
+        </Box>
+      )}
 
       {/* Search Box */}
       <Card sx={{ mb: 4 }}>
@@ -238,14 +311,24 @@ export default function Search() {
               sx={{
                 p: 1.5,
                 borderRadius: 2,
-                background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+                background: searchStatus?.semanticSearch
+                  ? `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`
+                  : colors.navyLight,
               }}
             >
-              <AIIcon sx={{ color: colors.navy }} />
+              {searchStatus?.semanticSearch ? (
+                <AIIcon sx={{ color: colors.navy }} />
+              ) : (
+                <SearchIcon sx={{ color: colors.textMuted }} />
+              )}
             </Box>
             <TextField
               fullWidth
-              placeholder="Search using natural language... (e.g., 'authentication logic' or 'database connection handling')"
+              placeholder={
+                searchStatus?.semanticSearch
+                  ? "Search using natural language... (e.g., 'authentication logic' or 'error handling')"
+                  : "Search for symbols and files..."
+              }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -266,16 +349,17 @@ export default function Search() {
                 background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
                 color: colors.navy,
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: isSearching ? 'wait' : 'pointer',
                 whiteSpace: 'nowrap',
                 transition: 'all 0.2s ease',
+                opacity: isSearching ? 0.7 : 1,
                 '&:hover': {
-                  transform: 'translateY(-1px)',
-                  boxShadow: `0 4px 15px ${colors.amberGlow}`,
+                  transform: isSearching ? 'none' : 'translateY(-1px)',
+                  boxShadow: isSearching ? 'none' : `0 4px 15px ${colors.amberGlow}`,
                 },
               }}
             >
-              Search
+              {isSearching ? 'Searching...' : 'Search'}
             </Box>
           </Box>
 
@@ -284,19 +368,38 @@ export default function Search() {
             <Typography variant="caption" sx={{ color: colors.textMuted }}>
               Try:
             </Typography>
-            {['authentication flow', 'error handling', 'API endpoints', 'database queries'].map((tip) => (
-              <Chip
-                key={tip}
-                label={tip}
-                size="small"
-                onClick={() => setQuery(tip)}
-                sx={{
-                  cursor: 'pointer',
-                  '&:hover': { backgroundColor: `${colors.orange}20` },
-                }}
-              />
-            ))}
+            {searchStatus?.semanticSearch
+              ? ['authentication flow', 'error handling', 'database queries', 'API routes'].map((tip) => (
+                  <Chip
+                    key={tip}
+                    label={tip}
+                    size="small"
+                    onClick={() => setQuery(tip)}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': { backgroundColor: `${colors.orange}20` },
+                    }}
+                  />
+                ))
+              : ['auth', 'config', 'service', 'handler'].map((tip) => (
+                  <Chip
+                    key={tip}
+                    label={tip}
+                    size="small"
+                    onClick={() => setQuery(tip)}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': { backgroundColor: `${colors.orange}20` },
+                    }}
+                  />
+                ))}
           </Box>
+
+          {!searchStatus?.semanticSearch && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Semantic search requires OPENROUTER_API_KEY. Currently using graph-based symbol and file search.
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -304,7 +407,9 @@ export default function Search() {
       {isSearching && (
         <Box sx={{ mb: 3 }}>
           <Typography variant="body2" sx={{ color: colors.textMuted, mb: 1 }}>
-            Searching across all repositories using semantic embeddings...
+            {searchStatus?.semanticSearch
+              ? 'Searching using AI embeddings...'
+              : 'Searching symbols and files...'}
           </Typography>
           <LinearProgress
             sx={{
@@ -356,18 +461,24 @@ export default function Search() {
                   </Box>
                 }
               />
-              <Tab
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <History sx={{ fontSize: 16 }} />
-                    History
-                  </Box>
-                }
-              />
             </Tabs>
-            <Typography variant="body2" sx={{ color: colors.textMuted }}>
-              {filteredResults.length} results for "{query}"
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {searchStats?.method === 'semantic' && (
+                <Chip
+                  icon={<AIIcon sx={{ fontSize: 14 }} />}
+                  label="Semantic"
+                  size="small"
+                  sx={{
+                    backgroundColor: `${colors.orange}20`,
+                    color: colors.orange,
+                  }}
+                />
+              )}
+              <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                {filteredResults.length} results
+                {searchStats && ` (${searchStats.searchedRepos} repos)`}
+              </Typography>
+            </Box>
           </Box>
 
           {/* Result List */}
@@ -402,22 +513,17 @@ export default function Search() {
                       </Box>
                       <Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {result.path ? (
-                            <Typography
-                              sx={{
-                                fontFamily: 'monospace',
-                                color: colors.orange,
-                                cursor: 'pointer',
-                                '&:hover': { textDecoration: 'underline' },
-                              }}
-                              onClick={() => navigate(`/repositories/${result.repository}?file=${result.path}`)}
-                            >
-                              {result.path}
-                              {result.line && `:${result.line}`}
-                            </Typography>
-                          ) : (
-                            <Typography sx={{ fontWeight: 600 }}>{result.title}</Typography>
-                          )}
+                          <Typography
+                            sx={{
+                              fontFamily: 'monospace',
+                              color: colors.orange,
+                              cursor: 'pointer',
+                              '&:hover': { textDecoration: 'underline' },
+                            }}
+                          >
+                            {result.path || result.filePath || result.title || 'Unknown'}
+                            {(result.line || result.startLine) && `:${result.line || result.startLine}`}
+                          </Typography>
                           <Chip
                             label={result.type}
                             size="small"
@@ -429,16 +535,26 @@ export default function Search() {
                               color: getResultTypeColor(result.type),
                             }}
                           />
+                          {result.chunkType && result.chunkType !== 'file' && (
+                            <Chip
+                              label={result.chunkType}
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: '0.65rem',
+                              }}
+                            />
+                          )}
                         </Box>
                         <Typography variant="caption" sx={{ color: colors.textMuted }}>
-                          {result.repository}
+                          Repo: {result.repositoryId?.slice(0, 8)}...
+                          {result.language && ` | ${result.language}`}
                         </Typography>
                       </Box>
                     </Box>
 
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {/* Relevance Score */}
-                      <Tooltip title="Semantic Relevance Score">
+                      <Tooltip title="Relevance Score">
                         <Chip
                           label={`${Math.round(result.score * 100)}%`}
                           size="small"
@@ -451,7 +567,13 @@ export default function Search() {
                       </Tooltip>
 
                       <Tooltip title="Copy path">
-                        <IconButton size="small">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const path = result.path || result.filePath;
+                            if (path) navigator.clipboard.writeText(path);
+                          }}
+                        >
                           <ContentCopy sx={{ fontSize: 16 }} />
                         </IconButton>
                       </Tooltip>
@@ -490,7 +612,7 @@ export default function Search() {
                             margin: 0,
                           }}
                           showLineNumbers
-                          startingLineNumber={result.line || 1}
+                          startingLineNumber={result.startLine || result.line || 1}
                         >
                           {result.content}
                         </SyntaxHighlighter>
@@ -513,7 +635,7 @@ export default function Search() {
               No results found
             </Typography>
             <Typography variant="body2" sx={{ color: colors.textMuted }}>
-              Try different keywords or check your filters
+              Try different keywords or make sure repositories have been synced
             </Typography>
           </CardContent>
         </Card>
@@ -525,12 +647,12 @@ export default function Search() {
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <AIIcon sx={{ fontSize: 48, color: colors.orange, mb: 2 }} />
             <Typography variant="h6" sx={{ mb: 1 }}>
-              Semantic Code Search
+              {searchStatus?.semanticSearch ? 'Semantic Code Search' : 'Code Search'}
             </Typography>
             <Typography variant="body2" sx={{ color: colors.textMuted, maxWidth: 500, mx: 'auto' }}>
-              Search your codebase using natural language. Our AI understands the meaning
-              of your code, not just keywords, so you can find what you're looking for
-              even when you don't know the exact function names.
+              {searchStatus?.semanticSearch
+                ? "Search your codebase using natural language. Our AI understands the meaning of your code, not just keywords."
+                : "Search for symbols and files across your repositories. Enable OPENROUTER_API_KEY for semantic search."}
             </Typography>
           </CardContent>
         </Card>

@@ -4,3 +4,7 @@ export * from './audit-logs';
 export * from './mfa';
 export * from './oauth';
 export * from './api-keys';
+export * from './organizations';
+export * from './app-store';
+export * from './repositories';
+export * from './embeddings';

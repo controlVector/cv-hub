@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cv-hub-api
+  namespace: cv-hub
+  labels:
+    app: cv-hub-api
+    app.kubernetes.io/name: cv-hub-api
+    app.kubernetes.io/component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cv-hub-api
+  template:
+    metadata:
+      labels:
+        app: cv-hub-api
+    spec:
+      serviceAccountName: cv-hub-api
+      containers:
+        - name: api
+          image: cv-hub/api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: redis-url
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: session-secret
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: jwt-secret
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: openrouter-api-key
+            - name: QDRANT_URL
+              value: "http://qdrant:6333"
+            - name: FALKORDB_URL
+              value: "redis://falkordb:6379"
+            - name: GIT_REPOS_PATH
+              value: "/data/git"
+            - name: API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cv-hub-config
+                  key: api-url
+            - name: APP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cv-hub-config
+                  key: app-url
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: git-repos
+              mountPath: /data/git
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: git-repos-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cv-hub-api
+  namespace: cv-hub
+  labels:
+    app: cv-hub-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: cv-hub-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cv-hub-api
+  namespace: cv-hub
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cv-hub-api
+  namespace: cv-hub
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cv-hub-api
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

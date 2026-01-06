@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cv-hub
+  labels:
+    app.kubernetes.io/name: cv-hub
+    app.kubernetes.io/part-of: cv-hub

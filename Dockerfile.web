@@ -1,0 +1,50 @@
+# Build stage - builds from monorepo root
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy workspace config and lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY tsconfig.base.json ./
+
+# Copy all package.json files for workspace resolution
+COPY apps/web/package.json apps/web/tsconfig*.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install all dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/shared ./packages/shared
+COPY apps/web ./apps/web
+
+# Build arguments for environment
+ARG VITE_API_URL=https://api.hub.controlvector.io/api
+ARG VITE_APP_URL=https://hub.controlvector.io
+
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_APP_URL=$VITE_APP_URL
+
+# Build shared package first, then Web
+RUN pnpm --filter @cv-hub/shared build 2>/dev/null || true
+RUN pnpm --filter @cv-hub/web build
+
+# Production stage with nginx
+FROM nginx:alpine AS runner
+
+# Copy nginx config
+COPY apps/web/nginx.conf /etc/nginx/nginx.conf
+
+# Copy built files
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

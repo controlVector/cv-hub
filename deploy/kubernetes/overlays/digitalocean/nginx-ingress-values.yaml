@@ -1,0 +1,40 @@
+# Helm values for nginx-ingress on DigitalOcean
+# Install with: helm install nginx-ingress ingress-nginx/ingress-nginx -f nginx-ingress-values.yaml -n ingress-nginx --create-namespace
+
+controller:
+  service:
+    annotations:
+      # DigitalOcean Load Balancer annotations
+      service.beta.kubernetes.io/do-loadbalancer-name: "cv-hub-lb"
+      service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+      service.beta.kubernetes.io/do-loadbalancer-http-ports: "80"
+      service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
+      service.beta.kubernetes.io/do-loadbalancer-tls-passthrough: "true"
+      # Enable proxy protocol for real IP from Cloudflare
+      service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "true"
+      # Health checks
+      service.beta.kubernetes.io/do-loadbalancer-healthcheck-path: "/healthz"
+      service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol: "http"
+
+  config:
+    # Trust Cloudflare proxy headers
+    use-forwarded-headers: "true"
+    forwarded-for-header: "CF-Connecting-IP"
+    compute-full-forwarded-for: "true"
+    use-proxy-protocol: "true"
+
+    # Real IP from Cloudflare
+    proxy-real-ip-cidr: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  replicaCount: 2
+
+  metrics:
+    enabled: true

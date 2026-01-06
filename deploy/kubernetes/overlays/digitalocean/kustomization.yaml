@@ -1,0 +1,178 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cv-hub
+
+resources:
+  - ../../base
+
+# DigitalOcean-specific patches
+patches:
+  # Use DO Load Balancer annotations
+  - target:
+      kind: Ingress
+      name: cv-hub-ingress
+    patch: |-
+      - op: add
+        path: /metadata/annotations/kubernetes.io~1ingress.class
+        value: nginx
+      - op: replace
+        path: /spec/rules/0/host
+        value: hub.controlvector.io
+      - op: replace
+        path: /spec/rules/1/host
+        value: api.hub.controlvector.io
+      - op: replace
+        path: /spec/rules/2/host
+        value: git.hub.controlvector.io
+      - op: replace
+        path: /spec/tls/0/hosts
+        value:
+          - hub.controlvector.io
+          - api.hub.controlvector.io
+          - git.hub.controlvector.io
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: hub-controlvector-tls
+
+  # Scale for minimal setup
+  - target:
+      kind: Deployment
+      name: cv-hub-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "100m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+
+  - target:
+      kind: Deployment
+      name: cv-hub-web
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+  - target:
+      kind: Deployment
+      name: cv-hub-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+
+  # HPA adjustments for smaller scale
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: cv-hub-api-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+      - op: replace
+        path: /spec/maxReplicas
+        value: 6
+
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: cv-hub-worker-hpa
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 4
+
+# Use DigitalOcean block storage class for StatefulSets
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 20Gi
+
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+
+  - target:
+      kind: StatefulSet
+      name: qdrant
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 20Gi
+
+  - target:
+      kind: StatefulSet
+      name: falkordb
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 20Gi
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: git-repos-pvc
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/accessModes
+        value: ["ReadWriteOnce"]
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 50Gi
+
+  # Patch ConfigMap with correct URLs
+  - target:
+      kind: ConfigMap
+      name: cv-hub-config
+    patch: |-
+      - op: replace
+        path: /data/api-url
+        value: "https://api.hub.controlvector.io"
+      - op: replace
+        path: /data/app-url
+        value: "https://hub.controlvector.io"
+
+images:
+  - name: cv-hub/api
+    newName: registry.digitalocean.com/cv-hub-registry/api
+    newTag: latest
+  - name: cv-hub/web
+    newName: registry.digitalocean.com/cv-hub-registry/web
+    newTag: latest

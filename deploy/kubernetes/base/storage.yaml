@@ -1,0 +1,35 @@
+# Git repositories persistent volume claim
+# For production at scale, consider:
+# 1. NFS/GlusterFS for shared access
+# 2. Object storage (S3/GCS) with git-lfs
+# 3. Per-organization volume claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos-pvc
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+spec:
+  accessModes:
+    - ReadWriteMany  # Required for multi-pod access
+  storageClassName: nfs-csi  # Use appropriate CSI driver
+  resources:
+    requests:
+      storage: 500Gi
+---
+# StorageClass for fast SSD (example for AWS)
+# Adjust for your cloud provider
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  fsType: ext4
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

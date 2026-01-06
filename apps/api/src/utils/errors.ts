@@ -25,6 +25,12 @@ export class AuthorizationError extends AppError {
   }
 }
 
+export class ForbiddenError extends AppError {
+  constructor(message: string = 'Forbidden') {
+    super(403, 'FORBIDDEN', message);
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(message: string) {
     super(400, 'VALIDATION_ERROR', message);

@@ -1,0 +1,69 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: cv-hub
+
+resources:
+  - ../../base
+
+# Production image tags (set by CI/CD)
+images:
+  - name: cv-hub/api
+    newTag: v1.0.0
+  - name: cv-hub/web
+    newTag: v1.0.0
+
+# Production patches
+patches:
+  # Increase API replicas
+  - target:
+      kind: Deployment
+      name: cv-hub-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+
+  # Increase worker replicas
+  - target:
+      kind: Deployment
+      name: cv-hub-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 4
+
+  # Increase API resources
+  - target:
+      kind: Deployment
+      name: cv-hub-api
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 250m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 2000m
+
+  # Increase storage for production
+  - target:
+      kind: PersistentVolumeClaim
+      name: git-repos-pvc
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 2Ti
+
+# Production-specific labels
+commonLabels:
+  environment: production
+
+# Production-specific annotations
+commonAnnotations:
+  cv-hub.io/environment: production

@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Card,
@@ -6,9 +7,9 @@ import {
   Grid,
   Avatar,
   Chip,
-  LinearProgress,
   IconButton,
   Tooltip,
+  Skeleton,
 } from '@mui/material';
 import {
   Folder as RepoIcon,
@@ -26,105 +27,37 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
-import type { Repository, AIInsight, ActivityItem } from '../types';
+import { api } from '../lib/api';
+import type { AIInsight, ActivityItem } from '../types';
 
-// Mock data
-const stats = [
-  { label: 'Repositories', value: 12, icon: <RepoIcon />, change: '+2' },
-  { label: 'Pull Requests', value: 8, icon: <PRIcon />, change: '+3' },
-  { label: 'Open Issues', value: 24, icon: <IssueIcon />, change: '-5' },
-  { label: 'AI Operations', value: '3.5K', icon: <AIIcon />, change: '35%' },
-];
+interface DashboardStats {
+  stats: {
+    repositories: number;
+    pullRequests: number;
+    openIssues: number;
+  };
+  recentRepositories: {
+    id: string;
+    name: string;
+    slug: string;
+    fullName: string;
+    description: string | null;
+    visibility: string;
+    starCount: number;
+    openIssueCount: number;
+    openPrCount: number;
+    graphSyncStatus: string;
+    updatedAt: string;
+  }[];
+}
 
-const recentRepos: Partial<Repository>[] = [
-  {
-    id: '1',
-    name: 'cv-git',
-    fullName: 'team/cv-git',
-    description: 'AI-native version control platform',
-    language: 'TypeScript',
-    stars: 128,
-    healthScore: 92,
-    lastUpdated: '2 hours ago',
-  },
-  {
-    id: '2',
-    name: 'api-service',
-    fullName: 'team/api-service',
-    description: 'Backend API service for the platform',
-    language: 'Go',
-    stars: 45,
-    healthScore: 87,
-    lastUpdated: '5 hours ago',
-  },
-  {
-    id: '3',
-    name: 'web-frontend',
-    fullName: 'team/web-frontend',
-    description: 'React-based web frontend',
-    language: 'TypeScript',
-    stars: 32,
-    healthScore: 78,
-    lastUpdated: '1 day ago',
-  },
-];
+// Placeholder data for AI insights (will be populated from graph analysis)
+const aiInsights: AIInsight[] = [];
 
-const aiInsights: AIInsight[] = [
-  {
-    type: 'security',
-    severity: 'high',
-    title: 'Potential SQL Injection',
-    description: 'Unparameterized query detected in user input handler',
-    file: 'api-service/handlers/user.go',
-    line: 142,
-    recommendation: 'Use parameterized queries to prevent SQL injection',
-  },
-  {
-    type: 'complexity',
-    severity: 'medium',
-    title: 'High Cyclomatic Complexity',
-    description: 'Function processPayment has complexity of 28',
-    file: 'cv-git/src/payment/processor.ts',
-    line: 89,
-    recommendation: 'Break down into smaller, focused functions',
-  },
-  {
-    type: 'dead_code',
-    severity: 'low',
-    title: 'Unused Export Detected',
-    description: '3 exported functions have no callers',
-    file: 'web-frontend/src/utils/helpers.ts',
-    recommendation: 'Consider removing or documenting for future use',
-  },
-];
+const recentActivity: Partial<ActivityItem>[] = [];
 
-const recentActivity: Partial<ActivityItem>[] = [
-  {
-    id: '1',
-    type: 'commit',
-    title: 'feat: add semantic search API',
-    repository: 'cv-git',
-    timestamp: '30 minutes ago',
-    user: { username: 'developer', displayName: 'Developer' } as any,
-  },
-  {
-    id: '2',
-    type: 'pr',
-    title: 'PR #42: Implement AI code review',
-    repository: 'api-service',
-    timestamp: '2 hours ago',
-    user: { username: 'reviewer', displayName: 'Reviewer' } as any,
-  },
-  {
-    id: '3',
-    type: 'ai_operation',
-    title: 'AI Review completed on PR #41',
-    repository: 'web-frontend',
-    timestamp: '4 hours ago',
-  },
-];
-
-const getLanguageColor = (lang: string) => {
+// Language colors for future use when displaying repo languages
+const _getLanguageColor = (lang: string) => {
   const langColors: Record<string, string> = {
     TypeScript: '#3178c6',
     JavaScript: '#f7df1e',
@@ -135,6 +68,7 @@ const getLanguageColor = (lang: string) => {
   };
   return langColors[lang] || colors.navyLighter;
 };
+void _getLanguageColor;
 
 const getSeverityColor = (severity: string) => {
   switch (severity) {
@@ -164,8 +98,39 @@ const getInsightIcon = (type: string) => {
   }
 };
 
+function formatTimeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+  return date.toLocaleDateString();
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  // Fetch dashboard stats from API
+  const { data: dashboardData, isLoading } = useQuery<DashboardStats>({
+    queryKey: ['dashboard-stats'],
+    queryFn: async () => {
+      const response = await api.get('/v1/dashboard/stats');
+      return response.data;
+    },
+    staleTime: 30000, // Cache for 30 seconds
+  });
+
+  const stats = [
+    { label: 'Repositories', value: dashboardData?.stats.repositories ?? 0, icon: <RepoIcon />, change: '' },
+    { label: 'Pull Requests', value: dashboardData?.stats.pullRequests ?? 0, icon: <PRIcon />, change: '' },
+    { label: 'Open Issues', value: dashboardData?.stats.openIssues ?? 0, icon: <IssueIcon />, change: '' },
+    { label: 'Graph Synced', value: dashboardData?.recentRepositories.filter(r => r.graphSyncStatus === 'synced').length ?? 0, icon: <AIIcon />, change: '' },
+  ];
+
+  const recentRepos = dashboardData?.recentRepositories ?? [];
 
   return (
     <Box>
@@ -181,7 +146,19 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {stats.map((stat) => (
+        {isLoading ? (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <Grid size={{ xs: 12, sm: 6, md: 3 }} key={i}>
+                <Card>
+                  <CardContent>
+                    <Skeleton variant="rectangular" height={80} />
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </>
+        ) : stats.map((stat) => (
           <Grid size={{ xs: 12, sm: 6, md: 3 }} key={stat.label}>
             <Card>
               <CardContent>
@@ -250,7 +227,19 @@ export default function Dashboard() {
                 </Box>
               </Box>
 
-              {recentRepos.map((repo) => (
+              {isLoading ? (
+                <>
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} variant="rectangular" height={70} sx={{ mb: 1, borderRadius: 2 }} />
+                  ))}
+                </>
+              ) : recentRepos.length === 0 ? (
+                <Box sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                    No repositories yet. Create your first repository to get started.
+                  </Typography>
+                </Box>
+              ) : recentRepos.map((repo) => (
                 <Box
                   key={repo.id}
                   onClick={() => navigate(`/repositories/${repo.fullName}`)}
@@ -276,56 +265,33 @@ export default function Dashboard() {
                     <Box>
                       <Typography sx={{ fontWeight: 600 }}>{repo.name}</Typography>
                       <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                        {repo.description}
+                        {repo.description || 'No description'}
                       </Typography>
                     </Box>
                   </Box>
 
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Box
+                    <Tooltip title="Stars">
+                      <Chip
+                        label={repo.starCount}
+                        size="small"
+                        sx={{ backgroundColor: colors.navyLighter }}
+                      />
+                    </Tooltip>
+
+                    <Tooltip title="Graph Status">
+                      <Chip
+                        label={repo.graphSyncStatus}
+                        size="small"
                         sx={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '50%',
-                          backgroundColor: getLanguageColor(repo.language || ''),
+                          backgroundColor: repo.graphSyncStatus === 'synced' ? `${colors.green}20` : colors.navyLighter,
+                          color: repo.graphSyncStatus === 'synced' ? colors.green : colors.textMuted,
                         }}
                       />
-                      <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                        {repo.language}
-                      </Typography>
-                    </Box>
-
-                    <Tooltip title="Health Score">
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <Box sx={{ width: 60 }}>
-                          <LinearProgress
-                            variant="determinate"
-                            value={repo.healthScore}
-                            sx={{
-                              height: 6,
-                              borderRadius: 3,
-                              backgroundColor: colors.navyLighter,
-                              '& .MuiLinearProgress-bar': {
-                                background:
-                                  repo.healthScore! >= 90
-                                    ? colors.green
-                                    : repo.healthScore! >= 70
-                                    ? colors.orange
-                                    : colors.coral,
-                                borderRadius: 3,
-                              },
-                            }}
-                          />
-                        </Box>
-                        <Typography variant="body2" sx={{ color: colors.textMuted, minWidth: 30 }}>
-                          {repo.healthScore}%
-                        </Typography>
-                      </Box>
                     </Tooltip>
 
                     <Typography variant="caption" sx={{ color: colors.textMuted }}>
-                      {repo.lastUpdated}
+                      {formatTimeAgo(repo.updatedAt)}
                     </Typography>
                   </Box>
                 </Box>

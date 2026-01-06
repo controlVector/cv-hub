@@ -34,3 +34,6 @@ apps/api/drizzle
 
 # pnpm
 .pnpm-store/
+.cv/
+apps/web/coverage/
+apps/api/git-repos/

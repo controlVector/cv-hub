@@ -1,0 +1,218 @@
+import { Hono } from 'hono';
+
+import { optionalAuth } from '../middleware/auth';
+import {
+  handleInfoRefs,
+  handleUploadPack,
+  handleReceivePack,
+  type GitService,
+} from '../services/git/git-http.service';
+import {
+  repoExists,
+} from '../services/git/git-backend.service';
+import { processPostReceive } from '../services/git/sync.service';
+import {
+  getRepositoryByOwnerAndSlug,
+  canUserAccessRepo,
+  canUserWriteToRepo,
+} from '../services/repository.service';
+import { NotFoundError, ForbiddenError } from '../utils/errors';
+import type { AppEnv } from '../app';
+
+const gitRoutes = new Hono<AppEnv>();
+
+// Middleware to verify repo exists and check access
+async function verifyRepoAccess(
+  owner: string,
+  repoSlug: string,
+  userId: string | null,
+  requireWrite: boolean
+): Promise<{ repoId: string; provider: string }> {
+  // Get repo from database
+  const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
+  if (!repo) {
+    throw new NotFoundError('Repository');
+  }
+
+  // Check if it's a local repo
+  if (repo.provider !== 'local') {
+    throw new ForbiddenError('Git operations only available for local repositories');
+  }
+
+  // Check access
+  if (requireWrite) {
+    if (!userId) {
+      throw new ForbiddenError('Authentication required for write access');
+    }
+    const canWrite = await canUserWriteToRepo(repo.id, userId);
+    if (!canWrite) {
+      throw new ForbiddenError('Write access required');
+    }
+  } else {
+    const canRead = await canUserAccessRepo(repo.id, userId);
+    if (!canRead) {
+      throw new NotFoundError('Repository'); // Don't reveal existence
+    }
+  }
+
+  return { repoId: repo.id, provider: repo.provider };
+}
+
+// Parse Basic auth header
+function parseBasicAuth(authHeader: string | undefined): { username: string; password: string } | null {
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return null;
+  }
+
+  try {
+    const base64 = authHeader.slice(6);
+    const decoded = Buffer.from(base64, 'base64').toString('utf-8');
+    const [username, password] = decoded.split(':');
+    return { username, password: password || '' };
+  } catch {
+    return null;
+  }
+}
+
+// GET /:owner/:repo.git/info/refs - Discovery endpoint
+gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
+  const { owner } = c.req.param();
+  let { repo } = c.req.param();
+  const service = c.req.query('service') as GitService | undefined;
+
+  // Strip .git suffix if present
+  if (repo.endsWith('.git')) {
+    repo = repo.slice(0, -4);
+  }
+
+  if (!service || !['git-upload-pack', 'git-receive-pack'].includes(service)) {
+    return c.text('Invalid service', 400);
+  }
+
+  // Get user from session or Basic auth
+  let userId = c.get('userId') || null;
+
+  // Check for Basic auth if no session
+  if (!userId) {
+    const authHeader = c.req.header('authorization');
+    const basicAuth = parseBasicAuth(authHeader);
+    if (basicAuth) {
+      // TODO: Validate credentials (API key or user:password)
+      // For now, we'll require session auth
+    }
+  }
+
+  const requireWrite = service === 'git-receive-pack';
+
+  try {
+    await verifyRepoAccess(owner, repo, userId, requireWrite);
+  } catch (err) {
+    if (requireWrite && !userId) {
+      // Request authentication for push
+      c.header('WWW-Authenticate', 'Basic realm="CV-Hub Git"');
+      return c.text('Authentication required', 401);
+    }
+    throw err;
+  }
+
+  // Check if bare repo exists on disk
+  const exists = await repoExists(owner, repo);
+  if (!exists) {
+    throw new NotFoundError('Repository storage not initialized');
+  }
+
+  const result = await handleInfoRefs(owner, repo, service);
+
+  return new Response(new Uint8Array(result.body), {
+    status: 200,
+    headers: {
+      'Content-Type': result.contentType,
+      'Cache-Control': 'no-cache',
+    },
+  });
+});
+
+// POST /:owner/:repo.git/git-upload-pack - Clone/Fetch
+gitRoutes.post('/:owner/:repo/git-upload-pack', optionalAuth, async (c) => {
+  const { owner } = c.req.param();
+  let { repo } = c.req.param();
+
+  if (repo.endsWith('.git')) {
+    repo = repo.slice(0, -4);
+  }
+
+  const userId = c.get('userId') || null;
+
+  await verifyRepoAccess(owner, repo, userId, false);
+
+  const exists = await repoExists(owner, repo);
+  if (!exists) {
+    throw new NotFoundError('Repository storage not initialized');
+  }
+
+  const requestBody = Buffer.from(await c.req.arrayBuffer());
+  const result = await handleUploadPack(owner, repo, requestBody);
+
+  return new Response(new Uint8Array(result.body), {
+    status: 200,
+    headers: {
+      'Content-Type': result.contentType,
+      'Cache-Control': 'no-cache',
+    },
+  });
+});
+
+// POST /:owner/:repo.git/git-receive-pack - Push
+gitRoutes.post('/:owner/:repo/git-receive-pack', optionalAuth, async (c) => {
+  const { owner } = c.req.param();
+  let { repo } = c.req.param();
+
+  if (repo.endsWith('.git')) {
+    repo = repo.slice(0, -4);
+  }
+
+  // Get user from session or Basic auth
+  let userId = c.get('userId') || null;
+
+  if (!userId) {
+    const authHeader = c.req.header('authorization');
+    const basicAuth = parseBasicAuth(authHeader);
+    if (basicAuth) {
+      // TODO: Validate API key or credentials
+    }
+  }
+
+  if (!userId) {
+    c.header('WWW-Authenticate', 'Basic realm="CV-Hub Git"');
+    return c.text('Authentication required for push', 401);
+  }
+
+  const { repoId } = await verifyRepoAccess(owner, repo, userId, true);
+
+  const exists = await repoExists(owner, repo);
+  if (!exists) {
+    throw new NotFoundError('Repository storage not initialized');
+  }
+
+  const requestBody = Buffer.from(await c.req.arrayBuffer());
+
+  const result = await handleReceivePack(owner, repo, requestBody, (refs) => {
+    // Post-receive hook - sync metadata to database
+    console.log(`[Git Push] ${owner}/${repo}:`, refs.map(r => `${r.refName}`).join(', '));
+
+    // Process the push asynchronously (don't block the response)
+    processPostReceive(repoId, refs).catch((err) => {
+      console.error(`[Git Push] Sync failed for ${owner}/${repo}:`, err);
+    });
+  });
+
+  return new Response(new Uint8Array(result.body), {
+    status: 200,
+    headers: {
+      'Content-Type': result.contentType,
+      'Cache-Control': 'no-cache',
+    },
+  });
+});
+
+export { gitRoutes };

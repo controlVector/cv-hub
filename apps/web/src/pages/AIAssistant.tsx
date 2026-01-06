@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Box,
   Typography,
@@ -12,6 +13,7 @@ import {
   Tooltip,
   Menu,
   MenuItem,
+  Alert,
 } from '@mui/material';
 import {
   Send,
@@ -24,10 +26,13 @@ import {
   BubbleChart as GraphIcon,
   ContentCopy,
   KeyboardArrowDown,
+  CheckCircle,
+  Cancel,
 } from '@mui/icons-material';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { colors } from '../theme';
+import { api } from '../lib/api';
 
 interface Message {
   id: string;
@@ -35,7 +40,37 @@ interface Message {
   content: string;
   type?: 'explain' | 'find' | 'review' | 'do' | 'graph';
   codeBlocks?: { language: string; code: string }[];
+  context?: {
+    type: string;
+    snippetCount: number;
+    snippets?: {
+      filePath: string;
+      language: string;
+      startLine?: number;
+      endLine?: number;
+      symbolName?: string;
+      score?: number;
+    }[];
+  };
   timestamp: Date;
+}
+
+interface Repository {
+  id: string;
+  name: string;
+  slug: string;
+  owner?: string;
+  organization?: { slug: string };
+}
+
+interface AssistantStatus {
+  available: boolean;
+  reason: string;
+  features: {
+    chat: boolean;
+    contextRetrieval: boolean;
+    semanticSearch: boolean;
+  };
 }
 
 const commandTypes = [
@@ -46,11 +81,10 @@ const commandTypes = [
   { id: 'graph', label: 'Graph', icon: <GraphIcon />, description: 'Query knowledge graph' },
 ];
 
-const mockMessages: Message[] = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: `Welcome to the ControlVector AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
+const welcomeMessage: Message = {
+  id: 'welcome',
+  role: 'assistant',
+  content: `Welcome to the ControlVector AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
 
 **Available commands:**
 - **explain** - Get detailed explanations of functions, files, or concepts
@@ -59,22 +93,72 @@ const mockMessages: Message[] = [
 - **do** - Execute development tasks with AI assistance
 - **graph** - Query your code's knowledge graph
 
-Try asking me something like:
+Select a repository above and try asking me something like:
 - "Explain the authentication flow"
 - "Find all database connection code"
-- "Review my latest changes"`,
-    timestamp: new Date(Date.now() - 60000),
-  },
-];
+- "Review the error handling"`,
+  timestamp: new Date(),
+};
+
+// Extract code blocks from markdown
+function extractCodeBlocks(content: string): { text: string; codeBlocks: { language: string; code: string }[] } {
+  const codeBlocks: { language: string; code: string }[] = [];
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+
+  let match;
+  let text = content;
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    codeBlocks.push({
+      language: match[1] || 'text',
+      code: match[2].trim(),
+    });
+  }
+
+  // Remove code blocks from text for cleaner display
+  text = content.replace(codeBlockRegex, '\n[Code block shown below]\n');
+
+  return { text, codeBlocks };
+}
 
 export default function AIAssistant() {
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
-  const [selectedRepo, setSelectedRepo] = useState('team/cv-git');
+  const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
   const [repoMenuAnchor, setRepoMenuAnchor] = useState<null | HTMLElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch assistant status
+  const { data: assistantStatus } = useQuery<AssistantStatus>({
+    queryKey: ['assistant-status'],
+    queryFn: async () => {
+      const response = await api.get('/v1/assistant/status');
+      return response.data;
+    },
+  });
+
+  // Fetch repositories
+  const { data: reposData } = useQuery<{ repositories: Repository[] }>({
+    queryKey: ['user-repositories'],
+    queryFn: async () => {
+      const response = await api.get('/v1/repositories');
+      return response.data;
+    },
+  });
+
+  const repositories = reposData?.repositories || [];
+  const selectedRepo = repositories.find(r => r.id === selectedRepoId);
+  const selectedRepoDisplay = selectedRepo
+    ? `${selectedRepo.owner || selectedRepo.organization?.slug || 'user'}/${selectedRepo.slug}`
+    : 'Select a repository';
+
+  // Auto-select first repo
+  useEffect(() => {
+    if (repositories.length > 0 && !selectedRepoId) {
+      setSelectedRepoId(repositories[0].id);
+    }
+  }, [repositories, selectedRepoId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,8 +168,42 @@ export default function AIAssistant() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  // Chat mutation
+  const chatMutation = useMutation({
+    mutationFn: async (params: { messages: { role: string; content: string }[]; commandType?: string }) => {
+      const response = await api.post('/v1/assistant/chat', {
+        repositoryId: selectedRepoId,
+        messages: params.messages,
+        commandType: params.commandType,
+      });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      const { text, codeBlocks } = extractCodeBlocks(data.message || '');
+
+      const aiResponse: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: text,
+        codeBlocks: codeBlocks.length > 0 ? codeBlocks : undefined,
+        context: data.context,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, aiResponse]);
+    },
+    onError: (error: any) => {
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${error.response?.data?.reason || error.message || 'Unknown error'}. Please try again.`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    },
+  });
+
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || chatMutation.isPending || !selectedRepoId) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -97,174 +215,22 @@ export default function AIAssistant() {
 
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
-    setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: generateMockResponse(input, selectedCommand),
-        type: selectedCommand as any,
-        codeBlocks: selectedCommand === 'find' || selectedCommand === 'explain' ? [
-          {
-            language: 'typescript',
-            code: `// Found in src/auth/service.ts
-export async function authenticateUser(
-  credentials: UserCredentials
-): Promise<AuthResult> {
-  const user = await userRepository.findByEmail(
-    credentials.email
-  );
+    // Build message history for context (last 10 messages)
+    const recentMessages = [...messages.slice(-10), userMessage]
+      .filter(m => m.id !== 'welcome')
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
 
-  if (!user || !await verifyPassword(
-    credentials.password,
-    user.passwordHash
-  )) {
-    throw new AuthenticationError('Invalid credentials');
-  }
-
-  return generateAuthTokens(user);
-}`,
-          },
-        ] : undefined,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiResponse]);
-      setIsLoading(false);
-    }, 1500);
+    chatMutation.mutate({
+      messages: recentMessages,
+      commandType: selectedCommand || undefined,
+    });
 
     setSelectedCommand(null);
-  };
-
-  const generateMockResponse = (query: string, command: string | null): string => {
-    if (command === 'explain') {
-      return `## Authentication Flow Explanation
-
-The authentication system in **cv-git** uses a JWT-based approach with the following components:
-
-1. **User Authentication** (\`src/auth/service.ts\`)
-   - Validates credentials against the database
-   - Uses bcrypt for password verification
-   - Generates JWT access and refresh tokens
-
-2. **Token Management** (\`src/auth/tokens.ts\`)
-   - Access tokens expire in 15 minutes
-   - Refresh tokens expire in 7 days
-   - Tokens are signed with RS256 algorithm
-
-3. **Middleware** (\`src/middleware/auth.ts\`)
-   - Validates tokens on protected routes
-   - Extracts user context from token payload
-   - Handles token refresh automatically
-
-**Security Considerations:**
-- Passwords are hashed with bcrypt (cost factor 12)
-- Tokens use asymmetric signing (RS256)
-- Refresh token rotation is implemented
-
-Here's the main authentication function:`;
-    }
-
-    if (command === 'find') {
-      return `## Search Results
-
-Found **5 matches** for "${query}" in **team/cv-git**:
-
-### High Relevance (Score: 0.95)
-**src/auth/service.ts** - Lines 45-78
-Main authentication service with user validation
-
-### High Relevance (Score: 0.89)
-**src/middleware/auth.ts** - Lines 12-34
-Authentication middleware for route protection
-
-### Medium Relevance (Score: 0.72)
-**src/auth/tokens.ts** - Lines 1-50
-JWT token generation and validation utilities
-
----
-
-Showing the most relevant result:`;
-    }
-
-    if (command === 'review') {
-      return `## AI Code Review
-
-### Summary
-Reviewed **12 files** with **+245 / -89** lines changed.
-
-### Issues Found
-
-**Critical (1)**
-- \`src/api/users.ts:45\` - Potential SQL injection in user query. Use parameterized queries.
-
-**Warnings (3)**
-- \`src/utils/helpers.ts:23\` - Unused function \`formatDate\` should be removed
-- \`src/components/Form.tsx:89\` - Missing error boundary for async operations
-- \`src/services/api.ts:156\` - Consider adding retry logic for network requests
-
-### Suggestions
-- Add unit tests for the new authentication flow
-- Consider extracting the validation logic into a separate utility
-- Documentation could be improved for public API methods
-
-### Security Score: **87/100**
-### Code Quality Score: **92/100**`;
-    }
-
-    if (command === 'do') {
-      return `## Task Plan: ${query}
-
-I've analyzed your codebase and created the following implementation plan:
-
-### Steps
-1. **Create new authentication module** (\`src/auth/oauth.ts\`)
-   - Set up OAuth2 client configuration
-   - Implement authorization URL generation
-
-2. **Add OAuth routes** (\`src/routes/auth.ts\`)
-   - GET /auth/oauth/authorize
-   - GET /auth/oauth/callback
-
-3. **Update user service** (\`src/services/user.ts\`)
-   - Add method to link OAuth accounts
-   - Handle OAuth user creation
-
-### Estimated Impact
-- **Files to create:** 2
-- **Files to modify:** 3
-- **Complexity:** Medium
-
-Would you like me to proceed with this implementation?`;
-    }
-
-    if (command === 'graph') {
-      return `## Knowledge Graph Query Results
-
-### Call Graph for \`authenticateUser\`
-
-**Called by (3 functions):**
-- \`loginHandler\` in \`src/routes/auth.ts:34\`
-- \`refreshTokens\` in \`src/auth/tokens.ts:78\`
-- \`validateSession\` in \`src/middleware/session.ts:12\`
-
-**Calls (4 functions):**
-- \`findByEmail\` in \`src/repositories/user.ts:23\`
-- \`verifyPassword\` in \`src/auth/crypto.ts:45\`
-- \`generateAuthTokens\` in \`src/auth/tokens.ts:12\`
-- \`logAuthAttempt\` in \`src/services/audit.ts:89\`
-
-### Metrics
-- **Cyclomatic Complexity:** 8
-- **Dependencies:** 4 modules
-- **Test Coverage:** 85%`;
-    }
-
-    return `I understand you're asking about "${query}". Let me analyze your codebase and provide a detailed response.
-
-Based on the knowledge graph and code analysis of **team/cv-git**, here's what I found...`;
-  };
+  }, [input, chatMutation, selectedRepoId, selectedCommand, messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -300,10 +266,38 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
             '&:hover': { borderColor: colors.orange },
           }}
         >
-          <Typography variant="body2">{selectedRepo}</Typography>
+          <Typography variant="body2">{selectedRepoDisplay}</Typography>
           <KeyboardArrowDown sx={{ fontSize: 18, color: colors.textMuted }} />
         </Box>
       </Box>
+
+      {/* Status Chips */}
+      {assistantStatus && (
+        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Chip
+            icon={assistantStatus.available ? <CheckCircle /> : <Cancel />}
+            label={assistantStatus.available ? 'AI Ready' : 'AI Not Configured'}
+            size="small"
+            color={assistantStatus.available ? 'success' : 'default'}
+            variant="outlined"
+          />
+          {assistantStatus.features.semanticSearch && (
+            <Chip
+              icon={<AIIcon />}
+              label="Semantic Search"
+              size="small"
+              color="primary"
+              variant="outlined"
+            />
+          )}
+        </Box>
+      )}
+
+      {!assistantStatus?.available && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          AI Assistant requires OPENROUTER_API_KEY to be configured. Context retrieval from the knowledge graph is still available.
+        </Alert>
+      )}
 
       {/* Command Chips */}
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
@@ -363,7 +357,7 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
               sx={{
                 maxWidth: '80%',
                 backgroundColor: message.role === 'user' ? colors.navyLighter : colors.navyLight,
-                border: `1px solid ${message.role === 'user' ? colors.navyLighter : colors.navyLighter}`,
+                border: `1px solid ${colors.navyLighter}`,
               }}
             >
               <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
@@ -381,6 +375,23 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
                     }}
                   />
                 )}
+
+                {/* Context info */}
+                {message.context && message.context.snippetCount > 0 && (
+                  <Box sx={{ mb: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Chip
+                      label={`${message.context.type} context`}
+                      size="small"
+                      sx={{ height: 18, fontSize: '0.65rem' }}
+                    />
+                    <Chip
+                      label={`${message.context.snippetCount} snippets`}
+                      size="small"
+                      sx={{ height: 18, fontSize: '0.65rem' }}
+                    />
+                  </Box>
+                )}
+
                 <Typography
                   variant="body2"
                   sx={{
@@ -411,7 +422,11 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
                       }}
                     >
                       <Tooltip title="Copy code">
-                        <IconButton size="small" sx={{ color: colors.textMuted }}>
+                        <IconButton
+                          size="small"
+                          sx={{ color: colors.textMuted }}
+                          onClick={() => navigator.clipboard.writeText(block.code)}
+                        >
                           <ContentCopy sx={{ fontSize: 16 }} />
                         </IconButton>
                       </Tooltip>
@@ -440,7 +455,7 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
           </Box>
         ))}
 
-        {isLoading && (
+        {chatMutation.isPending && (
           <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
             <Avatar sx={{ width: 36, height: 36, backgroundColor: colors.orange }}>
               <AIIcon sx={{ fontSize: 20 }} />
@@ -477,13 +492,16 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
           multiline
           maxRows={4}
           placeholder={
-            selectedCommand
+            !selectedRepoId
+              ? 'Select a repository first...'
+              : selectedCommand
               ? `Ask AI to ${selectedCommand}...`
               : 'Ask anything about your codebase...'
           }
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          disabled={!selectedRepoId || !assistantStatus?.available}
           sx={{
             '& .MuiOutlinedInput-root': {
               backgroundColor: colors.navy,
@@ -492,17 +510,17 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
         />
         <IconButton
           onClick={handleSend}
-          disabled={!input.trim() || isLoading}
+          disabled={!input.trim() || chatMutation.isPending || !selectedRepoId || !assistantStatus?.available}
           sx={{
             alignSelf: 'flex-end',
             width: 48,
             height: 48,
-            background: input.trim()
+            background: input.trim() && selectedRepoId && assistantStatus?.available
               ? `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`
               : colors.navyLighter,
-            color: input.trim() ? colors.navy : colors.textMuted,
+            color: input.trim() && selectedRepoId && assistantStatus?.available ? colors.navy : colors.textMuted,
             '&:hover': {
-              background: input.trim()
+              background: input.trim() && selectedRepoId && assistantStatus?.available
                 ? `linear-gradient(135deg, #e09518 0%, #d44a62 100%)`
                 : colors.navyLighter,
             },
@@ -518,18 +536,22 @@ Based on the knowledge graph and code analysis of **team/cv-git**, here's what I
         open={Boolean(repoMenuAnchor)}
         onClose={() => setRepoMenuAnchor(null)}
       >
-        {['team/cv-git', 'team/api-service', 'team/web-frontend'].map((repo) => (
-          <MenuItem
-            key={repo}
-            onClick={() => {
-              setSelectedRepo(repo);
-              setRepoMenuAnchor(null);
-            }}
-            selected={repo === selectedRepo}
-          >
-            {repo}
-          </MenuItem>
-        ))}
+        {repositories.length === 0 ? (
+          <MenuItem disabled>No repositories available</MenuItem>
+        ) : (
+          repositories.map((repo) => (
+            <MenuItem
+              key={repo.id}
+              onClick={() => {
+                setSelectedRepoId(repo.id);
+                setRepoMenuAnchor(null);
+              }}
+              selected={repo.id === selectedRepoId}
+            >
+              {repo.owner || repo.organization?.slug || 'user'}/{repo.slug}
+            </MenuItem>
+          ))
+        )}
       </Menu>
     </Box>
   );

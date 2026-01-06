@@ -20,7 +20,7 @@ services:
     image: redis:7-alpine
     container_name: cv-hub-redis
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-6382}:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -30,6 +30,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # FalkorDB - Redis-compatible graph database for knowledge graphs
+  # Same as cv-git uses for seamless federation
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: cv-hub-falkordb
+    ports:
+      - "${FALKORDB_PORT:-6381}:6379"
+    volumes:
+      - falkordb_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant - Vector database for semantic code search
+  # Same as cv-git uses for seamless federation
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cv-hub-qdrant
+    ports:
+      - "${QDRANT_PORT:-6335}:6333"
+      - "${QDRANT_GRPC_PORT:-6336}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
+  falkordb_data:
+  qdrant_data:

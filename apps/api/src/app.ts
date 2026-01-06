@@ -10,6 +10,17 @@ import mfaRoutes from './routes/mfa';
 import { oauthRoutes } from './routes/oauth';
 import { oauthClientRoutes } from './routes/oauth-clients';
 import { apiKeysRoutes } from './routes/api-keys';
+import { appStoreRoutes } from './routes/app-store';
+import { storageRoutes } from './routes/storage';
+import { organizationRoutes } from './routes/organizations';
+import { repositoryRoutes } from './routes/repositories';
+import { gitRoutes } from './routes/git';
+import graphRoutes from './routes/graph';
+import cvGitRoutes from './routes/cv-git';
+import searchRoutes from './routes/search';
+import assistantRoutes from './routes/assistant';
+import prRoutes from './routes/pull-requests';
+import issueRoutes from './routes/issues';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -43,7 +54,41 @@ app.route('/api/auth', authRoutes);
 app.route('/api/mfa', mfaRoutes);
 app.route('/api/keys', apiKeysRoutes);
 app.route('/oauth', oauthRoutes);
+app.route('/api/oauth', oauthRoutes); // Also mount at /api/oauth for frontend convenience
 app.route('/api/oauth/clients', oauthClientRoutes);
+
+// App Store API (v1)
+app.route('/api/v1', appStoreRoutes);
+
+// Organization API (v1)
+app.route('/api/v1/orgs', organizationRoutes);
+
+// Repository API (v1)
+app.route('/api/v1', repositoryRoutes);
+
+// Git Smart HTTP Protocol (for clone/push)
+app.route('/git', gitRoutes);
+
+// Graph API (cv-git compatible)
+app.route('/api/v1/repos', graphRoutes);
+
+// CV-Git Integration API (auth, code browsing, discovery)
+app.route('/api/v1', cvGitRoutes);
+
+// Federated Search API
+app.route('/api/v1', searchRoutes);
+
+// AI Assistant API
+app.route('/api/v1', assistantRoutes);
+
+// Pull Request API
+app.route('/api/v1', prRoutes);
+
+// Issues API
+app.route('/api/v1', issueRoutes);
+
+// Storage API (file uploads/downloads)
+app.route('/api/storage', storageRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {

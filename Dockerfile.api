@@ -1,0 +1,77 @@
+# Build stage - builds from monorepo root
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy workspace config and lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY tsconfig.base.json ./
+
+# Copy all package.json files for workspace resolution
+COPY apps/api/package.json apps/api/tsconfig.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install all dependencies with hoisting for Docker compatibility
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/shared ./packages/shared
+COPY apps/api ./apps/api
+
+# Build shared package first (to CommonJS)
+RUN cd packages/shared && pnpm tsc --module CommonJS --moduleResolution Node --outDir dist --declaration false --declarationMap false --verbatimModuleSyntax false --skipLibCheck
+
+# Build API using production config (CommonJS for Node.js)
+RUN cd apps/api && pnpm tsc -p tsconfig.prod.json --skipLibCheck
+
+# Create production package.json without workspace refs and type:module
+RUN node -e "const pkg=require('./apps/api/package.json'); delete pkg.dependencies['@cv-hub/shared']; delete pkg.type; require('fs').writeFileSync('./apps/api/package.prod.json', JSON.stringify(pkg, null, 2));"
+
+# Create shared package production json with correct exports for dist
+RUN node -e "const pkg=require('./packages/shared/package.json'); \
+    pkg.main='./dist/index.js'; \
+    delete pkg.type; \
+    pkg.exports = { \
+      '.': './dist/index.js', \
+      './schemas': './dist/schemas/index.js', \
+      './types': './dist/types/index.js' \
+    }; \
+    require('fs').writeFileSync('./packages/shared/package.prod.json', JSON.stringify(pkg, null, 2));"
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install git
+RUN apk add --no-cache git
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 cvhub
+
+# Copy built API and production package.json
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/package.prod.json ./package.json
+
+# Install production dependencies using npm (no workspace issues)
+RUN npm install --omit=dev --ignore-scripts
+
+# Copy shared package to node_modules
+COPY --from=builder /app/packages/shared/dist ./node_modules/@cv-hub/shared/dist
+COPY --from=builder /app/packages/shared/package.prod.json ./node_modules/@cv-hub/shared/package.json
+
+# Create git repos directory
+RUN mkdir -p /data/git && chown -R cvhub:nodejs /data/git
+
+USER cvhub
+
+EXPOSE 3000
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+CMD ["node", "dist/index.js"]

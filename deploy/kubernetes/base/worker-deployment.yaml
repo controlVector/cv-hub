@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cv-hub-worker
+  namespace: cv-hub
+  labels:
+    app: cv-hub-worker
+    app.kubernetes.io/name: cv-hub-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cv-hub-worker
+  template:
+    metadata:
+      labels:
+        app: cv-hub-worker
+    spec:
+      serviceAccountName: cv-hub-worker
+      containers:
+        - name: worker
+          image: cv-hub/api:latest
+          imagePullPolicy: Always
+          command: ["node", "dist/workers/graph-sync.worker.js"]
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: redis-url
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: openrouter-api-key
+            - name: QDRANT_URL
+              value: "http://qdrant:6333"
+            - name: FALKORDB_URL
+              value: "redis://falkordb:6379"
+            - name: GIT_REPOS_PATH
+              value: "/data/git"
+            - name: EMBEDDING_MODEL
+              value: "openai/text-embedding-3-small"
+            # Worker concurrency
+            - name: GRAPH_SYNC_CONCURRENCY
+              value: "3"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          volumeMounts:
+            - name: git-repos
+              mountPath: /data/git
+              readOnly: true
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: git-repos-pvc
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cv-hub-worker
+  namespace: cv-hub
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cv-hub-worker
+  namespace: cv-hub
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cv-hub-worker
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

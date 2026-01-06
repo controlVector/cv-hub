@@ -32,6 +32,38 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
+
+  // GitHub API (for release sync)
+  GITHUB_TOKEN: z.string().optional(),
+
+  // Storage (for release assets)
+  STORAGE_TYPE: z.enum(['local', 's3', 'github']).default('github'),
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY: z.string().optional(),
+  S3_SECRET_KEY: z.string().optional(),
+  S3_REGION: z.string().default('us-east-1'),
+  LOCAL_STORAGE_PATH: z.string().default('./storage'),
+
+  // Git Storage (for bare repositories)
+  GIT_STORAGE_PATH: z.string().default('./git-repos'),
+  GIT_HOOK_SECRET: z.string().min(16).optional(),
+
+  // FalkorDB (Graph Database - same as cv-git)
+  FALKORDB_URL: z.string().url().default('redis://localhost:6381'),
+  FALKORDB_PASSWORD: z.string().optional(),
+
+  // Qdrant (Vector Database - same as cv-git)
+  QDRANT_URL: z.string().url().default('http://localhost:6333'),
+  QDRANT_API_KEY: z.string().optional(),
+
+  // Embeddings (for semantic search)
+  OPENROUTER_API_KEY: z.string().optional(),
+  EMBEDDING_MODEL: z.string().default('openai/text-embedding-3-small'),
+
+  // Graph Sync Worker Settings
+  GRAPH_SYNC_CONCURRENCY: z.coerce.number().default(2),
+  GRAPH_SYNC_TIMEOUT: z.coerce.number().default(600000), // 10 minutes
 });
 
 export type Env = z.infer<typeof envSchema>;

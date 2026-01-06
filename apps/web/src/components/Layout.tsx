@@ -34,6 +34,8 @@ import {
   Add as AddIcon,
   KeyboardArrowDown,
   Security as SecurityIcon,
+  Store as StoreIcon,
+  Business as BusinessIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -42,12 +44,14 @@ import { useAuth } from '../contexts/AuthContext';
 const drawerWidth = 260;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Repositories', icon: <RepoIcon />, path: '/repositories' },
-  { text: 'Pull Requests', icon: <PRIcon />, path: '/pull-requests' },
-  { text: 'AI Assistant', icon: <AIIcon />, path: '/ai-assistant' },
-  { text: 'Knowledge Graph', icon: <GraphIcon />, path: '/graph' },
-  { text: 'Search', icon: <SearchIcon />, path: '/search' },
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+  { text: 'Repositories', icon: <RepoIcon />, path: '/dashboard/repositories' },
+  { text: 'Pull Requests', icon: <PRIcon />, path: '/dashboard/pull-requests' },
+  { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },
+  { text: 'Knowledge Graph', icon: <GraphIcon />, path: '/dashboard/graph' },
+  { text: 'Search', icon: <SearchIcon />, path: '/dashboard/search' },
+  { text: 'App Store', icon: <StoreIcon />, path: '/apps' },
+  { text: 'Organizations', icon: <BusinessIcon />, path: '/dashboard/orgs' },
 ];
 
 export default function Layout() {
@@ -75,7 +79,7 @@ export default function Layout() {
 
   const handleSearch = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery)}`);
+      navigate(`/dashboard/search?q=${encodeURIComponent(searchQuery)}`);
     }
   };
 
@@ -117,7 +121,7 @@ export default function Layout() {
       {/* New Repository Button */}
       <Box sx={{ p: 2 }}>
         <Box
-          onClick={() => navigate('/repositories/new')}
+          onClick={() => navigate('/dashboard/repositories/new')}
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -300,7 +304,7 @@ export default function Layout() {
 
             {/* Settings */}
             <Tooltip title="Settings">
-              <IconButton color="inherit" onClick={() => navigate('/settings')}>
+              <IconButton color="inherit" onClick={() => navigate('/dashboard/settings')}>
                 <SettingsIcon />
               </IconButton>
             </Tooltip>
@@ -343,17 +347,17 @@ export default function Layout() {
               sx: { minWidth: 200, mt: 1 },
             }}
           >
-            <MenuItem onClick={() => { handleMenuClose(); navigate('/profile'); }}>
+            <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/profile'); }}>
               Your Profile
             </MenuItem>
-            <MenuItem onClick={() => { handleMenuClose(); navigate('/repositories'); }}>
+            <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/repositories'); }}>
               Your Repositories
             </MenuItem>
             <Divider />
-            <MenuItem onClick={() => { handleMenuClose(); navigate('/settings'); }}>
+            <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/settings'); }}>
               Settings
             </MenuItem>
-            <MenuItem onClick={() => { handleMenuClose(); navigate('/settings/security'); }}>
+            <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/settings/security'); }}>
               <SecurityIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
               Security
             </MenuItem>
