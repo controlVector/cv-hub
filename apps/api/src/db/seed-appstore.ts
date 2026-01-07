@@ -232,11 +232,58 @@ See deployment documentation at https://hub.controlvector.io/docs`,
       isFeatured: false,
       totalDownloads: 0,
     },
+    {
+      id: 'cv-parts',
+      organizationId: controlvectorOrg.id,
+      name: 'CV-Parts',
+      description: 'AI-powered component library manager. Catalog, search, and reuse UI components across projects with semantic understanding.',
+      longDescription: `# CV-Parts
+
+CV-Parts is an intelligent component library manager that helps teams catalog, discover, and reuse UI components.
+
+## Features
+
+### 🧩 Component Catalog
+- Automatically scan codebases for reusable components
+- Visual preview of components with props
+- Usage examples and documentation
+
+### 🔍 Semantic Search
+Find components using natural language: "button with loading state" or "card with image header"
+
+### 🧠 AI Analysis
+- Automatic component classification
+- Similarity detection across projects
+- Accessibility audit suggestions
+- Performance recommendations
+
+### 📊 Usage Analytics
+- Track component usage across projects
+- Identify dead components
+- Spot opportunities for consolidation
+
+### 🔗 Integration
+- VS Code extension for inline component search
+- Figma plugin for design-to-code mapping
+- Storybook integration
+
+## Coming Soon
+
+CV-Parts is currently in development. Sign up for early access at https://controlvector.io/cv-parts`,
+      iconUrl: `${ORG_LOGO_URL}`,
+      category: 'developer-tools',
+      homepageUrl: 'https://hub.controlvector.io/apps/cv-parts',
+      repositoryUrl: 'https://hub.controlvector.io/controlvector/cv-parts',
+      isActive: false, // Coming soon - no downloads yet
+      isFeatured: true,
+      totalDownloads: 0,
+    },
   ]);
 
   console.log('   ✓ cv-git');
   console.log('   ✓ cv-prd');
   console.log('   ✓ cv-hub');
+  console.log('   ✓ cv-parts (coming soon)');
 
   // Create releases for cv-git
   console.log('');
@@ -402,7 +449,7 @@ Report issues at https://github.com/controlVector/cv-git/issues`,
   console.log('');
   console.log('Created:');
   console.log('  • 1 organization: controlvector');
-  console.log('  • 3 apps: cv-git, cv-prd, cv-hub');
+  console.log('  • 4 apps: cv-git, cv-prd, cv-hub, cv-parts');
   console.log('  • 2 releases with 8 platform assets');
   console.log('');
   console.log('Next steps:');

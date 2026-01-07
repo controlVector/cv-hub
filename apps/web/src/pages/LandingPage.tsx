@@ -45,6 +45,7 @@ interface App {
   iconUrl?: string;
   category: string;
   isFeatured: boolean;
+  isActive: boolean;
   totalDownloads: number;
   latestRelease?: {
     version: string;
@@ -329,17 +330,29 @@ export default function LandingPage() {
                         {app.description}
                       </Typography>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        {app.latestRelease && (
+                        {!app.isActive ? (
+                          <Chip
+                            label="Coming Soon"
+                            size="small"
+                            sx={{
+                              backgroundColor: 'transparent',
+                              border: `1px solid ${colors.orange}`,
+                              color: colors.orange,
+                            }}
+                          />
+                        ) : app.latestRelease ? (
                           <Chip
                             label={`v${app.latestRelease.version}`}
                             size="small"
                             sx={{ backgroundColor: colors.navyLighter }}
                           />
+                        ) : null}
+                        {app.isActive && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: colors.textMuted }}>
+                            <DownloadIcon sx={{ fontSize: 16 }} />
+                            <Typography variant="caption">{app.totalDownloads}</Typography>
+                          </Box>
                         )}
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: colors.textMuted }}>
-                          <DownloadIcon sx={{ fontSize: 16 }} />
-                          <Typography variant="caption">{app.totalDownloads}</Typography>
-                        </Box>
                       </Box>
                     </CardContent>
                   </Card>

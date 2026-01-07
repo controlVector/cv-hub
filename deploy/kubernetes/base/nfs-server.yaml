@@ -1,0 +1,150 @@
+# NFS Server for shared git repository storage
+# This enables ReadWriteMany access on DigitalOcean where block storage only supports ReadWriteOnce
+#
+# Architecture:
+#   NFS Server Pod (RWO block storage) --> NFS Service --> API/Worker Pods (RWX NFS mount)
+#
+# Note: For production HA, consider using Longhorn or a managed NFS service
+
+---
+# Backing PVC using DigitalOcean block storage (RWO)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-backing-pvc
+  namespace: cv-hub
+  labels:
+    app: nfs-server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: do-block-storage
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+# NFS Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-server
+  namespace: cv-hub
+  labels:
+    app: nfs-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Required for single-attach volumes
+  selector:
+    matchLabels:
+      app: nfs-server
+  template:
+    metadata:
+      labels:
+        app: nfs-server
+    spec:
+      containers:
+        - name: nfs-server
+          image: erichough/nfs-server:latest
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+          ports:
+            - name: nfs
+              containerPort: 2049
+              protocol: TCP
+            - name: nfs-udp
+              containerPort: 2049
+              protocol: UDP
+          env:
+            - name: NFS_EXPORT_0
+              value: "/exports *(rw,sync,no_subtree_check,no_root_squash,insecure)"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: nfs-storage
+              mountPath: /exports
+          readinessProbe:
+            tcpSocket:
+              port: 2049
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 2049
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: nfs-storage
+          persistentVolumeClaim:
+            claimName: nfs-backing-pvc
+
+---
+# NFS Service (internal DNS: nfs-server.cv-hub.svc.cluster.local)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-server
+  namespace: cv-hub
+  labels:
+    app: nfs-server
+spec:
+  type: ClusterIP
+  ports:
+    - name: nfs
+      port: 2049
+      targetPort: 2049
+      protocol: TCP
+  selector:
+    app: nfs-server
+
+---
+# PersistentVolume using NFS
+# This provides ReadWriteMany access to all pods in the cluster
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: git-repos-nfs-pv
+  labels:
+    app: cv-hub
+    storage-type: nfs
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: nfs-server.cv-hub.svc.cluster.local
+    path: /exports
+  mountOptions:
+    - nfsvers=4
+    - noatime
+    - nodiratime
+
+---
+# Git repos PVC (binds to NFS PV)
+# This replaces the original git-repos-pvc from storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos-pvc
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""  # Empty to use manually created PV
+  volumeName: git-repos-nfs-pv
+  resources:
+    requests:
+      storage: 100Gi

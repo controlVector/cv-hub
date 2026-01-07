@@ -9,7 +9,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed-appstore": "tsx src/db/seed-appstore.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "import:github": "tsx scripts/import-github-repos.ts",
+    "sync:repos": "tsx scripts/sync-repos.ts"
   },
   "dependencies": {
     "@cv-hub/shared": "workspace:*",
@@ -30,6 +32,13 @@
     "qrcode": "^1.5.4",
     "redis": "^4.7.0",
     "simple-git": "^3.30.0",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-go": "^0.21.2",
+    "tree-sitter-java": "^0.21.0",
+    "tree-sitter-javascript": "^0.21.1",
+    "tree-sitter-python": "^0.21.0",
+    "tree-sitter-rust": "^0.21.0",
+    "tree-sitter-typescript": "^0.21.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {

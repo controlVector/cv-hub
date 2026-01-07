@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Install build tools for native modules (tree-sitter)
+RUN apk add --no-cache python3 make g++ git
+
 # Install pnpm
 RUN npm install -g pnpm
 
@@ -28,14 +31,14 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install pnpm and git (needed for git operations)
-RUN apk add --no-cache git && npm install -g pnpm
+# Install git (needed for git operations) and libstdc++ for native modules
+RUN apk add --no-cache git libstdc++ && npm install -g pnpm
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 cvhub
 
-# Copy built files
+# Copy built files including native modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
@@ -50,4 +53,4 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV PORT=3000
 
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/index.js"]

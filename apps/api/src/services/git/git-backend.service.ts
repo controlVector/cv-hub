@@ -272,6 +272,46 @@ export async function getTree(
 }
 
 /**
+ * Get all files recursively in the tree
+ * Uses git ls-tree -r to get all blobs in the entire tree
+ */
+export async function getTreeRecursive(
+  ownerSlug: string,
+  repoSlug: string,
+  ref: string
+): Promise<GitTreeEntry[]> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+
+  // Resolve ref to sha
+  const sha = await execGit(repoPath, ['rev-parse', ref]);
+  const commitSha = sha.trim();
+
+  // Get all files recursively with -r flag
+  const output = await execGit(repoPath, ['ls-tree', '-r', '-l', commitSha]);
+  const entries: GitTreeEntry[] = [];
+
+  for (const line of output.split('\n').filter(Boolean)) {
+    // Format: <mode> <type> <sha> <size>\t<path>
+    const match = line.match(/^(\d+)\s+(blob|tree|commit)\s+([a-f0-9]+)\s+(-|\d+)\t(.+)$/);
+    if (match) {
+      const [, mode, type, entrySha, sizeStr, entryPath] = match;
+      const name = entryPath.split('/').pop() || entryPath;
+
+      entries.push({
+        name,
+        path: entryPath,
+        type: type as 'blob' | 'tree' | 'commit',
+        mode,
+        sha: entrySha,
+        size: sizeStr === '-' ? undefined : parseInt(sizeStr, 10),
+      });
+    }
+  }
+
+  return entries;
+}
+
+/**
  * Get blob content
  */
 export async function getBlob(

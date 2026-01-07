@@ -39,7 +39,7 @@ import {
   Verified as VerifiedIcon,
 } from '@mui/icons-material';
 import { colors } from '../../theme';
-import { api } from '../../lib/api';
+import { api, API_BASE_URL } from '../../lib/api';
 import DownloadButton from '../../components/DownloadButton';
 import Markdown from '../../components/Markdown';
 
@@ -701,7 +701,7 @@ function ReleaseItem({ release, appId }: ReleaseItemProps) {
               <ListItem
                 key={asset.id}
                 component="a"
-                href={`/api/v1/apps/${appId}/download/${asset.platform}`}
+                href={`${API_BASE_URL}/v1/apps/${appId}/download/${asset.platform}`}
                 sx={{
                   backgroundColor: colors.navy,
                   borderRadius: 1,

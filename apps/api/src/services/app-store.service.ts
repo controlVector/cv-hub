@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, isNull, or, ilike } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull, or, ilike, type SQL } from 'drizzle-orm';
 import { db } from '../db';
 import {
   apps,
@@ -65,9 +65,18 @@ export async function listApps(filters: AppListFilters = {}): Promise<AppWithLat
   }
 
   // Build where conditions
-  const conditions = [eq(apps.isActive, true)];
+  // For featured apps, include inactive ones (Coming Soon)
+  // For non-featured queries, only show active apps
+  const conditions: SQL[] = [];
+  if (featured === true) {
+    // Featured query: show all featured apps (active or coming soon)
+    conditions.push(eq(apps.isFeatured, true));
+  } else {
+    // Normal query: only active apps
+    conditions.push(eq(apps.isActive, true));
+    if (featured === false) conditions.push(eq(apps.isFeatured, false));
+  }
   if (category) conditions.push(eq(apps.category, category));
-  if (featured !== undefined) conditions.push(eq(apps.isFeatured, featured));
   if (orgIdFilter !== undefined) {
     conditions.push(eq(apps.organizationId, orgIdFilter));
   }

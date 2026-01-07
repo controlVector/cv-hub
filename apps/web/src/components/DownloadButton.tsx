@@ -17,6 +17,7 @@ import {
   Code as LinuxIcon,
 } from '@mui/icons-material';
 import { colors } from '../theme';
+import { API_BASE_URL } from '../lib/api';
 
 interface ReleaseAsset {
   id: string;
@@ -127,7 +128,7 @@ export default function DownloadButton({ appId, release, variant = 'contained' }
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     if (assets.length <= 1 && bestMatch) {
       // Direct download if only one option
-      window.location.href = `/api/v1/apps/${appId}/download/${bestMatch.platform}`;
+      window.location.href = `${API_BASE_URL}/v1/apps/${appId}/download/${bestMatch.platform}`;
     } else {
       setAnchorEl(event.currentTarget);
     }
@@ -138,7 +139,7 @@ export default function DownloadButton({ appId, release, variant = 'contained' }
   };
 
   const handleDownload = (platform: string) => {
-    window.location.href = `/api/v1/apps/${appId}/download/${platform}`;
+    window.location.href = `${API_BASE_URL}/v1/apps/${appId}/download/${platform}`;
     handleClose();
   };
 

@@ -60,7 +60,7 @@ spec:
               value: "http://qdrant:6333"
             - name: FALKORDB_URL
               value: "redis://falkordb:6379"
-            - name: GIT_REPOS_PATH
+            - name: GIT_STORAGE_PATH
               value: "/data/git"
             - name: API_URL
               valueFrom:
@@ -91,13 +91,6 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
-          volumeMounts:
-            - name: git-repos
-              mountPath: /data/git
-      volumes:
-        - name: git-repos
-          persistentVolumeClaim:
-            claimName: git-repos-pvc
 ---
 apiVersion: v1
 kind: Service

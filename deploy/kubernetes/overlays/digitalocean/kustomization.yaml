@@ -81,7 +81,7 @@ patches:
   # HPA adjustments for smaller scale
   - target:
       kind: HorizontalPodAutoscaler
-      name: cv-hub-api-hpa
+      name: cv-hub-api
     patch: |-
       - op: replace
         path: /spec/minReplicas
@@ -89,17 +89,6 @@ patches:
       - op: replace
         path: /spec/maxReplicas
         value: 6
-
-  - target:
-      kind: HorizontalPodAutoscaler
-      name: cv-hub-worker-hpa
-    patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 1
-      - op: replace
-        path: /spec/maxReplicas
-        value: 4
 
 # Use DigitalOcean block storage class for StatefulSets
   - target:
@@ -143,6 +132,7 @@ patches:
         path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
         value: 20Gi
 
+  # Patch git repos storage
   - target:
       kind: PersistentVolumeClaim
       name: git-repos-pvc
@@ -151,11 +141,8 @@ patches:
         path: /spec/storageClassName
         value: do-block-storage
       - op: replace
-        path: /spec/accessModes
-        value: ["ReadWriteOnce"]
-      - op: replace
         path: /spec/resources/requests/storage
-        value: 50Gi
+        value: 100Gi
 
   # Patch ConfigMap with correct URLs
   - target:

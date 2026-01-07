@@ -1,8 +1,23 @@
-# Git repositories persistent volume claim
-# For production at scale, consider:
-# 1. NFS/GlusterFS for shared access
-# 2. Object storage (S3/GCS) with git-lfs
-# 3. Per-organization volume claims
+# Storage configuration for CV-Hub
+#
+# Git repository storage uses DO block storage with ReadWriteOnce access.
+# Only the worker pod mounts this volume for git operations.
+
+---
+# StorageClass for fast SSD (DigitalOcean)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: do-block-storage-xfs
+provisioner: dobs.csi.digitalocean.com
+parameters:
+  fsType: xfs
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# Git repository storage (ReadWriteOnce - only worker mounts this)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -12,24 +27,8 @@ metadata:
     app: cv-hub
 spec:
   accessModes:
-    - ReadWriteMany  # Required for multi-pod access
-  storageClassName: nfs-csi  # Use appropriate CSI driver
+    - ReadWriteOnce
+  storageClassName: do-block-storage
   resources:
     requests:
-      storage: 500Gi
----
-# StorageClass for fast SSD (example for AWS)
-# Adjust for your cloud provider
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-ssd
-provisioner: ebs.csi.aws.com
-parameters:
-  type: gp3
-  iops: "3000"
-  throughput: "125"
-  fsType: ext4
-reclaimPolicy: Retain
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
+      storage: 100Gi

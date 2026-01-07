@@ -24,6 +24,9 @@ import {
   upsertVectors,
   type VectorPoint,
 } from '../vector.service';
+import { CodeParser } from '../parser';
+import type { ParseResult, SymbolInfo, ImportInfo } from '../parser/types';
+import { isCodeFile as parserIsCodeFile, getLanguageFromPath as parserGetLanguage } from '../parser/types';
 
 // Queue name
 const GRAPH_SYNC_QUEUE = 'graph-sync';
@@ -230,18 +233,32 @@ export async function processGraphSync(
     nodesCreated += fileStats.nodesCreated;
     edgesCreated += fileStats.edgesCreated;
 
-    // Step 2: Sync commit nodes
+    // Step 2: Extract symbols with tree-sitter
+    await updateProgress('Extracting symbols', 25);
+    const symbolStats = await syncSymbolNodes(
+      graph,
+      ownerSlug,
+      repo.slug,
+      repo.defaultBranch || 'main',
+      async (step, progress) => {
+        await updateProgress(step, 25 + Math.floor(progress * 0.15));
+      }
+    );
+    nodesCreated += symbolStats.nodesCreated;
+    edgesCreated += symbolStats.edgesCreated;
+
+    // Step 3: Sync commit nodes
     await updateProgress('Syncing commits', 40);
     const commitStats = await syncCommitNodes(graph, repositoryId, ownerSlug, repo.slug);
     nodesCreated += commitStats.nodesCreated;
     edgesCreated += commitStats.edgesCreated;
 
-    // Step 3: Create file relationships
+    // Step 4: Create file relationships
     await updateProgress('Creating relationships', 50);
     const relStats = await createFileRelationships(graph, ownerSlug, repo.slug);
     edgesCreated += relStats.edgesCreated;
 
-    // Step 4: Generate vector embeddings (if service available)
+    // Step 5: Generate vector embeddings (if service available)
     await updateProgress('Generating embeddings', 60);
     const vectorStats = await syncVectorEmbeddings(
       repositoryId,
@@ -254,7 +271,7 @@ export async function processGraphSync(
     );
     vectorsCreated = vectorStats.vectorsCreated;
 
-    // Step 5: Finalize
+    // Step 6: Finalize
     await updateProgress('Finalizing', 95);
 
     // Update job as complete
@@ -352,6 +369,243 @@ async function syncFileNodes(
   }
 
   return { nodesCreated, edgesCreated };
+}
+
+/**
+ * Sync symbol nodes by parsing code files with tree-sitter
+ */
+async function syncSymbolNodes(
+  graph: GraphManager,
+  ownerSlug: string,
+  repoSlug: string,
+  branch: string,
+  onProgress?: (step: string, progress: number) => Promise<void>
+): Promise<{ nodesCreated: number; edgesCreated: number }> {
+  let nodesCreated = 0;
+  let edgesCreated = 0;
+
+  // Initialize parser
+  const parser = new CodeParser();
+  const initResult = await parser.initialize();
+
+  if (!initResult.success) {
+    console.warn(`[GraphSync] Parser initialization issues: ${initResult.errors.join(', ')}`);
+    // Continue anyway - we may be able to parse some languages
+  }
+
+  try {
+    // Get all files recursively
+    const tree = await gitBackend.getTreeRecursive(ownerSlug, repoSlug, branch);
+
+    // Filter to parseable code files
+    const codeFiles = tree.filter(entry =>
+      entry.type === 'blob' &&
+      parserIsCodeFile(entry.path)
+    );
+
+    if (codeFiles.length === 0) {
+      console.log('[GraphSync] No parseable code files found');
+      return { nodesCreated, edgesCreated };
+    }
+
+    console.log(`[GraphSync] Parsing ${codeFiles.length} code files for symbols`);
+
+    // Collect all parsed results for later relationship building
+    const allParseResults: ParseResult[] = [];
+
+    // Process files in batches
+    const batchSize = 20;
+    for (let i = 0; i < codeFiles.length; i += batchSize) {
+      const batch = codeFiles.slice(i, i + batchSize);
+
+      for (const file of batch) {
+        try {
+          // Get file content
+          const blob = await gitBackend.getBlob(ownerSlug, repoSlug, branch, file.path);
+
+          if (blob.isBinary || !blob.content) {
+            continue;
+          }
+
+          // Parse the file
+          const parseResult = await parser.parseFile(file.path, blob.content);
+
+          if (parseResult.errors.length > 0) {
+            console.warn(`[GraphSync] Parse warnings for ${file.path}: ${parseResult.errors.join(', ')}`);
+          }
+
+          allParseResults.push(parseResult);
+
+          // Create symbol nodes
+          for (const symbol of parseResult.symbols) {
+            const symbolNode = {
+              qualifiedName: symbol.qualifiedName,
+              name: symbol.name,
+              kind: symbol.kind as any,
+              file: symbol.file,
+              startLine: symbol.startLine,
+              endLine: symbol.endLine,
+              signature: symbol.signature,
+              docstring: symbol.docstring,
+              returnType: symbol.returnType,
+              visibility: symbol.visibility,
+              isAsync: symbol.isAsync,
+              isStatic: symbol.isStatic,
+              complexity: symbol.complexity,
+            };
+
+            await graph.upsertSymbolNode(symbolNode);
+            nodesCreated++;
+
+            // Create DEFINES edge (File -> Symbol)
+            await graph.createDefinesEdge(symbol.file, symbol.qualifiedName, {
+              line: symbol.startLine
+            });
+            edgesCreated++;
+          }
+
+          // Update file node with LOC and complexity
+          if (parseResult.linesOfCode > 0 || parseResult.symbols.length > 0) {
+            const avgComplexity = parseResult.symbols.length > 0
+              ? Math.round(parseResult.symbols.reduce((sum, s) => sum + s.complexity, 0) / parseResult.symbols.length)
+              : 0;
+
+            await graph.query(
+              `MATCH (f:File {path: $path})
+               SET f.linesOfCode = $loc, f.complexity = $complexity`,
+              { path: file.path, loc: parseResult.linesOfCode, complexity: avgComplexity }
+            );
+          }
+
+        } catch (error: any) {
+          console.warn(`[GraphSync] Error parsing ${file.path}: ${error.message}`);
+        }
+      }
+
+      // Update progress
+      if (onProgress) {
+        await onProgress(
+          `Parsing files (${Math.min(i + batchSize, codeFiles.length)}/${codeFiles.length})`,
+          (i + batchSize) / codeFiles.length
+        );
+      }
+    }
+
+    // Second pass: Create relationships between symbols
+    console.log('[GraphSync] Creating symbol relationships...');
+
+    // Build a map of symbol names to qualified names for resolution
+    const symbolMap = new Map<string, string[]>();
+    for (const result of allParseResults) {
+      for (const symbol of result.symbols) {
+        const existing = symbolMap.get(symbol.name) || [];
+        existing.push(symbol.qualifiedName);
+        symbolMap.set(symbol.name, existing);
+      }
+    }
+
+    // Create CALLS edges
+    for (const result of allParseResults) {
+      for (const symbol of result.symbols) {
+        for (const call of symbol.calls) {
+          // Try to resolve the callee
+          const calleeQualifiedNames = symbolMap.get(call.callee);
+          if (calleeQualifiedNames && calleeQualifiedNames.length > 0) {
+            // Prefer callee in same file, then take first match
+            let calleeQN = calleeQualifiedNames.find(qn => qn.startsWith(symbol.file + ':'))
+                          || calleeQualifiedNames[0];
+
+            try {
+              await graph.createCallsEdge(symbol.qualifiedName, calleeQN, {
+                line: call.line,
+                callCount: 1,
+                isConditional: call.isConditional
+              });
+              edgesCreated++;
+            } catch {
+              // Callee might not exist in graph
+            }
+          }
+        }
+      }
+    }
+
+    // Create IMPORTS edges (File -> File)
+    for (const result of allParseResults) {
+      for (const imp of result.imports) {
+        if (!imp.isExternal) {
+          // Resolve relative import to file path
+          const resolvedPath = resolveImportPath(result.path, imp.source);
+          if (resolvedPath) {
+            try {
+              await graph.createImportsEdge(result.path, resolvedPath, {
+                line: imp.line,
+                importedSymbols: imp.importedSymbols,
+                alias: imp.namespaceImport
+              });
+              edgesCreated++;
+            } catch {
+              // Target file might not be in graph
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[GraphSync] Created ${nodesCreated} symbol nodes and ${edgesCreated} edges`);
+
+  } catch (error: any) {
+    console.error(`[GraphSync] Error syncing symbols: ${error.message}`);
+  }
+
+  return { nodesCreated, edgesCreated };
+}
+
+/**
+ * Resolve relative import path to actual file path
+ */
+function resolveImportPath(fromFile: string, importSource: string): string | null {
+  // Handle relative imports
+  if (!importSource.startsWith('.')) {
+    return null; // External package
+  }
+
+  const fromDir = fromFile.substring(0, fromFile.lastIndexOf('/'));
+  const parts = importSource.split('/');
+  let currentPath = fromDir;
+
+  for (const part of parts) {
+    if (part === '.') {
+      continue;
+    } else if (part === '..') {
+      currentPath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+    } else {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+    }
+  }
+
+  // Try common extensions
+  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'];
+  for (const ext of extensions) {
+    // Direct file
+    if (currentPath.endsWith(ext)) {
+      return currentPath;
+    }
+  }
+
+  // Try adding extensions
+  for (const ext of extensions) {
+    const withExt = `${currentPath}${ext}`;
+    return withExt; // Assume it exists - graph will ignore if not found
+  }
+
+  // Try index file
+  for (const ext of extensions) {
+    const indexPath = `${currentPath}/index${ext}`;
+    return indexPath;
+  }
+
+  return currentPath;
 }
 
 /**
@@ -481,9 +735,9 @@ async function syncVectorEmbeddings(
     await ensureCollection(repositoryId);
     console.log('[GraphSync] Collection ensured, getting file tree...');
 
-    // Get file tree
-    const tree = await gitBackend.getTree(ownerSlug, repoSlug, branch, '');
-    console.log(`[GraphSync] Got ${tree.length} tree entries`);
+    // Get all files recursively
+    const tree = await gitBackend.getTreeRecursive(ownerSlug, repoSlug, branch);
+    console.log(`[GraphSync] Got ${tree.length} files recursively`);
     const codeFiles = tree.filter(entry =>
       entry.type === 'blob' &&
       isCodeFile(entry.path)

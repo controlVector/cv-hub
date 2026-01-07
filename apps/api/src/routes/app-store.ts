@@ -26,7 +26,9 @@ import {
 } from '../services/app-store.service';
 import { syncAppFromGitHub, syncAllApps } from '../services/github-sync.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
+import { getStorage, generateAssetKey } from '../services/storage.service';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
+import { env } from '../config/env';
 import type { AppEnv } from '../app';
 
 const appStore = new Hono<AppEnv>();
@@ -175,7 +177,7 @@ appStore.get('/apps/:appId/releases/:version', async (c) => {
   return c.json({ release });
 });
 
-// GET /api/v1/apps/:appId/download/:platform - Download redirect
+// GET /api/v1/apps/:appId/download/:platform - Download file
 appStore.get('/apps/:appId/download/:platform', async (c) => {
   const appId = c.req.param('appId');
   const platform = c.req.param('platform') as typeof platforms[number];
@@ -189,12 +191,53 @@ appStore.get('/apps/:appId/download/:platform', async (c) => {
     throw new NotFoundError('Release');
   }
 
-  const asset = await getAssetForDownload(release.id, platform);
+  // Get request context for download tracking
+  const meta = getRequestMeta(c);
+  const asset = await getAssetForDownload(release.id, platform, {
+    userAgent: meta.userAgent,
+    ipAddress: meta.ipAddress,
+    eventType: 'download',
+  });
   if (!asset) {
     throw new NotFoundError('Download for this platform');
   }
 
-  // Redirect to the actual download URL
+  // If using S3 storage, stream from our storage
+  if (env.STORAGE_TYPE === 's3') {
+    const storage = getStorage();
+    const storageKey = generateAssetKey(appId, release.version, asset.fileName);
+
+    // Check if file exists in our storage
+    const exists = await storage.exists(storageKey);
+    if (exists) {
+      const fileData = await storage.download(storageKey);
+
+      // Determine content type
+      const ext = asset.fileName.split('.').pop()?.toLowerCase();
+      const contentTypes: Record<string, string> = {
+        'exe': 'application/vnd.microsoft.portable-executable',
+        'msi': 'application/x-msi',
+        'dmg': 'application/x-apple-diskimage',
+        'pkg': 'application/x-newton-compatible-pkg',
+        'deb': 'application/vnd.debian.binary-package',
+        'rpm': 'application/x-rpm',
+        'appimage': 'application/x-executable',
+        'tar.gz': 'application/gzip',
+        'zip': 'application/zip',
+      };
+      const contentType = contentTypes[ext || ''] || 'application/octet-stream';
+
+      return new Response(new Uint8Array(fileData), {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `attachment; filename="${asset.fileName}"`,
+          'Content-Length': fileData.length.toString(),
+        },
+      });
+    }
+  }
+
+  // Fallback: redirect to the stored download URL (GitHub, etc.)
   return c.redirect(asset.downloadUrl);
 });
 
