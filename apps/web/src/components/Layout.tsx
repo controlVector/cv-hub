@@ -91,7 +91,7 @@ export default function Layout() {
         <Box
           component="img"
           src="/logo.png"
-          alt="ControlVector"
+          alt="Control Fabric"
           sx={{
             width: 40,
             height: 40,
@@ -103,21 +103,21 @@ export default function Layout() {
             variant="h6"
             sx={{
               fontWeight: 700,
-              background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+              background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}
           >
-            ControlVector
+            Control Fabric
           </Typography>
           <Typography variant="caption" sx={{ color: colors.textMuted }}>
-            AI-Native Git Platform
+            The AI Development Platform
           </Typography>
         </Box>
       </Box>
 
-      <Divider sx={{ borderColor: colors.navyLighter }} />
+      <Divider sx={{ borderColor: colors.slateLighter }} />
 
       {/* New Repository Button */}
       <Box sx={{ p: 2 }}>
@@ -130,14 +130,14 @@ export default function Layout() {
             gap: 1,
             p: 1.5,
             borderRadius: 2,
-            background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
-            color: colors.navy,
+            background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
+            color: colors.textLight,
             fontWeight: 600,
             cursor: 'pointer',
             transition: 'all 0.2s ease',
             '&:hover': {
               transform: 'translateY(-1px)',
-              boxShadow: `0 4px 15px ${colors.amberGlow}`,
+              boxShadow: `0 4px 15px ${colors.violetGlow}`,
             },
           }}
         >
@@ -160,7 +160,7 @@ export default function Layout() {
               mb: 0.5,
               '&.Mui-selected': {
                 '& .MuiListItemIcon-root': {
-                  color: colors.orange,
+                  color: colors.violet,
                 },
               },
             }}
@@ -177,8 +177,8 @@ export default function Layout() {
                   borderRadius: 1,
                   fontSize: '0.7rem',
                   fontWeight: 600,
-                  background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
-                  color: colors.navy,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                  color: colors.textLight,
                 }}
               >
                 AI
@@ -188,7 +188,7 @@ export default function Layout() {
         ))}
       </List>
 
-      <Divider sx={{ borderColor: colors.navyLighter }} />
+      <Divider sx={{ borderColor: colors.slateLighter }} />
 
       {/* AI Usage Stats */}
       <Box sx={{ p: 2 }}>
@@ -201,7 +201,7 @@ export default function Layout() {
               flex: 1,
               height: 6,
               borderRadius: 3,
-              backgroundColor: colors.navyLighter,
+              backgroundColor: colors.slateLighter,
               overflow: 'hidden',
             }}
           >
@@ -209,7 +209,7 @@ export default function Layout() {
               sx={{
                 width: '35%',
                 height: '100%',
-                background: `linear-gradient(90deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+                background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
                 borderRadius: 3,
               }}
             />
@@ -249,14 +249,14 @@ export default function Layout() {
               maxWidth: 600,
               display: 'flex',
               alignItems: 'center',
-              backgroundColor: colors.navy,
+              backgroundColor: colors.slate,
               borderRadius: 2,
-              border: `1px solid ${colors.navyLighter}`,
+              border: `1px solid ${colors.slateLighter}`,
               px: 2,
               transition: 'all 0.2s ease',
               '&:focus-within': {
-                borderColor: colors.orange,
-                boxShadow: `0 0 0 3px ${colors.amberGlow}`,
+                borderColor: colors.violet,
+                boxShadow: `0 0 0 3px ${colors.violetGlow}`,
               },
             }}
           >
@@ -284,7 +284,7 @@ export default function Layout() {
                 px: 1,
                 py: 0.25,
                 borderRadius: 1,
-                backgroundColor: colors.navyLighter,
+                backgroundColor: colors.slateLighter,
                 fontSize: '0.75rem',
                 color: colors.textMuted,
               }}
@@ -322,7 +322,7 @@ export default function Layout() {
                 p: 0.5,
                 borderRadius: 2,
                 '&:hover': {
-                  backgroundColor: alpha(colors.orange, 0.1),
+                  backgroundColor: alpha(colors.violet, 0.1),
                 },
               }}
             >
@@ -331,7 +331,7 @@ export default function Layout() {
                 sx={{
                   width: 32,
                   height: 32,
-                  background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
                 }}
               >
                 {user?.displayName?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || 'U'}
@@ -367,7 +367,7 @@ export default function Layout() {
               Connections
             </MenuItem>
             <Divider />
-            <MenuItem onClick={() => { handleMenuClose(); logout(); }} sx={{ color: colors.coral }}>
+            <MenuItem onClick={() => { handleMenuClose(); logout(); }} sx={{ color: colors.rose }}>
               Sign Out
             </MenuItem>
           </Menu>
@@ -413,7 +413,7 @@ export default function Layout() {
           flexGrow: 1,
           width: { md: `calc(100% - ${drawerWidth}px)` },
           minHeight: '100vh',
-          backgroundColor: colors.navy,
+          backgroundColor: colors.slate,
         }}
       >
         <Toolbar />

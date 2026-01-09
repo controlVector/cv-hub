@@ -5,6 +5,7 @@ export * from './mfa';
 export * from './oauth';
 export * from './api-keys';
 export * from './organizations';
+export * from './identity-providers';
 export * from './app-store';
 export * from './repositories';
 export * from './embeddings';

@@ -1,39 +1,64 @@
 import { createTheme, alpha } from '@mui/material/styles';
 
-// CV-PRD Color Palette - Dark theme with orange-coral accents
+// Control Fabric Color Palette - Dark theme with purple/violet AI aesthetic
 const colors = {
-  navy: '#1e2a3a',
-  navyLight: '#2a3a4d',
-  navyLighter: '#3a4d63',
-  orange: '#f5a623',
-  coral: '#e85d75',
-  textLight: '#ffffff',
-  textMuted: 'rgba(255, 255, 255, 0.7)',
-  green: '#48bb78',
-  blue: '#4299e1',
-  purple: '#9f7aea',
-  teal: '#38b2ac',
-  amberGlow: 'rgba(245, 166, 35, 0.15)',
+  // Base dark colors
+  slate: '#0f172a',       // Deepest background
+  slateLight: '#1e293b',  // Card/paper background
+  slateLighter: '#334155', // Borders, dividers
+
+  // Primary purple/violet spectrum
+  violet: '#8b5cf6',      // Primary - vibrant violet
+  violetLight: '#a78bfa', // Lighter variant
+  violetDark: '#7c3aed',  // Darker/hover variant
+  purple: '#a855f7',      // Secondary purple
+
+  // Accent colors
+  cyan: '#06b6d4',        // Accent - bright cyan for contrast
+  cyanLight: '#22d3ee',   // Light cyan
+
+  // Text
+  textLight: '#f8fafc',
+  textMuted: 'rgba(248, 250, 252, 0.7)',
+
+  // Status colors
+  green: '#10b981',       // Success - emerald
+  blue: '#3b82f6',        // Info
+  amber: '#f59e0b',       // Warning
+  rose: '#f43f5e',        // Error/danger
+  teal: '#14b8a6',        // Teal
+
+  // Glow effects
+  violetGlow: 'rgba(139, 92, 246, 0.15)',
+  cyanGlow: 'rgba(6, 182, 212, 0.15)',
+
+  // Legacy aliases (for backward compatibility during migration)
+  navy: '#0f172a',        // -> slate
+  navyLight: '#1e293b',   // -> slateLight
+  navyLighter: '#334155', // -> slateLighter
+  orange: '#8b5cf6',      // -> violet (primary)
+  coral: '#f43f5e',       // -> rose (error/accent)
+  amberGlow: 'rgba(139, 92, 246, 0.15)', // -> violetGlow
 };
 
 const theme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: colors.orange,
-      light: '#f7b84d',
-      dark: '#e09518',
-      contrastText: colors.navy,
-    },
-    secondary: {
-      main: colors.coral,
-      light: '#ec7a8f',
-      dark: '#d44a62',
+      main: colors.violet,
+      light: colors.violetLight,
+      dark: colors.violetDark,
       contrastText: colors.textLight,
     },
+    secondary: {
+      main: colors.cyan,
+      light: colors.cyanLight,
+      dark: '#0891b2',
+      contrastText: colors.slate,
+    },
     background: {
-      default: colors.navy,
-      paper: colors.navyLight,
+      default: colors.slate,
+      paper: colors.slateLight,
     },
     text: {
       primary: colors.textLight,
@@ -46,12 +71,12 @@ const theme = createTheme({
       main: colors.blue,
     },
     warning: {
-      main: colors.orange,
+      main: colors.amber,
     },
     error: {
-      main: colors.coral,
+      main: colors.rose,
     },
-    divider: colors.navyLighter,
+    divider: colors.slateLighter,
   },
   typography: {
     fontFamily: [
@@ -103,20 +128,20 @@ const theme = createTheme({
     MuiCssBaseline: {
       styleOverrides: {
         body: {
-          backgroundColor: colors.navy,
-          scrollbarColor: `${colors.navyLighter} ${colors.navy}`,
+          backgroundColor: colors.slate,
+          scrollbarColor: `${colors.slateLighter} ${colors.slate}`,
           '&::-webkit-scrollbar': {
             width: '10px',
           },
           '&::-webkit-scrollbar-track': {
-            background: colors.navy,
+            background: colors.slate,
           },
           '&::-webkit-scrollbar-thumb': {
-            background: colors.navyLighter,
+            background: colors.slateLighter,
             borderRadius: '5px',
           },
           '&::-webkit-scrollbar-thumb:hover': {
-            background: colors.orange,
+            background: colors.violet,
           },
         },
       },
@@ -129,19 +154,19 @@ const theme = createTheme({
           transition: 'all 0.2s ease',
         },
         contained: {
-          background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+          background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
           '&:hover': {
-            background: `linear-gradient(135deg, #e09518 0%, #d44a62 100%)`,
-            boxShadow: `0 4px 15px ${colors.amberGlow}`,
+            background: `linear-gradient(135deg, ${colors.violetDark} 0%, ${colors.violet} 100%)`,
+            boxShadow: `0 4px 15px ${colors.violetGlow}`,
             transform: 'translateY(-1px)',
           },
         },
         outlined: {
-          borderColor: colors.orange,
-          color: colors.orange,
+          borderColor: colors.violet,
+          color: colors.violet,
           '&:hover': {
-            borderColor: colors.orange,
-            backgroundColor: alpha(colors.orange, 0.1),
+            borderColor: colors.violetLight,
+            backgroundColor: alpha(colors.violet, 0.1),
           },
         },
       },
@@ -150,21 +175,21 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          border: `1px solid ${colors.navyLighter}`,
+          border: `1px solid ${colors.slateLighter}`,
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          backgroundColor: colors.navyLight,
-          border: `2px solid ${colors.navyLighter}`,
+          backgroundColor: colors.slateLight,
+          border: `1px solid ${colors.slateLighter}`,
           borderRadius: 12,
           transition: 'all 0.2s ease',
           '&:hover': {
-            borderColor: colors.orange,
-            boxShadow: `0 8px 25px ${colors.amberGlow}`,
-            transform: 'translateY(-3px)',
+            borderColor: colors.violet,
+            boxShadow: `0 8px 25px ${colors.violetGlow}`,
+            transform: 'translateY(-2px)',
           },
         },
       },
@@ -172,8 +197,8 @@ const theme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundColor: colors.navyLight,
-          borderBottom: `1px solid ${colors.navyLighter}`,
+          backgroundColor: colors.slateLight,
+          borderBottom: `1px solid ${colors.slateLighter}`,
           boxShadow: 'none',
         },
       },
@@ -181,8 +206,8 @@ const theme = createTheme({
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          backgroundColor: colors.navyLight,
-          borderRight: `1px solid ${colors.navyLighter}`,
+          backgroundColor: colors.slateLight,
+          borderRight: `1px solid ${colors.slateLighter}`,
         },
       },
     },
@@ -192,12 +217,12 @@ const theme = createTheme({
           borderRadius: 8,
           margin: '2px 8px',
           '&:hover': {
-            backgroundColor: alpha(colors.orange, 0.1),
+            backgroundColor: alpha(colors.violet, 0.1),
           },
           '&.Mui-selected': {
-            backgroundColor: alpha(colors.orange, 0.15),
+            backgroundColor: alpha(colors.violet, 0.15),
             '&:hover': {
-              backgroundColor: alpha(colors.orange, 0.2),
+              backgroundColor: alpha(colors.violet, 0.2),
             },
           },
         },
@@ -209,7 +234,7 @@ const theme = createTheme({
           textTransform: 'none',
           fontWeight: 500,
           '&.Mui-selected': {
-            color: colors.orange,
+            color: colors.violet,
           },
         },
       },
@@ -217,7 +242,7 @@ const theme = createTheme({
     MuiTabs: {
       styleOverrides: {
         indicator: {
-          background: `linear-gradient(90deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+          background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
           height: 3,
         },
       },
@@ -228,7 +253,7 @@ const theme = createTheme({
           borderRadius: 6,
         },
         filled: {
-          backgroundColor: colors.navyLighter,
+          backgroundColor: colors.slateLighter,
         },
       },
     },
@@ -236,16 +261,16 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            backgroundColor: colors.navy,
+            backgroundColor: colors.slate,
             '& fieldset': {
-              borderColor: colors.navyLighter,
+              borderColor: colors.slateLighter,
             },
             '&:hover fieldset': {
-              borderColor: colors.orange,
+              borderColor: colors.violet,
             },
             '&.Mui-focused fieldset': {
-              borderColor: colors.orange,
-              boxShadow: `0 0 0 3px ${colors.amberGlow}`,
+              borderColor: colors.violet,
+              boxShadow: `0 0 0 3px ${colors.violetGlow}`,
             },
           },
         },
@@ -254,16 +279,16 @@ const theme = createTheme({
     MuiDialog: {
       styleOverrides: {
         paper: {
-          backgroundColor: colors.navyLight,
-          border: `1px solid ${colors.navyLighter}`,
+          backgroundColor: colors.slateLight,
+          border: `1px solid ${colors.slateLighter}`,
         },
       },
     },
     MuiTooltip: {
       styleOverrides: {
         tooltip: {
-          backgroundColor: colors.navyLighter,
-          border: `1px solid ${colors.orange}`,
+          backgroundColor: colors.slateLighter,
+          border: `1px solid ${colors.violet}`,
           fontSize: '0.85rem',
         },
       },
