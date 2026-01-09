@@ -37,3 +37,7 @@ apps/api/drizzle
 .cv/
 apps/web/coverage/
 apps/api/git-repos/
+
+# Temporary files
+*.cv.zip
+mcp_gateway_prd*.md

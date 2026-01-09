@@ -26,3 +26,9 @@ export const passwordCredentials = pgTable('password_credentials', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Type exports
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type PasswordCredential = typeof passwordCredentials.$inferSelect;
+export type NewPasswordCredential = typeof passwordCredentials.$inferInsert;

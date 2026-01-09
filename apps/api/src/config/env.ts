@@ -68,6 +68,18 @@ const envSchema = z.object({
   // Graph Sync Worker Settings
   GRAPH_SYNC_CONCURRENCY: z.coerce.number().default(2),
   GRAPH_SYNC_TIMEOUT: z.coerce.number().default(600000), // 10 minutes
+
+  // Feature Flags
+  SSO_ENABLED: z.string().transform(v => v === 'true').default('false'),
+
+  // SSO Configuration (only used when SSO_ENABLED is true)
+  SSO_DEFAULT_IDP_ISSUER: z.string().url().optional(),
+  SSO_DEFAULT_IDP_CLIENT_ID: z.string().optional(),
+  SSO_DEFAULT_IDP_CLIENT_SECRET: z.string().optional(),
+
+  // Branding (for Control Fabric)
+  APP_NAME: z.string().default('Control Fabric'),
+  APP_TAGLINE: z.string().default('The AI Development Platform'),
 });
 
 export type Env = z.infer<typeof envSchema>;
