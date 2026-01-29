@@ -39,6 +39,7 @@ import {
   CodeBrowser,
   FileViewer,
 } from '../components/repository';
+import { PipelinesList } from '../components/ci-cd';
 
 function RepositoryDetailContent() {
   const navigate = useNavigate();
@@ -316,11 +317,7 @@ function RepositoryDetailContent() {
       )}
 
       {tabValue === 3 && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: colors.textMuted }}>
-            Actions coming soon
-          </Typography>
-        </Box>
+        <PipelinesList owner={owner} repo={repo} />
       )}
 
       {tabValue === 4 && (

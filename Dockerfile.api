@@ -57,6 +57,10 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/package.prod.json ./package.json
 
+# Copy drizzle config and migrations for database management
+COPY --from=builder --chown=cvhub:nodejs /app/apps/api/drizzle.config.js ./drizzle.config.js
+COPY --from=builder --chown=cvhub:nodejs /app/apps/api/drizzle ./drizzle
+
 # Install production dependencies fresh (npm handles flat structure better than pnpm)
 # Note: tree-sitter packages will be installed but may need rebuild - parser handles gracefully
 RUN npm install --omit=dev

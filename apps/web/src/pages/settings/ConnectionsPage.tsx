@@ -258,7 +258,7 @@ export default function ConnectionsPage() {
             Your GitHub Repositories
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            These repositories can be imported to CV-Hub.
+            These repositories can be imported to AI Control Fabric.
           </Typography>
 
           <List>

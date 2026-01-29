@@ -22,8 +22,8 @@ COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 
 # Build arguments for environment
-ARG VITE_API_URL=https://api.hub.controlvector.io/api
-ARG VITE_APP_URL=https://hub.controlvector.io
+ARG VITE_API_URL=https://api.hub.controlfab.ai/api
+ARG VITE_APP_URL=https://hub.controlfab.ai
 
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_URL=$VITE_APP_URL

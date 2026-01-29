@@ -17,7 +17,7 @@
 import { env } from '../config/env';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-type LogCategory = 'auth' | 'oauth' | 'db' | 'mfa' | 'api' | 'general';
+type LogCategory = 'auth' | 'oauth' | 'db' | 'mfa' | 'api' | 'general' | 'ci';
 
 interface LogContext {
   [key: string]: unknown;
