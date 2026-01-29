@@ -352,10 +352,10 @@ export async function sendEmail(options: EmailData): Promise<boolean> {
     const content = template(options.data);
     const transport = getTransporter();
 
-    const fromAddress = env.EMAIL_FROM || 'noreply@controlvector.com';
+    const fromAddress = env.EMAIL_FROM || 'noreply@controlfab.ai';
 
     const info = await transport.sendMail({
-      from: `"Control Vector" <${fromAddress}>`,
+      from: `"Control Fabric" <${fromAddress}>`,
       to: options.to,
       subject: content.subject,
       text: content.text,

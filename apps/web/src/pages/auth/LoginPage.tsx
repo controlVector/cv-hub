@@ -275,7 +275,7 @@ export default function LoginPage() {
             Sign In
           </Typography>
           <Typography variant="body2" align="center" sx={{ mb: 3, color: 'rgba(255,255,255,0.7)' }}>
-            Welcome back to ControlVector
+            Welcome back to Control Fabric
           </Typography>
 
           {error && (

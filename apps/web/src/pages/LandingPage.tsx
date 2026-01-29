@@ -108,10 +108,19 @@ export default function LandingPage() {
       {/* Navigation */}
       <AppBar position="static" sx={{ backgroundColor: 'transparent', boxShadow: 'none' }}>
         <Toolbar sx={{ justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <img src="/logo.png" alt="CV-Hub" style={{ height: 32 }} />
-            <Typography variant="h6" sx={{ fontWeight: 700, color: extendedColors.text }}>
-              CV-Hub
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <img src="/logo.png" alt="AI Control Fabric" style={{ height: 36, borderRadius: 8 }} />
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 700,
+                background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              AI Control Fabric
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -375,7 +384,7 @@ export default function LandingPage() {
             Ready to get started?
           </Typography>
           <Typography variant="body1" sx={{ color: colors.textMuted, mb: 3 }}>
-            Join developers using CV-Hub to build better software with AI assistance.
+            Join developers using AI Control Fabric to build better software with AI assistance.
           </Typography>
           <Button
             variant="contained"
@@ -399,10 +408,33 @@ export default function LandingPage() {
       {/* Footer */}
       <Box sx={{ borderTop: `1px solid ${extendedColors.border}`, py: 3 }}>
         <Container maxWidth="lg">
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ color: colors.textMuted }}>
-              &copy; 2026 ControlVector. All rights reserved.
-            </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                &copy; 2026 Control Fabric. All rights reserved.
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: colors.textMuted,
+                  fontSize: '0.8rem',
+                }}
+              >
+                powered by{' '}
+                <Box
+                  component="span"
+                  sx={{
+                    background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontWeight: 600,
+                  }}
+                >
+                  Control Fabric
+                </Box>
+              </Typography>
+            </Box>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button size="small" sx={{ color: colors.textMuted }}>
                 Documentation

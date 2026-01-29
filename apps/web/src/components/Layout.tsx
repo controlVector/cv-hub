@@ -107,12 +107,10 @@ export default function Layout() {
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
+              lineHeight: 1.2,
             }}
           >
-            Control Fabric
-          </Typography>
-          <Typography variant="caption" sx={{ color: colors.textMuted }}>
-            The AI Development Platform
+            AI Control Fabric
           </Typography>
         </Box>
       </Box>
@@ -218,6 +216,32 @@ export default function Layout() {
             3.5K/10K
           </Typography>
         </Box>
+      </Box>
+
+      {/* Powered By Footer */}
+      <Box sx={{ p: 2, pt: 0, textAlign: 'center' }}>
+        <Typography
+          variant="caption"
+          sx={{
+            color: colors.textMuted,
+            fontSize: '0.7rem',
+            opacity: 0.7,
+          }}
+        >
+          powered by{' '}
+          <Box
+            component="span"
+            sx={{
+              background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              fontWeight: 600,
+            }}
+          >
+            Control Fabric
+          </Box>
+        </Typography>
       </Box>
     </Box>
   );

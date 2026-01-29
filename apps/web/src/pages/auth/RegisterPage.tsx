@@ -82,7 +82,7 @@ export default function RegisterPage() {
             Create Account
           </Typography>
           <Typography variant="body2" align="center" sx={{ mb: 3, color: 'rgba(255,255,255,0.7)' }}>
-            Join ControlVector today
+            Join Control Fabric today
           </Typography>
 
           {error && (

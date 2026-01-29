@@ -184,7 +184,7 @@ export async function retrieveContext(
  * Build the system prompt with context
  */
 function buildSystemPrompt(context: AssistantContext, commandType?: string): string {
-  let prompt = `You are an intelligent code assistant for ControlVector Hub. You help developers understand, navigate, and work with their codebase.
+  let prompt = `You are an intelligent code assistant for Control Fabric Hub. You help developers understand, navigate, and work with their codebase.
 
 You have access to the following context from the repository's knowledge graph and code search:
 `;
@@ -308,7 +308,7 @@ export async function chat(
       'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': env.APP_URL,
-      'X-Title': 'ControlVector Hub',
+      'X-Title': 'Control Fabric Hub',
     },
     body: JSON.stringify({
       model,

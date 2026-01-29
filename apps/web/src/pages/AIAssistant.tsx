@@ -84,7 +84,7 @@ const commandTypes = [
 const welcomeMessage: Message = {
   id: 'welcome',
   role: 'assistant',
-  content: `Welcome to the ControlVector AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
+  content: `Welcome to the Control Fabric AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
 
 **Available commands:**
 - **explain** - Get detailed explanations of functions, files, or concepts

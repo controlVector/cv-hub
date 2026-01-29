@@ -263,7 +263,7 @@ export async function generateEmbedding(
       'Authorization': `Bearer ${effectiveConfig.apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': env.APP_URL,
-      'X-Title': 'ControlVector Hub',
+      'X-Title': 'Control Fabric Hub',
     },
     body: JSON.stringify({
       model: effectiveConfig.model,
@@ -327,7 +327,7 @@ export async function generateEmbeddingsBatch(
         'Authorization': `Bearer ${effectiveConfig.apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': env.APP_URL,
-        'X-Title': 'ControlVector Hub',
+        'X-Title': 'Control Fabric Hub',
       },
       body: JSON.stringify({
         model: effectiveConfig.model,

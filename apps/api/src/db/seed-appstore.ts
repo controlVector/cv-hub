@@ -6,16 +6,16 @@ import { apps, releases, releaseAssets, organizations, organizationMembers, user
 import { eq } from 'drizzle-orm';
 
 // Configuration - update these for your environment
-const API_URL = process.env.API_URL || 'https://api.hub.controlvector.io';
-const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || 'https://storage.hub.controlvector.io';
-const ORG_LOGO_URL = 'https://hub.controlvector.io/assets/cv-logo.png';
+const API_URL = process.env.API_URL || 'https://api.hub.controlfab.ai';
+const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || 'https://releases.hub.controlfab.ai';
+const ORG_LOGO_URL = 'https://hub.controlfab.ai/logo.png';
 
 /**
  * Seed script for App Store
  *
  * Run with: pnpm run db:seed-appstore
  *
- * This creates the ControlVector organization and its apps (cv-git, cv-prd, cv-hub).
+ * This creates the Control Fabric organization and its apps (cv-git, cv-prd, cv-hub, mcp-gateway).
  * Download URLs will point to storage - upload actual binaries separately.
  */
 
@@ -32,12 +32,12 @@ async function seed() {
 
   // Check if already seeded
   const existingOrg = await db.query.organizations.findFirst({
-    where: eq(organizations.slug, 'controlvector'),
+    where: eq(organizations.slug, 'controlfabric'),
   });
 
   if (existingOrg) {
     console.log('');
-    console.log('⚠️  ControlVector organization already exists.');
+    console.log('⚠️  Control Fabric organization already exists.');
     console.log('   Run with --force to recreate, or update releases manually.');
 
     // Just update asset URLs to current storage URL
@@ -64,14 +64,14 @@ async function seed() {
 
   // Create organization
   console.log('');
-  console.log('📦 Creating ControlVector organization...');
+  console.log('📦 Creating Control Fabric organization...');
 
-  const [controlvectorOrg] = await db.insert(organizations).values({
-    slug: 'controlvector',
-    name: 'ControlVector',
+  const [controlfabricOrg] = await db.insert(organizations).values({
+    slug: 'controlfabric',
+    name: 'Control Fabric',
     description: 'AI-powered developer tools for the modern software team. Building intelligent applications that understand code.',
     logoUrl: ORG_LOGO_URL,
-    websiteUrl: 'https://controlvector.io',
+    websiteUrl: 'https://controlfab.ai',
     isPublic: true,
     isVerified: true,
   }).returning();
@@ -80,7 +80,7 @@ async function seed() {
   const existingUser = await db.query.users.findFirst();
   if (existingUser) {
     await db.insert(organizationMembers).values({
-      organizationId: controlvectorOrg.id,
+      organizationId: controlfabricOrg.id,
       userId: existingUser.id,
       role: 'owner',
       acceptedAt: new Date(),
@@ -95,7 +95,7 @@ async function seed() {
   await db.insert(apps).values([
     {
       id: 'cv-git',
-      organizationId: controlvectorOrg.id,
+      organizationId: controlfabricOrg.id,
       name: 'CV-Git',
       description: 'AI-powered Git client with knowledge graphs, semantic code search, and intelligent code analysis.',
       longDescription: `# CV-Git
@@ -141,15 +141,15 @@ Search your code using natural language. Find functions by what they do, not jus
 CV-Git processes your code locally. Your code is never sent to external servers unless you explicitly enable cloud features.`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlvector.io/apps/cv-git',
-      repositoryUrl: 'https://hub.controlvector.io/controlvector/cv-git',
+      homepageUrl: 'https://hub.controlfab.ai/apps/cv-git',
+      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-git',
       isActive: true,
       isFeatured: true,
       totalDownloads: 0,
     },
     {
       id: 'cv-prd',
-      organizationId: controlvectorOrg.id,
+      organizationId: controlfabricOrg.id,
       name: 'CV-PRD',
       description: 'AI-powered product requirements document manager with semantic search and knowledge graph visualization.',
       longDescription: `# CV-PRD
@@ -184,15 +184,15 @@ Visualize relationships between features, requirements, and dependencies.
 - **Docker**: Required for local database services`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlvector.io/apps/cv-prd',
-      repositoryUrl: 'https://hub.controlvector.io/controlvector/cv-prd',
+      homepageUrl: 'https://hub.controlfab.ai/apps/cv-prd',
+      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-prd',
       isActive: true,
       isFeatured: true,
       totalDownloads: 0,
     },
     {
       id: 'cv-hub',
-      organizationId: controlvectorOrg.id,
+      organizationId: controlfabricOrg.id,
       name: 'CV-Hub',
       description: 'Self-hosted Git platform with AI-powered code intelligence, semantic search, and knowledge graphs.',
       longDescription: `# CV-Hub
@@ -223,58 +223,63 @@ CV-Hub can be deployed on:
 - **Docker Compose** (for development/small teams)
 - **Single server** (for personal use)
 
-See deployment documentation at https://hub.controlvector.io/docs`,
+See deployment documentation at https://hub.controlfab.ai/docs`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlvector.io',
-      repositoryUrl: 'https://hub.controlvector.io/controlvector/cv-hub',
+      homepageUrl: 'https://hub.controlfab.ai',
+      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-hub',
       isActive: true,
       isFeatured: false,
       totalDownloads: 0,
     },
     {
-      id: 'cv-parts',
-      organizationId: controlvectorOrg.id,
-      name: 'CV-Parts',
-      description: 'AI-powered component library manager. Catalog, search, and reuse UI components across projects with semantic understanding.',
-      longDescription: `# CV-Parts
+      id: 'mcp-gateway',
+      organizationId: controlfabricOrg.id,
+      name: 'MCP Gateway',
+      description: 'Enterprise MCP server management platform. Centralized tool orchestration, team-based access control, and SSO integration for AI agents.',
+      longDescription: `# MCP Gateway
 
-CV-Parts is an intelligent component library manager that helps teams catalog, discover, and reuse UI components.
+MCP Gateway is an enterprise-grade platform for managing Model Context Protocol (MCP) servers, enabling teams to securely orchestrate AI agent tools at scale.
 
 ## Features
 
-### 🧩 Component Catalog
-- Automatically scan codebases for reusable components
-- Visual preview of components with props
-- Usage examples and documentation
+### 🔧 Server Management
+- Centralized dashboard for all MCP servers
+- One-click server deployment and configuration
+- Health monitoring and auto-restart
 
-### 🔍 Semantic Search
-Find components using natural language: "button with loading state" or "card with image header"
+### 👥 Team-Based Access Control
+- Role-based permissions (super_admin, tenant_admin, developer, member, viewer)
+- Team-scoped tool visibility
+- Fine-grained permission management
 
-### 🧠 AI Analysis
-- Automatic component classification
-- Similarity detection across projects
-- Accessibility audit suggestions
-- Performance recommendations
+### 🔐 Enterprise Security
+- SSO integration (Azure AD, Okta, Google, GitHub)
+- API token management with scopes
+- Audit logging for compliance
 
-### 📊 Usage Analytics
-- Track component usage across projects
-- Identify dead components
-- Spot opportunities for consolidation
+### 🛠️ Tool Orchestration
+- Virtual server compositions
+- Tool discovery and cataloging
+- Cross-server tool routing
 
-### 🔗 Integration
-- VS Code extension for inline component search
-- Figma plugin for design-to-code mapping
-- Storybook integration
+### 📊 Observability
+- Request tracing and logging
+- Usage analytics per team/user
+- Performance metrics
 
-## Coming Soon
+## Getting Started
 
-CV-Parts is currently in development. Sign up for early access at https://controlvector.io/cv-parts`,
+Visit [mcp.controlfab.ai](https://mcp.controlfab.ai) to access the hosted MCP Gateway or deploy your own instance.
+
+## Documentation
+
+Full documentation available at https://mcp.controlfab.ai/docs`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlvector.io/apps/cv-parts',
-      repositoryUrl: 'https://hub.controlvector.io/controlvector/cv-parts',
-      isActive: false, // Coming soon - no downloads yet
+      homepageUrl: 'https://mcp.controlfab.ai',
+      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/mcp-gateway',
+      isActive: true,
       isFeatured: true,
       totalDownloads: 0,
     },
@@ -283,7 +288,7 @@ CV-Parts is currently in development. Sign up for early access at https://contro
   console.log('   ✓ cv-git');
   console.log('   ✓ cv-prd');
   console.log('   ✓ cv-hub');
-  console.log('   ✓ cv-parts (coming soon)');
+  console.log('   ✓ mcp-gateway');
 
   // Create releases for cv-git
   console.log('');
@@ -291,13 +296,33 @@ CV-Parts is currently in development. Sign up for early access at https://contro
 
   const cvGitRelease = await db.insert(releases).values({
     appId: 'cv-git',
-    version: '0.4.3',
-    releaseNotes: `## CV-Git 0.4.3
+    version: '0.5.0',
+    releaseNotes: `## CV-Git 0.5.0 - User Mode & Mac Support
 
 ### What's New
-- Support for OpenRouter embeddings in AI commands
-- Improved model configuration with valid defaults
-- APT repository for easy Linux installation
+- **User Mode Installation**: CV-Git now installs in user mode (~/cv-hub) by default, no root required
+- **Full macOS Support**: Native builds for both Intel (x64) and Apple Silicon (ARM64)
+- **Improved Windows Support**: Better installation experience on Windows x64
+
+### Platform Support
+- **Windows x64**: cv-windows-x64.exe
+- **macOS Intel (x64)**: cv-macos-x64
+- **macOS Apple Silicon (arm64)**: cv-macos-arm64
+- **Linux (Debian/Ubuntu)**: cv-git_0.5.0_amd64.deb
+
+### Installation
+
+**Quick Install (Linux/macOS):**
+\`\`\`bash
+curl -fsSL https://hub.controlfab.ai/install.sh | bash
+\`\`\`
+
+**Post-Installation:**
+\`\`\`bash
+cv doctor    # Verify installation
+cv init      # Initialize configuration
+cv sync      # Build knowledge graph
+\`\`\`
 
 ### Features
 - Knowledge graph generation for repositories
@@ -306,20 +331,12 @@ CV-Parts is currently in development. Sign up for early access at https://contro
 - Branch comparison and visualization
 - MCP (Model Context Protocol) integration
 
-### Installation
-Download the installer for your platform below, or on Linux:
-\`\`\`bash
-curl -fsSL https://apt.controlvector.io/gpg.pub | sudo gpg --dearmor -o /usr/share/keyrings/controlvector.gpg
-echo "deb [signed-by=/usr/share/keyrings/controlvector.gpg] https://apt.controlvector.io stable main" | sudo tee /etc/apt/sources.list.d/controlvector.list
-sudo apt update && sudo apt install cv-git
-\`\`\`
-
 ### Feedback
-Report issues at https://github.com/controlVector/cv-git/issues`,
+Report issues at https://hub.controlfab.ai/controlfabric/cv-git/issues`,
     isPrerelease: false,
     isLatest: true,
     downloadCount: 0,
-    publishedAt: new Date(),
+    publishedAt: new Date('2026-01-21T14:43:00Z'),
   }).returning();
 
   const cvPrdRelease = await db.insert(releases).values({
@@ -344,53 +361,53 @@ Report issues at https://github.com/controlVector/cv-git/issues`,
     publishedAt: new Date(),
   }).returning();
 
-  console.log('   ✓ cv-git v0.4.3');
+  console.log('   ✓ cv-git v0.5.0');
   console.log('   ✓ cv-prd v0.2.0');
 
   // Create release assets
   console.log('');
   console.log('📥 Creating download assets...');
 
-  // CV-Git assets
+  // CV-Git assets for v0.5.0
   await db.insert(releaseAssets).values([
     {
       releaseId: cvGitRelease[0].id,
       platform: 'windows-x64',
-      fileName: 'cv-git_0.4.3_x64-setup.exe',
+      fileName: 'cv-windows-x64.exe',
       fileSize: 85000000, // ~85MB
       fileHash: 'placeholder-update-after-upload',
       signature: 'placeholder-update-after-upload',
-      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.4.3/cv-git_0.4.3_x64-setup.exe`,
+      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.5.0/cv-windows-x64.exe`,
       downloadCount: 0,
     },
     {
       releaseId: cvGitRelease[0].id,
       platform: 'macos-arm64',
-      fileName: 'cv-git_0.4.3_aarch64.dmg',
+      fileName: 'cv-macos-arm64',
       fileSize: 78000000,
       fileHash: 'placeholder-update-after-upload',
       signature: 'placeholder-update-after-upload',
-      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.4.3/cv-git_0.4.3_aarch64.dmg`,
+      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.5.0/cv-macos-arm64`,
       downloadCount: 0,
     },
     {
       releaseId: cvGitRelease[0].id,
       platform: 'macos-x64',
-      fileName: 'cv-git_0.4.3_x64.dmg',
+      fileName: 'cv-macos-x64',
       fileSize: 80000000,
       fileHash: 'placeholder-update-after-upload',
       signature: 'placeholder-update-after-upload',
-      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.4.3/cv-git_0.4.3_x64.dmg`,
+      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.5.0/cv-macos-x64`,
       downloadCount: 0,
     },
     {
       releaseId: cvGitRelease[0].id,
       platform: 'linux-x64',
-      fileName: 'cv-git_0.4.3_amd64.AppImage',
+      fileName: 'cv-git_0.5.0_amd64.deb',
       fileSize: 75000000,
       fileHash: 'placeholder-update-after-upload',
       signature: 'placeholder-update-after-upload',
-      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.4.3/cv-git_0.4.3_amd64.AppImage`,
+      downloadUrl: `${STORAGE_BASE_URL}/releases/cv-git/0.5.0/cv-git_0.5.0_amd64.deb`,
       downloadCount: 0,
     },
   ]);
@@ -448,20 +465,20 @@ Report issues at https://github.com/controlVector/cv-git/issues`,
   console.log('═══════════════════════════════════════════════════════════════');
   console.log('');
   console.log('Created:');
-  console.log('  • 1 organization: controlvector');
-  console.log('  • 4 apps: cv-git, cv-prd, cv-hub, cv-parts');
+  console.log('  • 1 organization: controlfabric');
+  console.log('  • 4 apps: cv-git, cv-prd, cv-hub, mcp-gateway');
   console.log('  • 2 releases with 8 platform assets');
   console.log('');
   console.log('Next steps:');
   console.log('  1. Upload actual binaries to storage:');
-  console.log(`     ${STORAGE_BASE_URL}/releases/cv-git/0.4.3/`);
+  console.log(`     ${STORAGE_BASE_URL}/releases/cv-git/0.5.0/`);
   console.log('  2. Update file hashes and signatures in the database');
   console.log('  3. Test downloads at:');
-  console.log('     https://hub.controlvector.io/apps/cv-git');
-  console.log('     https://hub.controlvector.io/apps/cv-prd');
+  console.log('     https://hub.controlfab.ai/apps/cv-git');
+  console.log('     https://hub.controlfab.ai/apps/cv-prd');
   console.log('');
   console.log('Organization storefront:');
-  console.log('  https://hub.controlvector.io/orgs/controlvector');
+  console.log('  https://hub.controlfab.ai/orgs/controlfabric');
   console.log('');
 
   await pool.end();

@@ -174,7 +174,7 @@ export default function AppStore() {
           App Store
         </Typography>
         <Typography variant="body1" sx={{ color: colors.textMuted }}>
-          Discover and download Control Vector applications
+          Discover and download Control Fabric applications
         </Typography>
       </Box>
 

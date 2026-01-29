@@ -21,8 +21,8 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 COPY . .
 
 # Build arguments for environment
-ARG VITE_API_URL=https://api.hub.controlvector.io
-ARG VITE_APP_URL=https://hub.controlvector.io
+ARG VITE_API_URL=https://api.hub.controlfab.ai
+ARG VITE_APP_URL=https://hub.controlfab.ai
 
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_URL=$VITE_APP_URL
