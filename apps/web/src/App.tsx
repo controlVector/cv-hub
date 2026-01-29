@@ -36,6 +36,12 @@ import OrganizationSettings from './pages/orgs/OrganizationSettings';
 import CommitHistoryPage from './pages/CommitHistoryPage';
 import CommitDetailPage from './pages/CommitDetailPage';
 import BlamePage from './pages/BlamePage';
+import {
+  PipelineRunsPage,
+  RunDetailPage,
+  PipelineWizardPage,
+  PipelineEditorPage,
+} from './pages/ci-cd';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +98,11 @@ function App() {
                 <Route path="repositories/:owner/:repo/commit/:sha" element={<CommitDetailPage />} />
                 <Route path="repositories/:owner/:repo/commits/*" element={<CommitHistoryPage />} />
                 <Route path="repositories/:owner/:repo/blame/*" element={<BlamePage />} />
+                {/* CI/CD Routes */}
+                <Route path="repositories/:owner/:repo/pipelines/new" element={<PipelineWizardPage />} />
+                <Route path="repositories/:owner/:repo/pipelines/:slug" element={<PipelineRunsPage />} />
+                <Route path="repositories/:owner/:repo/pipelines/:slug/edit" element={<PipelineEditorPage />} />
+                <Route path="repositories/:owner/:repo/pipelines/:slug/runs/:number" element={<RunDetailPage />} />
                 <Route path="repositories/:owner/:repo/*" element={<RepositoryDetail />} />
                 <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="pull-requests" element={<PullRequests />} />

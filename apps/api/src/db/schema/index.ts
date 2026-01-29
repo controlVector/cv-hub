@@ -10,3 +10,4 @@ export * from './app-store';
 export * from './repositories';
 export * from './embeddings';
 export * from './user-connections';
+export * from './ci-cd';

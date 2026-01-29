@@ -22,6 +22,7 @@ import assistantRoutes from './routes/assistant';
 import prRoutes from './routes/pull-requests';
 import issueRoutes from './routes/issues';
 import { githubOAuthRoutes } from './routes/github-oauth';
+import cicdRoutes from './routes/ci-cd';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -93,6 +94,9 @@ app.route('/api/storage', storageRoutes);
 
 // GitHub OAuth (for connecting GitHub accounts)
 app.route('/api/github', githubOAuthRoutes);
+
+// CI/CD API (pipelines, runs, MCP tools)
+app.route('/api/v1', cicdRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {
