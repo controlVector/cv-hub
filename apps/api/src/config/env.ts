@@ -53,6 +53,12 @@ const envSchema = z.object({
   GIT_STORAGE_PATH: z.string().default('./git-repos'),
   GIT_HOOK_SECRET: z.string().min(16).optional(),
 
+  // SSH Server (for git operations)
+  SSH_ENABLED: z.string().transform(v => v === 'true').default('false'),
+  SSH_PORT: z.coerce.number().default(2222), // Default to 2222 (non-privileged port)
+  SSH_HOST_KEY_PATH: z.string().optional(), // Path to host key file
+  SSH_HOST: z.string().default('0.0.0.0'),
+
   // FalkorDB (Graph Database - same as cv-git)
   FALKORDB_URL: z.string().url().default('redis://localhost:6381'),
   FALKORDB_PASSWORD: z.string().optional(),
@@ -80,6 +86,15 @@ const envSchema = z.object({
   // Branding (for Control Fabric)
   APP_NAME: z.string().default('Control Fabric'),
   APP_TAGLINE: z.string().default('The AI Development Platform'),
+
+  // Stripe (for payments)
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
+
+  // Stripe Price IDs (configured in Stripe dashboard)
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

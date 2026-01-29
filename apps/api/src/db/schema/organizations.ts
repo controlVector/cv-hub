@@ -53,6 +53,9 @@ export const organizations = pgTable('organizations', {
   isPublic: boolean('is_public').default(true).notNull(), // Public orgs are visible to everyone
   isVerified: boolean('is_verified').default(false).notNull(), // Verified badge
 
+  // Billing
+  stripeCustomerId: varchar('stripe_customer_id', { length: 255 }), // Stripe customer ID for paid orgs
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -60,6 +63,7 @@ export const organizations = pgTable('organizations', {
   index('organizations_is_public_idx').on(table.isPublic),
   index('organizations_custom_domain_idx').on(table.customDomain),
   index('organizations_instance_type_idx').on(table.instanceType),
+  index('organizations_stripe_customer_idx').on(table.stripeCustomerId),
 ]);
 
 // Organization members table

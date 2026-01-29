@@ -42,6 +42,8 @@ import {
   PipelineWizardPage,
   PipelineEditorPage,
 } from './pages/ci-cd';
+import { PricingPage } from './pages/pricing';
+import EnvironmentPage from './pages/settings/EnvironmentPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,6 +85,9 @@ function App() {
               <Route path="/apps/:appId" element={<AppDetail />} />
               <Route path="/orgs/:slug" element={<OrganizationStorefront />} />
 
+              {/* Public pricing page */}
+              <Route path="/pricing" element={<PricingPage />} />
+
               {/* Protected routes */}
               <Route
                 path="/dashboard"
@@ -111,6 +116,7 @@ function App() {
                 <Route path="settings/security" element={<SecurityPage />} />
                 <Route path="settings/developer" element={<DeveloperPage />} />
                 <Route path="settings/connections" element={<ConnectionsPage />} />
+                <Route path="settings/environment" element={<EnvironmentPage />} />
                 <Route path="features/submit" element={<SubmitFeatureRequest />} />
                 <Route path="features/my-requests" element={<MyFeatureRequests />} />
                 <Route path="orgs" element={<OrganizationList />} />

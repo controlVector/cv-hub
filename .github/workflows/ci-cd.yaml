@@ -2,10 +2,10 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 env:
   REGISTRY: ghcr.io
@@ -125,6 +125,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
+      - name: Set environment URLs
+        id: urls
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "api_url=https://dev.api.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "app_url=https://dev.hub.controlfab.ai" >> $GITHUB_OUTPUT
+          else
+            echo "api_url=${{ vars.VITE_API_URL || 'https://api.hub.controlfab.ai' }}" >> $GITHUB_OUTPUT
+            echo "app_url=${{ vars.VITE_APP_URL || 'https://hub.controlfab.ai' }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -134,8 +145,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VITE_API_URL=${{ vars.VITE_API_URL || 'https://api.hub.controlvector.io' }}
-            VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://hub.controlvector.io' }}
+            VITE_API_URL=${{ steps.urls.outputs.api_url }}
+            VITE_APP_URL=${{ steps.urls.outputs.app_url }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -181,3 +192,46 @@ jobs:
         run: |
           kubectl -n cv-hub get pods
           kubectl -n cv-hub get svc
+
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: [build-api, build-web]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > ~/.kube/config
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update image tags
+        run: |
+          cd deploy/kubernetes/overlays/dev
+          kustomize edit set image cv-hub/api=${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:sha-${{ github.sha }}
+          kustomize edit set image cv-hub/web=${{ env.REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:sha-${{ github.sha }}
+
+      - name: Deploy to Dev Kubernetes
+        run: |
+          kustomize build deploy/kubernetes/overlays/dev | kubectl apply -f -
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n cv-hub-dev rollout status deployment/cv-hub-api --timeout=300s
+          kubectl -n cv-hub-dev rollout status deployment/cv-hub-web --timeout=300s
+          kubectl -n cv-hub-dev rollout status deployment/cv-hub-worker --timeout=300s
+
+      - name: Verify dev deployment
+        run: |
+          kubectl -n cv-hub-dev get pods
+          kubectl -n cv-hub-dev get svc

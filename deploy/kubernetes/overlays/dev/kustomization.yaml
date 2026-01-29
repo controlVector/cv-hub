@@ -1,0 +1,176 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Dev environment uses separate namespace
+namespace: cv-hub-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Dev-specific patches
+patches:
+  # Configure ingress for dev domains
+  - target:
+      kind: Ingress
+      name: cv-hub-ingress
+    patch: |-
+      - op: add
+        path: /metadata/annotations/kubernetes.io~1ingress.class
+        value: nginx
+      - op: replace
+        path: /spec/rules/0/host
+        value: dev.hub.controlfab.ai
+      - op: replace
+        path: /spec/rules/1/host
+        value: dev.api.controlfab.ai
+      - op: replace
+        path: /spec/rules/2/host
+        value: dev.git.controlfab.ai
+      - op: replace
+        path: /spec/tls/0/hosts
+        value:
+          - dev.hub.controlfab.ai
+          - dev.api.controlfab.ai
+          - dev.git.controlfab.ai
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: dev-controlfab-tls
+
+  # Minimal replicas for dev
+  - target:
+      kind: Deployment
+      name: cv-hub-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "50m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+
+  - target:
+      kind: Deployment
+      name: cv-hub-web
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "64Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+
+  - target:
+      kind: Deployment
+      name: cv-hub-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+
+  # Disable HPA for dev (fixed replicas)
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: cv-hub-api
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 2
+
+  # Smaller storage for dev databases
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 5Gi
+
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 1Gi
+
+  - target:
+      kind: StatefulSet
+      name: qdrant
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 5Gi
+
+  - target:
+      kind: StatefulSet
+      name: falkordb
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 5Gi
+
+  # Smaller git storage for dev
+  - target:
+      kind: PersistentVolumeClaim
+      name: git-repos-pvc
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: do-block-storage
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 20Gi
+
+  # Dev environment URLs
+  - target:
+      kind: ConfigMap
+      name: cv-hub-config
+    patch: |-
+      - op: replace
+        path: /data/api-url
+        value: "https://dev.api.controlfab.ai"
+      - op: replace
+        path: /data/app-url
+        value: "https://dev.hub.controlfab.ai"
+
+images:
+  - name: cv-hub/api
+    newName: ghcr.io/controlvector/cv-hub/api
+    newTag: develop
+  - name: cv-hub/web
+    newName: ghcr.io/controlvector/cv-hub/web
+    newTag: develop

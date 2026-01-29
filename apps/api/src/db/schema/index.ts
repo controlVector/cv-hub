@@ -11,3 +11,7 @@ export * from './repositories';
 export * from './embeddings';
 export * from './user-connections';
 export * from './ci-cd';
+export * from './ssh-keys';
+export * from './personal-access-tokens';
+export * from './pricing';
+export * from './subscriptions';

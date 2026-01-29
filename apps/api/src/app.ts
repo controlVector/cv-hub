@@ -23,6 +23,11 @@ import prRoutes from './routes/pull-requests';
 import issueRoutes from './routes/issues';
 import { githubOAuthRoutes } from './routes/github-oauth';
 import cicdRoutes from './routes/ci-cd';
+import { sshKeysRoutes } from './routes/ssh-keys';
+import { patRoutes } from './routes/pat';
+import { deviceAuthRoutes } from './routes/device-auth';
+import { pricingRoutes } from './routes/pricing';
+import { stripeRoutes } from './routes/stripe';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -98,6 +103,21 @@ app.route('/api/github', githubOAuthRoutes);
 // CI/CD API (pipelines, runs, MCP tools)
 app.route('/api/v1', cicdRoutes);
 
+// SSH Keys API (user key management)
+app.route('/api/user/ssh-keys', sshKeysRoutes);
+
+// Personal Access Tokens API (for git/API auth)
+app.route('/api/user/tokens', patRoutes);
+
+// Device Authorization API (RFC 8628 - OAuth 2.0 Device Authorization Grant)
+app.route('/oauth/device', deviceAuthRoutes);
+
+// Pricing API (tiers, calculator, quotes)
+app.route('/api/pricing', pricingRoutes);
+
+// Stripe API (payments, subscriptions)
+app.route('/api/stripe', stripeRoutes);
+
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {
   const issuer = env.API_URL;
@@ -106,16 +126,21 @@ app.get('/.well-known/openid-configuration', (c) => {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    device_authorization_endpoint: `${issuer}/oauth/device/authorize`,
     userinfo_endpoint: `${issuer}/oauth/userinfo`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
     introspection_endpoint: `${issuer}/oauth/introspect`,
-    scopes_supported: ['openid', 'profile', 'email', 'offline_access'],
+    scopes_supported: ['openid', 'profile', 'email', 'offline_access', 'repo:read', 'repo:write', 'repo:admin'],
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
+    grant_types_supported: [
+      'authorization_code',
+      'refresh_token',
+      'urn:ietf:params:oauth:grant-type:device_code',
+    ],
     subject_types_supported: ['public'],
     id_token_signing_alg_values_supported: ['HS256'],
-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
     introspection_endpoint_auth_methods_supported: ['client_secret_basic'],
     claims_supported: [
       'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
