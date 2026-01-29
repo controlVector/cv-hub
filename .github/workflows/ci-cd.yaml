@@ -8,9 +8,9 @@ on:
     branches: [main, develop]
 
 env:
-  REGISTRY: ghcr.io
-  API_IMAGE_NAME: ${{ github.repository }}/api
-  WEB_IMAGE_NAME: ${{ github.repository }}/web
+  AWS_REGION: us-west-2
+  ECR_REGISTRY: 700239047066.dkr.ecr.us-west-2.amazonaws.com
+  ECR_REPOSITORY: controlfab-api
 
 jobs:
   test:
@@ -48,190 +48,141 @@ jobs:
       - name: Test Web
         run: pnpm --filter web test
 
-  build-api:
-    name: Build API
+  build-and-deploy:
+    name: Build and Deploy
     runs-on: ubuntu-latest
     needs: test
+    if: github.event_name != 'pull_request'
     permissions:
+      id-token: write
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set environment variables
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "api_url=https://dev.api.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "app_url=https://dev.hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "image_tag=dev" >> $GITHUB_OUTPUT
+            echo "ecs_service=controlfab-api-dev" >> $GITHUB_OUTPUT
+            echo "task_definition=controlfab-api-dev" >> $GITHUB_OUTPUT
+            echo "s3_bucket=controlfab-web-assets-dev" >> $GITHUB_OUTPUT
+            echo "cloudfront_distribution=" >> $GITHUB_OUTPUT
+          else
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "app_url=https://hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+            echo "ecs_service=controlfab-api" >> $GITHUB_OUTPUT
+            echo "task_definition=controlfab-api" >> $GITHUB_OUTPUT
+            echo "s3_bucket=controlfab-web-assets" >> $GITHUB_OUTPUT
+            echo "cloudfront_distribution=E1D32I9T5NEP6A" >> $GITHUB_OUTPUT
+          fi
+
+      # Build and push API to ECR
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-
-      - name: Build and push
+      - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.api
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    needs: test
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.WEB_IMAGE_NAME }}
+          push: true
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-
-      - name: Set environment URLs
-        id: urls
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            echo "api_url=https://dev.api.controlfab.ai" >> $GITHUB_OUTPUT
-            echo "app_url=https://dev.hub.controlfab.ai" >> $GITHUB_OUTPUT
-          else
-            echo "api_url=${{ vars.VITE_API_URL || 'https://api.hub.controlfab.ai' }}" >> $GITHUB_OUTPUT
-            echo "app_url=${{ vars.VITE_APP_URL || 'https://hub.controlfab.ai' }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.web
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VITE_API_URL=${{ steps.urls.outputs.api_url }}
-            VITE_APP_URL=${{ steps.urls.outputs.app_url }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.env.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [build-api, build-web]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
+      # Build Web for S3
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Build Web
+        run: pnpm --filter web build
+        env:
+          VITE_API_URL: ${{ steps.env.outputs.api_url }}
+          VITE_APP_URL: ${{ steps.env.outputs.app_url }}
 
-      - name: Configure kubectl
+      # Deploy API to ECS
+      - name: Download current task definition
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          aws ecs describe-task-definition \
+            --task-definition ${{ steps.env.outputs.task_definition }} \
+            --query 'taskDefinition' \
+            --output json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            > task-definition.json
 
-      - name: Install kustomize
+      - name: Update task definition with new image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: api
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ steps.env.outputs.ecs_service }}
+          cluster: controlfab-cluster
+          wait-for-service-stability: true
+
+      # Deploy Web to S3
+      - name: Deploy to S3
         run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
+          aws s3 sync apps/web/dist/ s3://${{ steps.env.outputs.s3_bucket }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html" \
+            --exclude "*.json"
 
-      - name: Update image tags
+          # Upload index.html and JSON with no-cache
+          aws s3 cp apps/web/dist/index.html s3://${{ steps.env.outputs.s3_bucket }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+          # Upload any JSON files with no-cache
+          find apps/web/dist -name "*.json" -exec aws s3 cp {} s3://${{ steps.env.outputs.s3_bucket }}/ \
+            --cache-control "no-cache, no-store, must-revalidate" \;
+
+      # Invalidate CloudFront (production only)
+      - name: Invalidate CloudFront
+        if: steps.env.outputs.cloudfront_distribution != ''
         run: |
-          cd deploy/kubernetes/overlays/digitalocean
-          kustomize edit set image cv-hub/api=${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:sha-${{ github.sha }}
-          kustomize edit set image cv-hub/web=${{ env.REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:sha-${{ github.sha }}
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.env.outputs.cloudfront_distribution }} \
+            --paths "/*"
 
-      - name: Deploy to Kubernetes
+      - name: Deployment Summary
         run: |
-          kustomize build deploy/kubernetes/overlays/digitalocean | kubectl apply -f -
-
-      - name: Wait for rollout
-        run: |
-          kubectl -n cv-hub rollout status deployment/cv-hub-api --timeout=300s
-          kubectl -n cv-hub rollout status deployment/cv-hub-web --timeout=300s
-          kubectl -n cv-hub rollout status deployment/cv-hub-worker --timeout=300s
-
-      - name: Verify deployment
-        run: |
-          kubectl -n cv-hub get pods
-          kubectl -n cv-hub get svc
-
-  deploy-dev:
-    name: Deploy to Dev
-    runs-on: ubuntu-latest
-    needs: [build-api, build-web]
-    if: github.ref == 'refs/heads/develop'
-    environment: development
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-
-      - name: Configure kubectl
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > ~/.kube/config
-
-      - name: Install kustomize
-        run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
-
-      - name: Update image tags
-        run: |
-          cd deploy/kubernetes/overlays/dev
-          kustomize edit set image cv-hub/api=${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:sha-${{ github.sha }}
-          kustomize edit set image cv-hub/web=${{ env.REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:sha-${{ github.sha }}
-
-      - name: Deploy to Dev Kubernetes
-        run: |
-          kustomize build deploy/kubernetes/overlays/dev | kubectl apply -f -
-
-      - name: Wait for rollout
-        run: |
-          kubectl -n cv-hub-dev rollout status deployment/cv-hub-api --timeout=300s
-          kubectl -n cv-hub-dev rollout status deployment/cv-hub-web --timeout=300s
-          kubectl -n cv-hub-dev rollout status deployment/cv-hub-worker --timeout=300s
-
-      - name: Verify dev deployment
-        run: |
-          kubectl -n cv-hub-dev get pods
-          kubectl -n cv-hub-dev get svc
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**API:** ${{ steps.env.outputs.api_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Web:** ${{ steps.env.outputs.app_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
