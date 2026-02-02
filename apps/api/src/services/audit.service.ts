@@ -40,6 +40,12 @@ export type AuditAction =
   | 'oauth.client.delete'
   | 'oauth.client.secret_rotated'
   | 'oauth.authorization.revoked'
+  // OAuth Device Flow
+  | 'oauth.device.authorize'
+  | 'oauth.device.approve'
+  | 'oauth.device.deny'
+  | 'oauth.token.device_issued'
+  | 'oauth.token.device_error'
   // API Keys
   | 'api_key.created'
   | 'api_key.updated'

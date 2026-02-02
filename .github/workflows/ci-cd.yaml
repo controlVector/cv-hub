@@ -84,8 +84,8 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "api_url=https://dev.api.controlfab.ai" >> $GITHUB_OUTPUT
-            echo "app_url=https://dev.hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "api_url=https://api-dev.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "app_url=https://hub-dev.controlfab.ai" >> $GITHUB_OUTPUT
             echo "image_tag=dev" >> $GITHUB_OUTPUT
             echo "ecs_service=controlfab-api-dev" >> $GITHUB_OUTPUT
             echo "task_definition=controlfab-api-dev" >> $GITHUB_OUTPUT
