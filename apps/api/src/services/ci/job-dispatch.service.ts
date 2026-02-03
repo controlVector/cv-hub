@@ -11,6 +11,8 @@ import { eq, and, or } from 'drizzle-orm';
 import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
 import { getReadyJobs, updateJobStatus, updatePipelineRunStatus } from './pipeline.service';
+import { executeStep as executeStepReal, cleanupWorkspace } from './step-executor';
+import { getDeployConfig, deployConfigToEnv } from './deploy-config';
 
 // Type aliases for status values
 type JobStatus = 'pending' | 'queued' | 'running' | 'success' | 'failure' | 'cancelled' | 'skipped';
@@ -499,6 +501,11 @@ async function processJobExecution(
   let exitCode = 0;
   const outputs: Record<string, string> = {};
 
+  // Resolve deploy config env vars based on the branch being deployed
+  const deployConfig = getDeployConfig(workspaceConfig.ref);
+  const deployEnv = deployConfigToEnv(deployConfig);
+  const mergedEnvironment = { ...deployEnv, ...environment };
+
   try {
     // Execute each step
     for (const step of steps) {
@@ -506,9 +513,10 @@ async function processJobExecution(
       const stepStartTime = Date.now();
 
       try {
-        // For now, we simulate execution
-        // Real implementation will use Docker
-        const result = await executeStep(step, workspaceConfig, environment);
+        const result = await executeStepReal(step, workspaceConfig, mergedEnvironment, {
+          runId,
+          jobKey,
+        });
         const stepCompletedAt = new Date();
 
         stepResults.push({
@@ -531,16 +539,17 @@ async function processJobExecution(
         stepResults.push({
           name: step.name,
           status: 'failure',
-          exitCode: 1,
+          exitCode: error.exitCode || 1,
           durationMs: Date.now() - stepStartTime,
           error: error.message,
+          output: error.output,
           startedAt: stepStartedAt.toISOString(),
           completedAt: stepCompletedAt.toISOString(),
         });
 
         if (!step.continueOnError) {
           overallStatus = 'failure';
-          exitCode = 1;
+          exitCode = error.exitCode || 1;
           break;
         }
       }
@@ -550,6 +559,9 @@ async function processJobExecution(
     exitCode = 1;
     logger.error('ci', 'Job execution failed', { jobId, error: error.message });
   }
+
+  // Clean up workspace after job completes
+  cleanupWorkspace(runId, jobKey);
 
   const durationMs = Date.now() - startTime;
 
@@ -586,55 +598,7 @@ async function processJobExecution(
   };
 }
 
-/**
- * Execute a single step (stub implementation)
- * This will be replaced with Docker container execution
- */
-async function executeStep(
-  step: JobStep,
-  workspace: WorkspaceConfig,
-  environment: Record<string, string>
-): Promise<{ output?: string; outputs?: Record<string, string> }> {
-  // Handle built-in actions
-  if (step.uses) {
-    const [action, version] = step.uses.split('@');
-
-    switch (action) {
-      case 'checkout':
-        logger.info('ci', 'Checkout action', { workspace });
-        return { output: `Checked out ${workspace.ownerSlug}/${workspace.repoSlug}@${workspace.ref}` };
-
-      case 'upload-artifact':
-        logger.info('ci', 'Upload artifact action', { with: step.with });
-        return { output: `Would upload artifact: ${step.with?.name}` };
-
-      case 'download-artifact':
-        logger.info('ci', 'Download artifact action', { with: step.with });
-        return { output: `Would download artifact: ${step.with?.name}` };
-
-      case 'cache':
-        logger.info('ci', 'Cache action', { with: step.with });
-        return { output: `Would handle cache: ${step.with?.key}` };
-
-      case 'setup-node':
-        logger.info('ci', 'Setup Node action', { with: step.with });
-        return { output: `Would setup Node.js ${step.with?.['node-version'] || 'latest'}` };
-
-      default:
-        logger.warn('ci', 'Unknown action', { action });
-        return { output: `Unknown action: ${action}` };
-    }
-  }
-
-  // Handle run commands
-  if (step.run) {
-    logger.info('ci', 'Run command', { run: step.run });
-    // In real implementation, this would execute in Docker
-    return { output: `Would execute: ${step.run}` };
-  }
-
-  return { output: 'No-op step' };
-}
+// Step execution is now handled by step-executor.ts (imported as executeStepReal)
 
 /**
  * Start the orchestration worker

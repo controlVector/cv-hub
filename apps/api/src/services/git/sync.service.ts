@@ -4,6 +4,8 @@ import { eq, and } from 'drizzle-orm';
 import * as gitBackend from './git-backend.service';
 import { triggerEvent } from '../webhook.service';
 import { logger } from '../../utils/logger';
+import { getPipelinesForTrigger, triggerPipeline } from '../ci/pipeline.service';
+import { enqueuePipelineRun } from '../ci/job-dispatch.service';
 
 export interface RefUpdate {
   oldSha: string;
@@ -80,6 +82,33 @@ export async function processPostReceive(
         deleted: false,
         repository: { id: repositoryId, name: repo.name, full_name: `${ownerSlug}/${repo.slug}` },
       }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+
+      // Trigger CI/CD pipelines for push events
+      getPipelinesForTrigger(repositoryId, 'push', ref.refName)
+        .then(async (matchingPipelines) => {
+          for (const pipeline of matchingPipelines) {
+            try {
+              const run = await triggerPipeline({
+                pipelineId: pipeline.id,
+                trigger: 'push',
+                ref: ref.refName,
+                sha: ref.newSha,
+              });
+              await enqueuePipelineRun(run.id);
+              logger.info('ci', 'Pipeline triggered', {
+                pipelineId: pipeline.id,
+                runId: run.id,
+                ref: ref.refName,
+              });
+            } catch (err) {
+              logger.error('ci', 'Pipeline trigger failed', {
+                pipelineId: pipeline.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        })
+        .catch(err => logger.error('ci', 'Pipeline trigger lookup failed', err));
     }
   }
 }

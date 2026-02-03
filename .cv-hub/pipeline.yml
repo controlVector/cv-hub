@@ -1,0 +1,130 @@
+name: Deploy CV-Hub
+on:
+  push:
+    branches: [develop, main]
+
+env:
+  NODE_VERSION: '20'
+
+stages:
+  - name: validate
+    jobs:
+      - key: type-check
+        name: Type Check
+        steps:
+          - uses: checkout@v1
+          - uses: setup-node@v1
+            with:
+              node-version: '20'
+          - name: Install deps
+            run: pnpm install --frozen-lockfile
+          - name: Type check API
+            run: pnpm --filter api type-check
+          - name: Type check Web
+            run: pnpm --filter web type-check
+
+      - key: lint
+        name: Lint
+        steps:
+          - uses: checkout@v1
+          - uses: setup-node@v1
+            with:
+              node-version: '20'
+          - name: Install deps
+            run: pnpm install --frozen-lockfile
+          - name: Lint
+            run: pnpm lint
+
+      - key: test
+        name: Test
+        steps:
+          - uses: checkout@v1
+          - uses: setup-node@v1
+            with:
+              node-version: '20'
+          - name: Install deps
+            run: pnpm install --frozen-lockfile
+          - name: Push DB schema
+            run: pnpm --filter api exec drizzle-kit push --force
+          - name: Test API
+            run: pnpm --filter api test
+          - name: Test Web
+            run: pnpm --filter web test
+
+  - name: assess
+    jobs:
+      - key: risk-assessment
+        name: AI Risk Assessment
+        needs: [type-check, lint, test]
+        steps:
+          - uses: checkout@v1
+          - uses: ai-risk-assess@v1
+
+  - name: build
+    jobs:
+      - key: build-api
+        name: Build API Image
+        needs: [risk-assessment]
+        steps:
+          - uses: checkout@v1
+          - uses: registry-login@v1
+          - uses: container-build@v1
+            with:
+              context: .
+              file: ./Dockerfile.api
+              tag: $CV_HUB_SHA
+          - uses: container-push@v1
+            with:
+              tag: $CV_HUB_SHA
+
+      - key: build-web
+        name: Build Web
+        needs: [risk-assessment]
+        steps:
+          - uses: checkout@v1
+          - uses: setup-node@v1
+            with:
+              node-version: '20'
+          - name: Install deps
+            run: pnpm install --frozen-lockfile
+          - name: Build Web
+            run: pnpm --filter web build
+            env:
+              VITE_API_URL: $CV_HUB_ENV_API_URL
+              VITE_APP_URL: $CV_HUB_ENV_APP_URL
+
+  - name: deploy
+    jobs:
+      - key: deploy-api
+        name: Deploy API
+        needs: [build-api]
+        steps:
+          - uses: deploy-service@v1
+            with:
+              service: $CV_HUB_ENV_SERVICE
+              image: $CV_HUB_SHA
+              wait-for-stability: true
+
+      - key: deploy-web
+        name: Deploy Web
+        needs: [build-web]
+        steps:
+          - uses: deploy-static@v1
+            with:
+              source: apps/web/dist
+              destination: $CV_HUB_ENV_STATIC_BUCKET
+          - uses: invalidate-cdn@v1
+            with:
+              paths: /*
+
+  - name: verify
+    jobs:
+      - key: health-check
+        name: AI Health Check
+        needs: [deploy-api, deploy-web]
+        steps:
+          - uses: ai-health-check@v1
+            with:
+              url: $CV_HUB_ENV_API_URL/api/health
+              timeout: 300
+              rollback-on-failure: true

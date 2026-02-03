@@ -31,8 +31,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install git (needed for git operations) and libstdc++ for native modules
-RUN apk add --no-cache git libstdc++ && npm install -g pnpm
+# Install git (needed for git operations), libstdc++ for native modules,
+# and buildah + fuse-overlayfs for daemonless container builds (CI/CD worker)
+RUN apk add --no-cache git libstdc++ buildah fuse-overlayfs && npm install -g pnpm
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \

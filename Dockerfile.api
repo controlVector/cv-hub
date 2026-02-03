@@ -46,8 +46,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install git, openssh (for ssh-keygen), build tools for native modules, and libstdc++
-RUN apk add --no-cache git openssh-keygen libstdc++ python3 make g++
+# Install git, openssh (for ssh-keygen), build tools for native modules, libstdc++,
+# and buildah + fuse-overlayfs for daemonless CI/CD container builds
+RUN apk add --no-cache git openssh-keygen libstdc++ python3 make g++ buildah fuse-overlayfs
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
