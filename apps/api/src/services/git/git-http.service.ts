@@ -156,7 +156,7 @@ export async function handleReceivePack(
 /**
  * Parse ref updates from receive-pack request
  */
-function parseReceivedRefs(body: Buffer): Array<{ oldSha: string; newSha: string; refName: string }> {
+export function parseReceivedRefs(body: Buffer): Array<{ oldSha: string; newSha: string; refName: string }> {
   const refs: Array<{ oldSha: string; newSha: string; refName: string }> = [];
 
   // pkt-line format: 4-hex-length + data

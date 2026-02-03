@@ -22,6 +22,10 @@ import {
   hasUserConsent,
   STANDARD_SCOPES,
 } from '../services/oauth.service';
+import {
+  exchangeDeviceCode,
+  isDeviceTokenError,
+} from '../services/device-auth.service';
 import { AuthenticationError, ValidationError } from '../utils/errors';
 import { oauthLogger } from '../utils/logger';
 
@@ -275,13 +279,18 @@ oauth.post('/authorize', requireAuth, zValidator('json', authorizePostSchema), a
 // ==================== Token Endpoint ====================
 
 const tokenSchema = z.object({
-  grant_type: z.enum(['authorization_code', 'refresh_token']),
+  grant_type: z.enum([
+    'authorization_code',
+    'refresh_token',
+    'urn:ietf:params:oauth:grant-type:device_code',
+  ]),
   code: z.string().optional(),
   redirect_uri: z.string().optional(),
   client_id: z.string().optional(),
   client_secret: z.string().optional(),
   code_verifier: z.string().optional(),
   refresh_token: z.string().optional(),
+  device_code: z.string().optional(),  // For device authorization grant
 });
 
 oauth.post('/token', strictRateLimiter, zValidator('form', tokenSchema), async (c) => {
@@ -406,6 +415,43 @@ oauth.post('/token', strictRateLimiter, zValidator('form', tokenSchema), async (
       expires_in: result.expiresIn,
       refresh_token: result.refreshToken,
     });
+  }
+
+  // Handle device authorization grant (RFC 8628)
+  if (body.grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
+    if (!body.device_code) {
+      return c.json({ error: 'invalid_request', error_description: 'Missing device_code' }, 400);
+    }
+
+    const result = await exchangeDeviceCode(body.device_code, clientId);
+
+    if (isDeviceTokenError(result)) {
+      // Log failure for non-pending errors
+      if (result.error !== 'authorization_pending' && result.error !== 'slow_down') {
+        await logAuditEvent({
+          action: 'oauth.token.device_error',
+          status: 'failure',
+          details: { clientId, error: result.error },
+          ...meta,
+        });
+      }
+
+      // RFC 8628 Section 3.5 - Error responses
+      // authorization_pending and slow_down return 400
+      // access_denied returns 400
+      // expired_token returns 400
+      return c.json(result, 400);
+    }
+
+    // Success - tokens issued
+    await logAuditEvent({
+      action: 'oauth.token.device_issued',
+      status: 'success',
+      details: { clientId, grantType: 'device_code', scope: result.scope },
+      ...meta,
+    });
+
+    return c.json(result);
   }
 
   return c.json({ error: 'unsupported_grant_type' }, 400);
@@ -536,6 +582,7 @@ oauth.get('/.well-known/openid-configuration', (c) => {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    device_authorization_endpoint: `${issuer}/oauth/device/authorize`,
     userinfo_endpoint: `${issuer}/oauth/userinfo`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
     introspection_endpoint: `${issuer}/oauth/introspect`,
@@ -543,10 +590,14 @@ oauth.get('/.well-known/openid-configuration', (c) => {
     scopes_supported: Object.keys(STANDARD_SCOPES),
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
+    grant_types_supported: [
+      'authorization_code',
+      'refresh_token',
+      'urn:ietf:params:oauth:grant-type:device_code',
+    ],
     subject_types_supported: ['public'],
     id_token_signing_alg_values_supported: ['HS256'],
-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
     introspection_endpoint_auth_methods_supported: ['client_secret_basic'],
     claims_supported: [
       'sub',

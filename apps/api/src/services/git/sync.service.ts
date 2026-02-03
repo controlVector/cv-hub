@@ -2,6 +2,8 @@ import { db } from '../../db';
 import { repositories, branches, commits, tags } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import * as gitBackend from './git-backend.service';
+import { triggerEvent } from '../webhook.service';
+import { logger } from '../../utils/logger';
 
 export interface RefUpdate {
   oldSha: string;
@@ -45,6 +47,41 @@ export async function processPostReceive(
 
   // Update repository stats
   await updateRepoStats(repositoryId, ownerSlug, repo.slug);
+
+  // Trigger webhook events for push
+  for (const ref of refs) {
+    const isDeleted = ref.newSha === '0000000000000000000000000000000000000000';
+    const isCreated = ref.oldSha === '0000000000000000000000000000000000000000';
+
+    if (ref.refName.startsWith('refs/heads/') || ref.refName.startsWith('refs/tags/')) {
+      // Branch/tag create or delete events
+      if (isCreated) {
+        triggerEvent(repositoryId, 'create', {
+          ref: ref.refName.replace(/^refs\/(heads|tags)\//, ''),
+          ref_type: ref.refName.startsWith('refs/heads/') ? 'branch' : 'tag',
+          repository: { id: repositoryId, name: repo.name, full_name: `${ownerSlug}/${repo.slug}` },
+        }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+      } else if (isDeleted) {
+        triggerEvent(repositoryId, 'delete', {
+          ref: ref.refName.replace(/^refs\/(heads|tags)\//, ''),
+          ref_type: ref.refName.startsWith('refs/heads/') ? 'branch' : 'tag',
+          repository: { id: repositoryId, name: repo.name, full_name: `${ownerSlug}/${repo.slug}` },
+        }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+      }
+    }
+
+    // Push event (for non-delete refs)
+    if (!isDeleted) {
+      triggerEvent(repositoryId, 'push', {
+        ref: ref.refName,
+        before: ref.oldSha,
+        after: ref.newSha,
+        created: isCreated,
+        deleted: false,
+        repository: { id: repositoryId, name: repo.name, full_name: `${ownerSlug}/${repo.slug}` },
+      }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+    }
+  }
 }
 
 /**

@@ -21,6 +21,9 @@ import {
 import { eq, and, desc, sql, count, or, inArray } from 'drizzle-orm';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors';
 import * as gitBackend from './git/git-backend.service';
+import { triggerEvent } from './webhook.service';
+import { notifyPRReview, notifyPRMerged } from './notification.service';
+import { logger } from '../utils/logger';
 
 // ============================================================================
 // Types
@@ -150,6 +153,14 @@ export async function createPullRequest(input: CreatePRInput): Promise<PullReque
       updatedAt: new Date(),
     })
     .where(eq(repositories.id, repositoryId));
+
+  // Trigger webhook
+  triggerEvent(repositoryId, 'pull_request', {
+    action: 'opened',
+    pull_request: pr,
+    repository: { id: repositoryId },
+    sender: { id: authorId },
+  }).catch(err => logger.error('api', 'Webhook trigger failed', err));
 
   return pr;
 }
@@ -349,6 +360,17 @@ export async function updatePullRequest(
     .where(eq(pullRequests.id, id))
     .returning();
 
+  // Trigger webhook for state changes
+  if (input.state !== undefined && input.state !== pr.state) {
+    const action = input.state === 'closed' ? 'closed' : 'reopened';
+    triggerEvent(pr.repositoryId, 'pull_request', {
+      action,
+      pull_request: updated,
+      repository: { id: pr.repositoryId },
+      sender: { id: userId },
+    }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+  }
+
   return updated;
 }
 
@@ -393,22 +415,49 @@ export async function mergePullRequest(
     throw new ValidationError('Repository has no owner');
   }
 
-  // TODO: Implement actual git merge via git backend
-  // For now, just update the PR state
-  // const mergeCommitSha = await gitBackend.mergeBranches(
-  //   ownerSlug,
-  //   pr.repository.slug,
-  //   pr.sourceBranch,
-  //   pr.targetBranch,
-  //   mergeMethod
-  // );
+  // Check if merge is possible (no conflicts)
+  const mergeCheck = await gitBackend.canMergeBranches(
+    ownerSlug,
+    pr.repository.slug,
+    pr.sourceBranch,
+    pr.targetBranch
+  );
+
+  if (!mergeCheck.canMerge) {
+    throw new ValidationError(
+      `Cannot merge: ${mergeCheck.conflicts?.join(', ') || 'Merge conflict detected'}`
+    );
+  }
+
+  // Get merge commit author info
+  const author = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  // Generate merge commit message
+  const mergeCommitMessage = `Merge pull request #${pr.number} from ${pr.sourceBranch}\n\n${pr.title}`;
+
+  // Perform the actual git merge
+  const mergeResult = await gitBackend.mergeBranches(
+    ownerSlug,
+    pr.repository.slug,
+    pr.sourceBranch,
+    pr.targetBranch,
+    mergeMethod,
+    mergeCommitMessage,
+    author ? { name: author.displayName || author.username, email: author.email } : undefined
+  );
+
+  if (!mergeResult.success) {
+    throw new ValidationError(`Merge failed: ${mergeResult.error || 'Unknown error'}`);
+  }
 
   const [updated] = await db.update(pullRequests)
     .set({
       state: 'merged',
       mergedAt: new Date(),
       mergedBy: userId,
-      // mergeCommitSha,
+      mergeCommitSha: mergeResult.commitHash,
       closedAt: new Date(),
       updatedAt: new Date(),
     })
@@ -422,6 +471,17 @@ export async function mergePullRequest(
       updatedAt: new Date(),
     })
     .where(eq(repositories.id, pr.repositoryId));
+
+  // Trigger webhook
+  triggerEvent(pr.repositoryId, 'pull_request', {
+    action: 'merged',
+    pull_request: updated,
+    repository: { id: pr.repositoryId },
+    sender: { id: userId },
+  }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+
+  // Notify PR author
+  notifyPRMerged(pr.authorId, userId, pr.title, pr.id);
 
   return updated;
 }
@@ -524,6 +584,11 @@ export async function submitReview(
     commitSha: pr.sourceSha,
     submittedAt: state !== 'pending' ? new Date() : null,
   }).returning();
+
+  // Notify PR author about the review
+  if (state !== 'pending') {
+    notifyPRReview(pr.authorId, reviewerId, pr.title, pr.id, state);
+  }
 
   return review;
 }

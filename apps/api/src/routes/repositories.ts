@@ -27,6 +27,7 @@ import {
   canUserAccessRepo,
   canUserWriteToRepo,
   isRepoAdmin,
+  transferRepository,
 } from '../services/repository.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
@@ -352,6 +353,44 @@ repoRoutes.post('/repos/:owner/:repo/unarchive', requireAuth, async (c) => {
   await logAuditEvent({
     userId,
     action: 'repository.unarchived' as AuditAction,
+    resource: 'repository',
+    resourceId: repository.id,
+    status: 'success',
+    ...meta,
+  });
+
+  return c.json({ repository: updated });
+});
+
+// POST /api/v1/repos/:owner/:repo/transfer - Transfer repository ownership
+const transferSchema = z.object({
+  newOwnerType: z.enum(['user', 'organization']),
+  newOwnerId: z.string().uuid(),
+});
+
+repoRoutes.post('/repos/:owner/:repo/transfer', requireAuth, zValidator('json', transferSchema), async (c) => {
+  const { owner, repo: repoSlug } = c.req.param();
+  const input = c.req.valid('json');
+  const meta = getRequestMeta(c);
+  const userId = c.get('userId')!;
+
+  const repository = await getRepositoryByOwnerAndSlug(owner, repoSlug);
+  if (!repository) {
+    throw new NotFoundError('Repository');
+  }
+
+  if (!await isRepoAdmin(repository.id, userId)) {
+    throw new ForbiddenError('Admin access required');
+  }
+
+  const targetOrgId = input.newOwnerType === 'organization' ? input.newOwnerId : null;
+  const targetUserId = input.newOwnerType === 'user' ? input.newOwnerId : null;
+
+  const updated = await transferRepository(repository.id, targetOrgId, targetUserId);
+
+  await logAuditEvent({
+    userId,
+    action: 'repository.transferred' as AuditAction,
     resource: 'repository',
     resourceId: repository.id,
     status: 'success',

@@ -6,10 +6,9 @@
 import ssh2 from 'ssh2';
 const { Server } = ssh2;
 import type { Connection, Session, AuthContext, ServerChannel, AcceptConnection, RejectConnection, ExecInfo } from 'ssh2';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { generateKeyPairSync } from 'crypto';
 import { env } from '../../config/env';
 import {
   findUserByFingerprint,
@@ -77,20 +76,21 @@ async function loadHostKey(): Promise<string> {
 }
 
 /**
- * Generate a new ED25519 host key
+ * Generate a new ED25519 host key using ssh-keygen (OpenSSH format)
  */
 async function generateHostKey(savePath: string): Promise<string> {
-  const { privateKey } = generateKeyPairSync('ed25519', {
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-  });
-
-  // Ensure directory exists
   await fs.mkdir(path.dirname(savePath), { recursive: true });
-  await fs.writeFile(savePath, privateKey, { mode: 0o600 });
 
+  // Remove existing key files if present
+  try { await fs.unlink(savePath); } catch {}
+  try { await fs.unlink(savePath + '.pub'); } catch {}
+
+  // Use ssh-keygen to generate key in OpenSSH format (compatible with ssh2)
+  execSync(`ssh-keygen -t ed25519 -f "${savePath}" -N "" -q`);
+
+  const key = await fs.readFile(savePath, 'utf-8');
   console.log('[SSH] Generated and saved host key to', savePath);
-  return privateKey;
+  return key;
 }
 
 // ============================================================================
@@ -364,11 +364,12 @@ export async function startSshServer(): Promise<void> {
     return;
   }
 
-  const hostKey = await loadHostKey();
+  let hostKey = await loadHostKey();
 
-  sshServer = new Server({
-    hostKeys: [hostKey],
-  }, (client: Connection) => {
+  // Validate key by attempting to create the server; regenerate if format is invalid
+  const createServer = (key: string) => new Server({ hostKeys: [key] }, connectionHandler);
+
+  const connectionHandler = (client: Connection) => {
     let authenticatedUser: AuthenticatedUser | null = null;
 
     console.log('[SSH] Client connected');
@@ -432,7 +433,16 @@ export async function startSshServer(): Promise<void> {
     client.on('end', () => {
       console.log('[SSH] Client disconnected');
     });
-  });
+  };
+
+  try {
+    sshServer = createServer(hostKey);
+  } catch (error) {
+    console.warn('[SSH] Host key format invalid, regenerating...', (error as Error).message);
+    const defaultKeyPath = path.join(env.GIT_STORAGE_PATH, '.ssh', 'host_key');
+    hostKey = await generateHostKey(defaultKeyPath);
+    sshServer = createServer(hostKey);
+  }
 
   sshServer.listen(env.SSH_PORT, env.SSH_HOST, () => {
     console.log(`[SSH] Server listening on ${env.SSH_HOST}:${env.SSH_PORT}`);

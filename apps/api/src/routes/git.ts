@@ -5,6 +5,7 @@ import {
   handleInfoRefs,
   handleUploadPack,
   handleReceivePack,
+  parseReceivedRefs,
   type GitService,
 } from '../services/git/git-http.service';
 import {
@@ -16,6 +17,13 @@ import {
   canUserAccessRepo,
   canUserWriteToRepo,
 } from '../services/repository.service';
+import {
+  validatePush,
+  formatGitError,
+} from '../services/branch-protection.service';
+import {
+  validateTokenWithAnyScope,
+} from '../services/pat.service';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
@@ -74,6 +82,35 @@ function parseBasicAuth(authHeader: string | undefined): { username: string; pas
   }
 }
 
+// Authenticate via Personal Access Token
+// Returns userId if valid, null otherwise
+async function authenticateWithPAT(
+  authHeader: string | undefined,
+  requiredScopes: string[]
+): Promise<string | null> {
+  const basicAuth = parseBasicAuth(authHeader);
+  if (!basicAuth) {
+    return null;
+  }
+
+  // Git clients send the token as the password
+  // Username can be anything (typically 'git' or the actual username)
+  const { password: token } = basicAuth;
+
+  // Check if it's a PAT (starts with cv_pat_)
+  if (!token.startsWith('cv_pat_')) {
+    return null;
+  }
+
+  const result = await validateTokenWithAnyScope(token, requiredScopes);
+
+  if (result.valid && result.userId) {
+    return result.userId;
+  }
+
+  return null;
+}
+
 // GET /:owner/:repo.git/info/refs - Discovery endpoint
 gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
   const { owner } = c.req.param();
@@ -89,17 +126,18 @@ gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
     return c.text('Invalid service', 400);
   }
 
-  // Get user from session or Basic auth
+  // Get user from session or Basic auth (PAT)
   let userId = c.get('userId') || null;
 
-  // Check for Basic auth if no session
+  // Check for PAT via Basic auth if no session
   if (!userId) {
     const authHeader = c.req.header('authorization');
-    const basicAuth = parseBasicAuth(authHeader);
-    if (basicAuth) {
-      // TODO: Validate credentials (API key or user:password)
-      // For now, we'll require session auth
-    }
+    // Determine required scopes based on operation
+    const requiredScopes = service === 'git-receive-pack'
+      ? ['repo:write', 'repo:admin']
+      : ['repo:read', 'repo:write', 'repo:admin'];
+
+    userId = await authenticateWithPAT(authHeader, requiredScopes);
   }
 
   const requireWrite = service === 'git-receive-pack';
@@ -141,7 +179,14 @@ gitRoutes.post('/:owner/:repo/git-upload-pack', optionalAuth, async (c) => {
     repo = repo.slice(0, -4);
   }
 
-  const userId = c.get('userId') || null;
+  // Get user from session or Basic auth (PAT)
+  let userId = c.get('userId') || null;
+
+  // Check for PAT via Basic auth if no session
+  if (!userId) {
+    const authHeader = c.req.header('authorization');
+    userId = await authenticateWithPAT(authHeader, ['repo:read', 'repo:write', 'repo:admin']);
+  }
 
   await verifyRepoAccess(owner, repo, userId, false);
 
@@ -171,15 +216,13 @@ gitRoutes.post('/:owner/:repo/git-receive-pack', optionalAuth, async (c) => {
     repo = repo.slice(0, -4);
   }
 
-  // Get user from session or Basic auth
+  // Get user from session or Basic auth (PAT)
   let userId = c.get('userId') || null;
 
   if (!userId) {
     const authHeader = c.req.header('authorization');
-    const basicAuth = parseBasicAuth(authHeader);
-    if (basicAuth) {
-      // TODO: Validate API key or credentials
-    }
+    // Push requires repo:write or repo:admin scope
+    userId = await authenticateWithPAT(authHeader, ['repo:write', 'repo:admin']);
   }
 
   if (!userId) {
@@ -195,6 +238,24 @@ gitRoutes.post('/:owner/:repo/git-receive-pack', optionalAuth, async (c) => {
   }
 
   const requestBody = Buffer.from(await c.req.arrayBuffer());
+
+  // Parse refs from the push request for branch protection validation
+  const pushRefs = parseReceivedRefs(requestBody);
+
+  // Validate push against branch protection rules BEFORE processing
+  if (pushRefs.length > 0) {
+    const validation = await validatePush(repoId, pushRefs, userId);
+    if (!validation.allowed) {
+      // Return git-formatted error message
+      const errorMessage = formatGitError(validation.reason || 'Push rejected by branch protection rules');
+      return new Response(errorMessage, {
+        status: 403,
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+      });
+    }
+  }
 
   const result = await handleReceivePack(owner, repo, requestBody, (refs) => {
     // Post-receive hook - sync metadata to database

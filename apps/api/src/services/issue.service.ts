@@ -16,6 +16,9 @@ import {
 } from '../db/schema';
 import { eq, and, desc, sql, count, or, ilike, inArray } from 'drizzle-orm';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors';
+import { triggerEvent } from './webhook.service';
+import { notifyIssueAssigned } from './notification.service';
+import { logger } from '../utils/logger';
 
 // ============================================================================
 // Types
@@ -128,6 +131,14 @@ export async function createIssue(input: CreateIssueInput): Promise<Issue> {
       updatedAt: new Date(),
     })
     .where(eq(repositories.id, repositoryId));
+
+  // Trigger webhook
+  triggerEvent(repositoryId, 'issues', {
+    action: 'opened',
+    issue,
+    repository: { id: repositoryId },
+    sender: { id: authorId },
+  }).catch(err => logger.error('api', 'Webhook trigger failed', err));
 
   return issue;
 }
@@ -372,6 +383,27 @@ export async function updateIssue(
     .set(updateData)
     .where(eq(issues.id, id))
     .returning();
+
+  // Trigger webhook
+  let action = 'edited';
+  if (input.state !== undefined && input.state !== issue.state) {
+    action = input.state === 'closed' ? 'closed' : 'reopened';
+  }
+  triggerEvent(issue.repositoryId, 'issues', {
+    action,
+    issue: updated,
+    repository: { id: issue.repositoryId },
+    sender: { id: userId },
+  }).catch(err => logger.error('api', 'Webhook trigger failed', err));
+
+  // Notify newly assigned users
+  if (input.assigneeIds !== undefined) {
+    const oldAssignees = new Set(issue.assigneeIds || []);
+    const newAssignees = input.assigneeIds.filter(id => !oldAssignees.has(id));
+    for (const assigneeId of newAssignees) {
+      notifyIssueAssigned(assigneeId, userId, issue.title, issue.id);
+    }
+  }
 
   return updated;
 }

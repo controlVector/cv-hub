@@ -28,6 +28,15 @@ import { patRoutes } from './routes/pat';
 import { deviceAuthRoutes } from './routes/device-auth';
 import { pricingRoutes } from './routes/pricing';
 import { stripeRoutes } from './routes/stripe';
+import { webhookRoutes } from './routes/webhooks';
+import { commitStatusRoutes } from './routes/commit-statuses';
+import { forkRoutes } from './routes/forks';
+import { notificationRoutes } from './routes/notifications';
+import { releaseRoutes } from './routes/releases';
+import { tagProtectionRoutes } from './routes/tag-protection';
+import { deployKeyRoutes } from './routes/deploy-keys';
+import { codeownersRoutes } from './routes/codeowners';
+import { autoMergeRoutes } from './routes/auto-merge';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -117,6 +126,33 @@ app.route('/api/pricing', pricingRoutes);
 
 // Stripe API (payments, subscriptions)
 app.route('/api/stripe', stripeRoutes);
+
+// Webhooks API (outbound event notifications)
+app.route('/api/v1', webhookRoutes);
+
+// Commit Status Checks API (CI/CD status reporting)
+app.route('/api/v1', commitStatusRoutes);
+
+// Fork API (repository forking)
+app.route('/api/v1', forkRoutes);
+
+// Notifications API (in-app notifications)
+app.route('/api', notificationRoutes);
+
+// Releases API (repository releases and assets)
+app.route('/api/v1', releaseRoutes);
+
+// Tag Protection API
+app.route('/api/v1', tagProtectionRoutes);
+
+// Deploy Keys API (per-repository SSH keys)
+app.route('/api/v1', deployKeyRoutes);
+
+// CODEOWNERS API
+app.route('/api/v1', codeownersRoutes);
+
+// Auto-Merge API (PR auto-merge)
+app.route('/api/v1', autoMergeRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {

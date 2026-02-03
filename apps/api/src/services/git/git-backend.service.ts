@@ -115,6 +115,25 @@ function execGit(repoPath: string, args: string[]): Promise<string> {
 }
 
 /**
+ * Check if ancestorSha is an ancestor of descendantSha (fast-forward check)
+ * Returns true if it IS an ancestor (i.e., NOT a force push)
+ */
+export async function isAncestor(
+  ownerSlug: string,
+  repoSlug: string,
+  ancestorSha: string,
+  descendantSha: string
+): Promise<boolean> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  try {
+    await execGit(repoPath, ['merge-base', '--is-ancestor', ancestorSha, descendantSha]);
+    return true; // exit code 0 = is ancestor
+  } catch {
+    return false; // exit code 1 = not ancestor (force push)
+  }
+}
+
+/**
  * Initialize a new bare repository
  */
 export async function initBareRepo(ownerSlug: string, repoSlug: string, defaultBranch = 'main'): Promise<string> {
@@ -147,6 +166,40 @@ export async function deleteBareRepo(ownerSlug: string, repoSlug: string): Promi
   } catch (err) {
     // Ignore if doesn't exist
   }
+}
+
+/**
+ * Clone a bare repository on disk (for forks)
+ */
+export async function cloneBareRepo(
+  sourceOwner: string,
+  sourceRepo: string,
+  targetOwner: string,
+  targetRepo: string
+): Promise<string> {
+  const sourcePath = getRepoPath(sourceOwner, sourceRepo);
+  const targetPath = getRepoPath(targetOwner, targetRepo);
+
+  // Ensure parent directory exists
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+  // Clone as bare
+  await new Promise<void>((resolve, reject) => {
+    const proc = spawn('git', ['clone', '--bare', sourcePath, targetPath]);
+    let stderr = '';
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`git clone --bare failed: ${stderr}`));
+    });
+    proc.on('error', reject);
+  });
+
+  // Configure the clone
+  await execGit(targetPath, ['config', 'receive.denyNonFastForwards', 'false']);
+  await execGit(targetPath, ['config', 'receive.denyDeleteCurrent', 'true']);
+
+  return targetPath;
 }
 
 /**
@@ -676,4 +729,322 @@ export async function getRepoStats(ownerSlug: string, repoSlug: string): Promise
   }
 
   return { commitCount, branchCount, tagCount, size };
+}
+
+// ============================================================================
+// Merge Operations
+// ============================================================================
+
+export type MergeStrategy = 'merge' | 'squash' | 'rebase';
+
+export interface MergeCheckResult {
+  canMerge: boolean;
+  conflicts?: string[];
+  aheadCount?: number;
+  behindCount?: number;
+}
+
+export interface MergeResult {
+  success: boolean;
+  commitHash?: string;
+  error?: string;
+}
+
+/**
+ * Check if branches can be merged without conflicts
+ */
+export async function canMergeBranches(
+  ownerSlug: string,
+  repoSlug: string,
+  sourceBranch: string,
+  targetBranch: string
+): Promise<MergeCheckResult> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+
+  try {
+    // Get branch SHAs
+    const sourceSha = (await execGit(repoPath, ['rev-parse', sourceBranch])).trim();
+    const targetSha = (await execGit(repoPath, ['rev-parse', targetBranch])).trim();
+
+    // Get merge base
+    const mergeBase = (await execGit(repoPath, ['merge-base', sourceSha, targetSha])).trim();
+
+    // Count commits ahead/behind
+    const aheadOutput = await execGit(repoPath, ['rev-list', '--count', `${mergeBase}..${sourceSha}`]);
+    const behindOutput = await execGit(repoPath, ['rev-list', '--count', `${mergeBase}..${targetSha}`]);
+    const aheadCount = parseInt(aheadOutput.trim(), 10);
+    const behindCount = parseInt(behindOutput.trim(), 10);
+
+    // Check if already up to date
+    if (aheadCount === 0) {
+      return {
+        canMerge: false,
+        aheadCount: 0,
+        behindCount,
+        conflicts: ['Source branch has no new commits to merge'],
+      };
+    }
+
+    // Use merge-tree to check for conflicts (git 2.38+)
+    // Falls back to worktree-based check for older git versions
+    try {
+      const mergeTreeResult = await execGit(repoPath, [
+        'merge-tree',
+        '--write-tree',
+        targetSha,
+        sourceSha,
+      ]);
+      // If merge-tree succeeds, no conflicts
+      return { canMerge: true, aheadCount, behindCount };
+    } catch (mergeTreeError: any) {
+      // merge-tree exits with non-zero on conflicts
+      // Parse conflict info from the error
+      const conflicts = parseConflictsFromMergeTree(mergeTreeError.message || '');
+      if (conflicts.length > 0) {
+        return { canMerge: false, conflicts, aheadCount, behindCount };
+      }
+      // If merge-tree isn't available, try alternate method
+    }
+
+    // Fallback: Use worktree to test merge
+    return await checkMergeWithWorktree(repoPath, sourceBranch, targetBranch, aheadCount, behindCount);
+  } catch (error: any) {
+    return {
+      canMerge: false,
+      conflicts: [error.message || 'Failed to check merge status'],
+    };
+  }
+}
+
+/**
+ * Parse conflicts from merge-tree output
+ */
+function parseConflictsFromMergeTree(output: string): string[] {
+  const conflicts: string[] = [];
+  const lines = output.split('\n');
+
+  for (const line of lines) {
+    // Look for conflict markers
+    if (line.includes('CONFLICT') || line.includes('conflict in')) {
+      conflicts.push(line.trim());
+    }
+    // Also look for file paths in merge conflicts
+    const pathMatch = line.match(/^\s*([^\s]+)\s+\(content\)/);
+    if (pathMatch) {
+      conflicts.push(pathMatch[1]);
+    }
+  }
+
+  return conflicts;
+}
+
+/**
+ * Check merge using a temporary worktree (fallback method)
+ */
+async function checkMergeWithWorktree(
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+  aheadCount: number,
+  behindCount: number
+): Promise<MergeCheckResult> {
+  const worktreePath = path.join(repoPath, '..', `.worktree-merge-check-${Date.now()}`);
+
+  try {
+    // Create worktree
+    await execGit(repoPath, ['worktree', 'add', '--detach', worktreePath, targetBranch]);
+
+    try {
+      // Try dry-run merge
+      await execGit(worktreePath, ['merge', '--no-commit', '--no-ff', sourceBranch]);
+      // If we get here, merge is possible
+      await execGit(worktreePath, ['merge', '--abort']).catch(() => {});
+      return { canMerge: true, aheadCount, behindCount };
+    } catch (mergeError: any) {
+      // Merge failed, extract conflicts
+      try {
+        const statusOutput = await execGit(worktreePath, ['status', '--porcelain']);
+        const conflicts = statusOutput
+          .split('\n')
+          .filter(line => line.startsWith('UU ') || line.startsWith('AA ') || line.startsWith('DD '))
+          .map(line => line.slice(3).trim());
+
+        await execGit(worktreePath, ['merge', '--abort']).catch(() => {});
+        return { canMerge: false, conflicts, aheadCount, behindCount };
+      } catch {
+        return {
+          canMerge: false,
+          conflicts: [mergeError.message || 'Merge conflict detected'],
+          aheadCount,
+          behindCount,
+        };
+      }
+    }
+  } finally {
+    // Clean up worktree
+    try {
+      await execGit(repoPath, ['worktree', 'remove', '--force', worktreePath]);
+    } catch {
+      // Try manual cleanup
+      await fs.rm(worktreePath, { recursive: true, force: true }).catch(() => {});
+      await execGit(repoPath, ['worktree', 'prune']).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Merge branches in a bare repository
+ */
+export async function mergeBranches(
+  ownerSlug: string,
+  repoSlug: string,
+  sourceBranch: string,
+  targetBranch: string,
+  strategy: MergeStrategy,
+  message: string,
+  author?: { name: string; email: string }
+): Promise<MergeResult> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+
+  // Create a temporary worktree for the merge operation
+  const worktreeId = `merge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const worktreePath = path.join(repoPath, '..', `.worktree-${worktreeId}`);
+
+  try {
+    // Create worktree at target branch
+    await execGit(repoPath, ['worktree', 'add', worktreePath, targetBranch]);
+
+    // Set up author for the merge commit
+    if (author) {
+      await execGit(worktreePath, ['config', 'user.name', author.name]);
+      await execGit(worktreePath, ['config', 'user.email', author.email]);
+    }
+
+    let commitHash: string;
+
+    switch (strategy) {
+      case 'merge':
+        commitHash = await performMerge(worktreePath, repoPath, sourceBranch, targetBranch, message);
+        break;
+      case 'squash':
+        commitHash = await performSquashMerge(worktreePath, repoPath, sourceBranch, targetBranch, message);
+        break;
+      case 'rebase':
+        commitHash = await performRebaseMerge(worktreePath, repoPath, sourceBranch, targetBranch);
+        break;
+      default:
+        throw new Error(`Unknown merge strategy: ${strategy}`);
+    }
+
+    return { success: true, commitHash };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || 'Merge operation failed',
+    };
+  } finally {
+    // Clean up worktree
+    try {
+      await execGit(repoPath, ['worktree', 'remove', '--force', worktreePath]);
+    } catch {
+      await fs.rm(worktreePath, { recursive: true, force: true }).catch(() => {});
+      await execGit(repoPath, ['worktree', 'prune']).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Perform standard 3-way merge
+ */
+async function performMerge(
+  worktreePath: string,
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+  message: string
+): Promise<string> {
+  // Perform the merge
+  await execGit(worktreePath, ['merge', '--no-ff', '-m', message, sourceBranch]);
+
+  // Get the merge commit hash
+  const commitHash = (await execGit(worktreePath, ['rev-parse', 'HEAD'])).trim();
+
+  // Update the ref in the bare repo
+  await execGit(repoPath, ['update-ref', `refs/heads/${targetBranch}`, commitHash]);
+
+  return commitHash;
+}
+
+/**
+ * Perform squash merge - combine all commits into one
+ */
+async function performSquashMerge(
+  worktreePath: string,
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+  message: string
+): Promise<string> {
+  // Squash merge (brings changes but doesn't commit)
+  await execGit(worktreePath, ['merge', '--squash', sourceBranch]);
+
+  // Create the squash commit
+  await execGit(worktreePath, ['commit', '-m', message]);
+
+  // Get the commit hash
+  const commitHash = (await execGit(worktreePath, ['rev-parse', 'HEAD'])).trim();
+
+  // Update the ref in the bare repo
+  await execGit(repoPath, ['update-ref', `refs/heads/${targetBranch}`, commitHash]);
+
+  return commitHash;
+}
+
+/**
+ * Perform rebase merge - replay commits on top of target
+ */
+async function performRebaseMerge(
+  worktreePath: string,
+  repoPath: string,
+  sourceBranch: string,
+  targetBranch: string
+): Promise<string> {
+  // First, checkout the source branch in the worktree
+  await execGit(worktreePath, ['checkout', sourceBranch]);
+
+  // Rebase onto target
+  await execGit(worktreePath, ['rebase', targetBranch]);
+
+  // Get the rebased tip
+  const rebasedTip = (await execGit(worktreePath, ['rev-parse', 'HEAD'])).trim();
+
+  // Fast-forward target to the rebased tip
+  await execGit(repoPath, ['update-ref', `refs/heads/${targetBranch}`, rebasedTip]);
+
+  return rebasedTip;
+}
+
+/**
+ * Delete a branch
+ */
+export async function deleteBranch(
+  ownerSlug: string,
+  repoSlug: string,
+  branchName: string
+): Promise<void> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  await execGit(repoPath, ['branch', '-D', branchName]);
+}
+
+/**
+ * Get the current SHA of a branch
+ */
+export async function getBranchSha(
+  ownerSlug: string,
+  repoSlug: string,
+  branchName: string
+): Promise<string> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  const sha = await execGit(repoPath, ['rev-parse', branchName]);
+  return sha.trim();
 }

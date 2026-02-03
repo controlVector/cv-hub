@@ -288,6 +288,12 @@ export const pullRequests = pgTable('pull_requests', {
   // Draft status
   isDraft: boolean('is_draft').default(false).notNull(),
 
+  // Auto-merge
+  autoMergeEnabled: boolean('auto_merge_enabled').default(false).notNull(),
+  autoMergeMethod: varchar('auto_merge_method', { length: 10 }),
+  autoMergeEnabledBy: uuid('auto_merge_enabled_by').references(() => users.id, { onDelete: 'set null' }),
+  autoMergeEnabledAt: timestamp('auto_merge_enabled_at', { withTimezone: true }),
+
   closedAt: timestamp('closed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
