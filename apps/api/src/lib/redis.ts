@@ -6,7 +6,11 @@ let redis: RedisClientType | null = null;
 
 export async function getRedis(): Promise<RedisClientType> {
   if (!redis) {
-    redis = createClient({ url: env.REDIS_URL });
+    const isSecure = env.REDIS_URL.startsWith('rediss://');
+    redis = createClient({
+      url: env.REDIS_URL,
+      socket: isSecure ? { tls: true, rejectUnauthorized: false } : undefined,
+    });
     redis.on('error', (err) => dbLogger.error('Redis connection error', err));
     await redis.connect();
   }

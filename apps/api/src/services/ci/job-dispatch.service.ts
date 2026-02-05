@@ -97,10 +97,12 @@ let executionWorker: Worker<JobExecutionJobData, JobExecutionResult> | null = nu
  */
 function getRedisConnection() {
   const url = new URL(env.REDIS_URL);
+  const isSecure = env.REDIS_URL.startsWith('rediss://');
   return {
     host: url.hostname,
     port: parseInt(url.port || '6379'),
     password: url.password || undefined,
+    tls: isSecure ? { rejectUnauthorized: false } : undefined,
   };
 }
 

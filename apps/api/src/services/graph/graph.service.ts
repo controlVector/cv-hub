@@ -57,6 +57,7 @@ export class GraphManager {
         url.password = env.FALKORDB_PASSWORD;
       }
 
+      const isSecure = url.protocol === 'rediss:';
       this.client = createClient({
         url: url.toString(),
         socket: {
@@ -65,7 +66,9 @@ export class GraphManager {
               return new Error('Max reconnection attempts reached');
             }
             return retries * 100;
-          }
+          },
+          tls: isSecure ? true : undefined,
+          rejectUnauthorized: isSecure ? false : undefined,
         }
       });
 

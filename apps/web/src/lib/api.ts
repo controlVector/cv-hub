@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react';
 import axios, { AxiosError } from 'axios';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -82,6 +83,10 @@ api.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
+    }
+
+    if (error.response?.status && error.response.status >= 500) {
+      Sentry.captureException(error);
     }
 
     return Promise.reject(error);

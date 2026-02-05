@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from './logger';
@@ -77,6 +78,7 @@ export function errorHandler(err: Error, c: Context) {
   }
 
   // Generic server error
+  Sentry.captureException(err);
   return c.json({
     error: {
       code: 'INTERNAL_ERROR',

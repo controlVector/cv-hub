@@ -104,7 +104,7 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "api_url=https://api-dev.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "api_url=https://api-dev.controlfab.ai/api" >> $GITHUB_OUTPUT
             echo "app_url=https://hub-dev.controlfab.ai" >> $GITHUB_OUTPUT
             echo "image_tag=dev" >> $GITHUB_OUTPUT
             echo "ecs_service=controlfab-api-dev" >> $GITHUB_OUTPUT
@@ -113,7 +113,7 @@ jobs:
             echo "cloudfront_distribution=" >> $GITHUB_OUTPUT
           else
             echo "environment=production" >> $GITHUB_OUTPUT
-            echo "api_url=https://api.hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.hub.controlfab.ai/api" >> $GITHUB_OUTPUT
             echo "app_url=https://hub.controlfab.ai" >> $GITHUB_OUTPUT
             echo "image_tag=latest" >> $GITHUB_OUTPUT
             echo "ecs_service=controlfab-api" >> $GITHUB_OUTPUT
@@ -147,6 +147,7 @@ jobs:
         env:
           VITE_API_URL: ${{ steps.env.outputs.api_url }}
           VITE_APP_URL: ${{ steps.env.outputs.app_url }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
 
       # Deploy API to ECS
       - name: Download current task definition
@@ -157,12 +158,20 @@ jobs:
             --output json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
             > task-definition.json
 
-      - name: Update task definition with new image
-        id: task-def
+      - name: Update API container image in task definition
+        id: task-def-api
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
           container-name: api
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Update CI/CD worker container image in task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-api.outputs.task-definition }}
+          container-name: ci-cd-worker
           image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
       - name: Deploy to ECS
