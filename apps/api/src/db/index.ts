@@ -3,11 +3,11 @@ import { Pool } from 'pg';
 import { env } from '../config/env';
 import * as schema from './schema';
 
+// RDS requires SSL but uses Amazon's CA which Node doesn't trust by default
+const isRds = env.DATABASE_URL.includes('.rds.amazonaws.com');
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
-  ssl: env.DATABASE_URL.includes('sslmode=require')
-    ? { rejectUnauthorized: false }
-    : undefined,
+  ssl: isRds ? { rejectUnauthorized: false } : undefined,
 });
 
 export const db = drizzle(pool, { schema });
