@@ -93,12 +93,15 @@ export interface OverageItem {
 }
 
 // Overage costs per unit (monthly, in cents)
-const OVERAGE_COSTS = {
+const OVERAGE_COSTS: Record<string, number> = {
   environments: 1500,    // $15/environment
   repositories: 100,     // $1/repo
   teamMembers: 500,      // $5/seat
   storageGb: 25,         // $0.25/GB
   buildMinutes: 2,       // $0.02/minute
+  configSets: 100,       // $1/config set
+  configSchemas: 200,    // $2/schema
+  configHistoryDays: 0,  // No overage for history
 };
 
 /**

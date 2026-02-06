@@ -35,6 +35,9 @@ export const pricingTiers = pgTable('pricing_tiers', {
     teamMembers: number | null;     // Max team members
     storageGb: number | null;       // Max storage in GB
     buildMinutes: number | null;    // Monthly build minutes
+    configSets: number | null;      // Max config sets (0 = disabled)
+    configSchemas: number | null;   // Max config schemas
+    configHistoryDays: number | null; // Config history retention in days
   }>().notNull(),
 
   // Features included in this tier
@@ -50,6 +53,9 @@ export const pricingTiers = pgTable('pricing_tiers', {
     ipAllowlisting: boolean;
     webhooks: boolean;
     apiAccess: boolean;
+    configManagement: boolean;        // Config management feature
+    configExternalStores: boolean;    // External config stores (AWS SSM, Vault, etc.)
+    configExports: boolean;           // Config export functionality
   }>().notNull(),
 
   // Display configuration

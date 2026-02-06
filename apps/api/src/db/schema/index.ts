@@ -21,3 +21,5 @@ export * from './notifications';
 export * from './repo-releases';
 export * from './tag-protection';
 export * from './deploy-keys';
+export * from './config';
+export * from './feature-flags';

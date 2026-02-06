@@ -273,6 +273,9 @@ async function executeAction(
     case 'ai-health-check':
       return actionAIHealthCheck(params, environment, context);
 
+    case 'config-inject':
+      return actionConfigInject(params, workspace, environment);
+
     default:
       throw new Error(`Unknown action: ${step.uses}`);
   }
@@ -672,6 +675,140 @@ async function actionAIHealthCheck(
   return {
     output: `Health check passed for ${url}\nAnalysis: ${result.analysis}`,
     outputs: { healthy: 'true' },
+  };
+}
+
+/**
+ * config-inject@v1 - Inject config values from CV-Hub Config Management
+ *
+ * Resolves config values (with inheritance) and injects them into the
+ * pipeline environment or writes them to a file.
+ *
+ * Parameters:
+ *   config-set: Config set ID or name
+ *   environment: Target environment name (e.g., 'production')
+ *   format: 'env' (inject as env vars) or 'file' (write to file)
+ *   file-path: Path to write config file (required if format='file')
+ *   file-format: 'dotenv', 'json', 'yaml' (default: 'dotenv')
+ *   prefix: Optional prefix for environment variable names
+ *   include-secrets: Whether to include secret values (default: true)
+ *   token: Config access token (required, usually from CI secrets)
+ */
+async function actionConfigInject(
+  params: Record<string, any>,
+  workspace: WorkspaceConfig,
+  environment: Record<string, string>
+): Promise<StepExecutionResult> {
+  const { getResolvedValuesAsObject } = await import('../config-resolver.service');
+  const { verifyConfigAccessToken, getConfigSetByName } = await import('../config.service');
+
+  const configSetParam = params['config-set'];
+  const envName = params.environment;
+  const format = params.format || 'env';
+  const filePath = params['file-path'];
+  const fileFormat = params['file-format'] || 'dotenv';
+  const prefix = params.prefix || '';
+  const includeSecrets = params['include-secrets'] !== false;
+  const token = params.token || environment.CONFIG_ACCESS_TOKEN;
+
+  if (!configSetParam) {
+    throw new Error('config-inject@v1 requires "config-set" parameter');
+  }
+
+  if (!token) {
+    throw new Error('config-inject@v1 requires "token" parameter or CONFIG_ACCESS_TOKEN env var');
+  }
+
+  if (format === 'file' && !filePath) {
+    throw new Error('config-inject@v1 requires "file-path" when format is "file"');
+  }
+
+  // Verify the access token
+  const tokenInfo = await verifyConfigAccessToken(token);
+  if (!tokenInfo) {
+    throw new Error('Invalid or expired config access token');
+  }
+
+  // Get the config set (by ID or name)
+  let configSetId = configSetParam;
+  if (!configSetParam.match(/^[0-9a-f-]{36}$/i)) {
+    // Looks like a name, not a UUID - resolve it
+    const configSet = await getConfigSetByName(
+      tokenInfo.organizationId,
+      configSetParam,
+      envName
+    );
+    if (!configSet) {
+      throw new Error(`Config set "${configSetParam}" not found for environment "${envName || 'default'}"`);
+    }
+    configSetId = configSet.id;
+  }
+
+  // Check if token has access to this config set
+  // Token's primary configSetId is always accessible, plus any allowedSetIds
+  const accessibleSetIds = [tokenInfo.configSetId, ...(tokenInfo.allowedConfigSetIds || [])];
+  if (!accessibleSetIds.includes(configSetId)) {
+    throw new Error('Access token does not have permission to access this config set');
+  }
+
+  logger.info('ci', 'Injecting config values', {
+    configSet: configSetParam,
+    environment: envName,
+    format,
+    prefix,
+  });
+
+  // Get resolved values
+  const values = await getResolvedValuesAsObject(configSetId, {
+    includeSecrets,
+    keyPrefix: prefix,
+    keyTransform: 'uppercase',
+  });
+
+  const keyCount = Object.keys(values).length;
+
+  if (format === 'env') {
+    // Return values as outputs to be merged into environment
+    return {
+      output: `Injected ${keyCount} config values into environment${prefix ? ` with prefix "${prefix}"` : ''}`,
+      outputs: values,
+    };
+  }
+
+  // Write to file
+  const { writeFileSync } = await import('fs');
+  const { resolve: resolvePath } = await import('path');
+
+  let fileContent: string;
+  switch (fileFormat) {
+    case 'json':
+      fileContent = JSON.stringify(values, null, 2);
+      break;
+    case 'yaml':
+      fileContent = Object.entries(values)
+        .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+        .join('\n');
+      break;
+    case 'dotenv':
+    default:
+      fileContent = Object.entries(values)
+        .map(([k, v]) => {
+          // Escape special characters in dotenv format
+          const escaped = v.includes('\n') || v.includes('"')
+            ? `"${v.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
+            : v;
+          return `${k}=${escaped}`;
+        })
+        .join('\n');
+      break;
+  }
+
+  const absolutePath = resolvePath(getWorkspacePath(environment.CV_HUB_RUN_ID || '', ''), filePath);
+  writeFileSync(absolutePath, fileContent, 'utf8');
+
+  return {
+    output: `Wrote ${keyCount} config values to ${filePath} (${fileFormat} format)`,
+    outputs: { 'config-file': absolutePath, 'key-count': String(keyCount) },
   };
 }
 
