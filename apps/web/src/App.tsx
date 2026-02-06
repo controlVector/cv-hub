@@ -21,9 +21,12 @@ import RegisterPage from './pages/auth/RegisterPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import VerifyEmailPage from './pages/auth/VerifyEmailPage';
+import SettingsPage from './pages/settings/SettingsPage';
 import SecurityPage from './pages/settings/SecurityPage';
 import DeveloperPage from './pages/settings/DeveloperPage';
 import ConnectionsPage from './pages/settings/ConnectionsPage';
+import ProfilePage from './pages/ProfilePage';
+import AdminPage from './pages/admin/AdminPage';
 import ConsentPage from './pages/oauth/ConsentPage';
 import SubmitFeatureRequest from './pages/features/SubmitFeatureRequest';
 import MyFeatureRequests from './pages/features/MyFeatureRequests';
@@ -44,6 +47,8 @@ import {
 } from './pages/ci-cd';
 import { PricingPage } from './pages/pricing';
 import EnvironmentPage from './pages/settings/EnvironmentPage';
+import { ConfigDashboard, ConfigSetEditor, SchemaEditor } from './pages/config';
+import { FlagsDashboard, FlagEditor } from './pages/flags';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -113,10 +118,22 @@ function App() {
                 <Route path="pull-requests" element={<PullRequests />} />
                 <Route path="graph" element={<KnowledgeGraph />} />
                 <Route path="search" element={<Search />} />
+                <Route path="settings" element={<SettingsPage />} />
                 <Route path="settings/security" element={<SecurityPage />} />
                 <Route path="settings/developer" element={<DeveloperPage />} />
                 <Route path="settings/connections" element={<ConnectionsPage />} />
                 <Route path="settings/environment" element={<EnvironmentPage />} />
+                {/* Config Management Routes */}
+                <Route path="config" element={<ConfigDashboard />} />
+                <Route path="config/sets" element={<ConfigDashboard />} />
+                <Route path="config/sets/:id" element={<ConfigSetEditor />} />
+                <Route path="config/schemas" element={<ConfigDashboard />} />
+                <Route path="config/schemas/:id" element={<SchemaEditor />} />
+                {/* Feature Flags Routes */}
+                <Route path="flags" element={<FlagsDashboard />} />
+                <Route path="flags/:key" element={<FlagEditor />} />
+                <Route path="profile" element={<ProfilePage />} />
+                <Route path="admin" element={<AdminPage />} />
                 <Route path="features/submit" element={<SubmitFeatureRequest />} />
                 <Route path="features/my-requests" element={<MyFeatureRequests />} />
                 <Route path="orgs" element={<OrganizationList />} />

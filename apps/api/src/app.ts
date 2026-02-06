@@ -37,11 +37,17 @@ import { tagProtectionRoutes } from './routes/tag-protection';
 import { deployKeyRoutes } from './routes/deploy-keys';
 import { codeownersRoutes } from './routes/codeowners';
 import { autoMergeRoutes } from './routes/auto-merge';
+import adminRoutes from './routes/admin';
+import { configRoutes } from './routes/config';
+import featureFlagsRoutes from './routes/feature-flags';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
   userId?: string;
   sessionId?: string;
+  // Feature flags API key context
+  flagOrgId?: string;
+  flagEnv?: string;
 };
 
 export type AppEnv = { Variables: AppVariables };
@@ -153,6 +159,15 @@ app.route('/api/v1', codeownersRoutes);
 
 // Auto-Merge API (PR auto-merge)
 app.route('/api/v1', autoMergeRoutes);
+
+// Admin API (admin-only endpoints, docs, user management)
+app.route('/api/admin', adminRoutes);
+
+// Config Management API (environment variables, secrets, configuration)
+app.route('/api/v1/config', configRoutes);
+
+// Feature Flags API (feature toggles, segments, targeting)
+app.route('/api/v1/flags', featureFlagsRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {

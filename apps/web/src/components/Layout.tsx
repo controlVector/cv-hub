@@ -37,6 +37,8 @@ import {
   Store as StoreIcon,
   Business as BusinessIcon,
   Link as LinkIcon,
+  Tune as ConfigIcon,
+  Flag as FlagIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -49,6 +51,8 @@ const menuItems = [
   { text: 'Repositories', icon: <RepoIcon />, path: '/dashboard/repositories' },
   { text: 'Pull Requests', icon: <PRIcon />, path: '/dashboard/pull-requests' },
   { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },
+  { text: 'Config', icon: <ConfigIcon />, path: '/dashboard/config' },
+  { text: 'Feature Flags', icon: <FlagIcon />, path: '/dashboard/flags' },
   { text: 'Knowledge Graph', icon: <GraphIcon />, path: '/dashboard/graph' },
   { text: 'Search', icon: <SearchIcon />, path: '/dashboard/search' },
   { text: 'App Store', icon: <StoreIcon />, path: '/apps' },
@@ -64,6 +68,7 @@ export default function Layout() {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleDrawerToggle = () => {
@@ -320,12 +325,48 @@ export default function Layout() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Notifications */}
             <Tooltip title="Notifications">
-              <IconButton color="inherit">
+              <IconButton color="inherit" onClick={(e) => setNotificationAnchorEl(e.currentTarget)}>
                 <Badge badgeContent={3} color="secondary">
                   <NotificationsIcon />
                 </Badge>
               </IconButton>
             </Tooltip>
+            <Menu
+              anchorEl={notificationAnchorEl}
+              open={Boolean(notificationAnchorEl)}
+              onClose={() => setNotificationAnchorEl(null)}
+              PaperProps={{
+                sx: { minWidth: 300, maxWidth: 400, mt: 1 },
+              }}
+            >
+              <Box sx={{ p: 2, borderBottom: `1px solid ${colors.slateLighter}` }}>
+                <Typography variant="subtitle1" fontWeight={600}>Notifications</Typography>
+              </Box>
+              <MenuItem onClick={() => setNotificationAnchorEl(null)}>
+                <Box>
+                  <Typography variant="body2">New repository activity</Typography>
+                  <Typography variant="caption" sx={{ color: colors.textMuted }}>2 minutes ago</Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem onClick={() => setNotificationAnchorEl(null)}>
+                <Box>
+                  <Typography variant="body2">Pull request merged</Typography>
+                  <Typography variant="caption" sx={{ color: colors.textMuted }}>1 hour ago</Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem onClick={() => setNotificationAnchorEl(null)}>
+                <Box>
+                  <Typography variant="body2">CI/CD pipeline completed</Typography>
+                  <Typography variant="caption" sx={{ color: colors.textMuted }}>3 hours ago</Typography>
+                </Box>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={() => { setNotificationAnchorEl(null); navigate('/dashboard/notifications'); }}>
+                <Typography variant="body2" sx={{ color: colors.violet, textAlign: 'center', width: '100%' }}>
+                  View all notifications
+                </Typography>
+              </MenuItem>
+            </Menu>
 
             {/* Settings */}
             <Tooltip title="Settings">
@@ -390,6 +431,15 @@ export default function Layout() {
               <LinkIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
               Connections
             </MenuItem>
+            {user?.isAdmin && (
+              <>
+                <Divider />
+                <MenuItem onClick={() => { handleMenuClose(); navigate('/dashboard/admin'); }}>
+                  <SettingsIcon sx={{ mr: 1, fontSize: '1.2rem', color: colors.violet }} />
+                  Admin Dashboard
+                </MenuItem>
+              </>
+            )}
             <Divider />
             <MenuItem onClick={() => { handleMenuClose(); logout(); }} sx={{ color: colors.rose }}>
               Sign Out
