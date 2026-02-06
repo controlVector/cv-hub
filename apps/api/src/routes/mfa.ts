@@ -17,7 +17,7 @@ const mfa = new Hono<AppEnv>();
 
 // Helper to get userId from context (throws if not authenticated)
 function getUserId(c: { get: (key: 'userId') => string | undefined }): string {
-  const userId = getUserId(c);
+  const userId = c.get('userId');
   if (!userId) throw new AuthenticationError('Not authenticated');
   return userId;
 }
