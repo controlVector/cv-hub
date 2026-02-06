@@ -292,15 +292,15 @@ export function RepositoryProvider({ children }: RepositoryProviderProps) {
   const navigateToPath = useCallback((path: string) => {
     const isFile = !path.endsWith('/') && path.includes('.');
     if (isFile) {
-      navigate(`/repositories/${owner}/${repo}/blob/${currentRef}/${path}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}/blob/${currentRef}/${path}`);
     } else {
-      navigate(`/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
     }
   }, [navigate, owner, repo, currentRef]);
 
   const navigateToRef = useCallback((ref: string) => {
     setCurrentRef(ref);
-    navigate(`/repositories/${owner}/${repo}/tree/${ref}`);
+    navigate(`/dashboard/repositories/${owner}/${repo}/tree/${ref}`);
   }, [navigate, owner, repo]);
 
   const value = useMemo<RepositoryContextValue>(() => ({

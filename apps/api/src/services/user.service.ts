@@ -54,6 +54,7 @@ export async function createUser(input: RegisterInput): Promise<AuthenticatedUse
     avatarUrl: user.avatarUrl || '',
     emailVerified: user.emailVerified,
     mfaEnabled: user.mfaEnabled,
+    isAdmin: user.isAdmin,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -91,6 +92,7 @@ export async function authenticateUser(email: string, password: string): Promise
     avatarUrl: user.avatarUrl || '',
     emailVerified: user.emailVerified,
     mfaEnabled: user.mfaEnabled,
+    isAdmin: user.isAdmin,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -112,6 +114,7 @@ export async function getUserById(userId: string): Promise<AuthenticatedUser | n
     avatarUrl: user.avatarUrl || '',
     emailVerified: user.emailVerified,
     mfaEnabled: user.mfaEnabled,
+    isAdmin: user.isAdmin,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

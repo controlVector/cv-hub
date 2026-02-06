@@ -76,17 +76,17 @@ function RepositoryDetailContent() {
   const handleFileSelect = (path: string, type: 'blob' | 'tree') => {
     if (type === 'blob') {
       loadFile(path);
-      navigate(`/repositories/${owner}/${repo}/blob/${currentRef}/${path}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}/blob/${currentRef}/${path}`);
     } else {
-      navigate(`/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
     }
   };
 
   const handleNavigatePath = (path: string) => {
     if (path === '') {
-      navigate(`/repositories/${owner}/${repo}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}`);
     } else {
-      navigate(`/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
+      navigate(`/dashboard/repositories/${owner}/${repo}/tree/${currentRef}/${path}`);
     }
   };
 
@@ -95,7 +95,7 @@ function RepositoryDetailContent() {
   };
 
   const handleViewHistory = () => {
-    navigate(`/repositories/${owner}/${repo}/commits/${currentRef}`);
+    navigate(`/dashboard/repositories/${owner}/${repo}/commits/${currentRef}`);
   };
 
   const handleAIExplain = () => {
@@ -332,7 +332,7 @@ function RepositoryDetailContent() {
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
         <MenuItem onClick={() => {
           setAnchorEl(null);
-          navigate(`/repositories/${owner}/${repo}/graph`);
+          navigate(`/dashboard/repositories/${owner}/${repo}/graph`);
         }}>
           View Knowledge Graph
         </MenuItem>
@@ -350,7 +350,7 @@ function RepositoryDetailContent() {
         </MenuItem>
         <MenuItem onClick={() => {
           setAnchorEl(null);
-          navigate(`/repositories/${owner}/${repo}/settings`);
+          navigate(`/dashboard/repositories/${owner}/${repo}/settings`);
         }}>
           Repository Settings
         </MenuItem>

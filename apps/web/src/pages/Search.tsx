@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Box,
@@ -87,13 +87,16 @@ const getResultTypeColor = (type: string) => {
 
 export default function Search() {
   const [searchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || '';
+  const urlQuery = searchParams.get('q') || '';
 
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQuery] = useState(urlQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [tabValue, setTabValue] = useState(0);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
   const [searchStats, setSearchStats] = useState<{ total: number; searchedRepos: number; method: string } | null>(null);
+
+  // Track if we should auto-search on URL change
+  const [shouldAutoSearch, setShouldAutoSearch] = useState(false);
 
   // Check search service status
   const { data: searchStatus } = useQuery<SearchStatus>({
@@ -137,8 +140,9 @@ export default function Search() {
     },
   });
 
-  const handleSearch = useCallback(async () => {
-    if (!query.trim()) return;
+  const handleSearch = useCallback(async (searchQuery?: string) => {
+    const queryToSearch = searchQuery ?? query;
+    if (!queryToSearch.trim()) return;
 
     const allResults: SearchResult[] = [];
     let searchMethod = 'graph';
@@ -147,7 +151,7 @@ export default function Search() {
     // Try semantic search first if available
     if (searchStatus?.semanticSearch) {
       try {
-        const semanticResults = await semanticSearchMutation.mutateAsync(query);
+        const semanticResults = await semanticSearchMutation.mutateAsync(queryToSearch);
         searchMethod = 'semantic';
         totalSearchedRepos = semanticResults.searchedRepos || 0;
 
@@ -180,7 +184,7 @@ export default function Search() {
     if (allResults.length === 0) {
       // Search symbols
       try {
-        const symbolResults = await symbolSearchMutation.mutateAsync(query);
+        const symbolResults = await symbolSearchMutation.mutateAsync(queryToSearch);
         totalSearchedRepos = Math.max(totalSearchedRepos, symbolResults.searchedRepos || 0);
 
         for (const result of symbolResults.results || []) {
@@ -202,7 +206,7 @@ export default function Search() {
 
       // Search files
       try {
-        const codeResults = await codeSearchMutation.mutateAsync(query);
+        const codeResults = await codeSearchMutation.mutateAsync(queryToSearch);
         totalSearchedRepos = Math.max(totalSearchedRepos, codeResults.searchedRepos || 0);
 
         for (const result of codeResults.results || []) {
@@ -213,7 +217,7 @@ export default function Search() {
             repositoryId: result.repositoryId,
             path: result.file.path,
             language: result.file.language,
-            highlight: `File matching "${query}"`,
+            highlight: `File matching "${queryToSearch}"`,
           });
         }
       } catch (error) {
@@ -235,6 +239,22 @@ export default function Search() {
     const withContent = allResults.filter(r => r.content).slice(0, 2).map(r => r.id);
     setExpandedResults(new Set(withContent));
   }, [query, searchStatus, semanticSearchMutation, symbolSearchMutation, codeSearchMutation]);
+
+  // React to URL query param changes (e.g., from header search bar)
+  useEffect(() => {
+    if (urlQuery && urlQuery !== query) {
+      setQuery(urlQuery);
+      setShouldAutoSearch(true);
+    }
+  }, [urlQuery]);
+
+  // Trigger search when shouldAutoSearch is set and searchStatus is ready
+  useEffect(() => {
+    if (shouldAutoSearch && query && searchStatus !== undefined) {
+      setShouldAutoSearch(false);
+      handleSearch(query);
+    }
+  }, [shouldAutoSearch, query, searchStatus, handleSearch]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -341,7 +361,7 @@ export default function Search() {
               }}
             />
             <Box
-              onClick={handleSearch}
+              onClick={() => handleSearch()}
               sx={{
                 px: 4,
                 py: 1.5,

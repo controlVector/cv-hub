@@ -17,6 +17,7 @@ export interface AuthenticatedUser extends Omit<User, 'email'> {
   email: string;
   emailVerified: boolean;
   mfaEnabled: boolean;
+  isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

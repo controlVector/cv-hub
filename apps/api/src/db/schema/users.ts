@@ -12,6 +12,7 @@ export const users = pgTable('users', {
   passwordResetToken: varchar('password_reset_token', { length: 64 }),
   passwordResetExpires: timestamp('password_reset_expires', { withTimezone: true }),
   mfaEnabled: boolean('mfa_enabled').default(false).notNull(),
+  isAdmin: boolean('is_admin').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

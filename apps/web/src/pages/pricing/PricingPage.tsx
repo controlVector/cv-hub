@@ -179,7 +179,7 @@ export default function PricingPage() {
           <>
             <Grid container spacing={4} sx={{ mb: 8 }}>
               {tiers.map((tier) => (
-                <Grid item xs={12} md={4} key={tier.id}>
+                <Grid size={{ xs: 12, md: 4 }} key={tier.id}>
                   <PricingCard
                     tier={tier}
                     billingInterval={billingInterval}

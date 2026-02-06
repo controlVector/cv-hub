@@ -35,7 +35,6 @@ export default function PricingCard({
   onSelect,
   onGetQuote,
 }: PricingCardProps) {
-  const price = billingInterval === 'monthly' ? tier.basePriceMonthly : tier.basePriceAnnual;
   const effectiveMonthlyPrice = billingInterval === 'annual' && tier.basePriceAnnual
     ? Math.round(tier.basePriceAnnual / 12)
     : tier.basePriceMonthly;

@@ -35,7 +35,7 @@ import { fetchPricingTiers, fetchUserQuotes } from '../../services/pricing';
 import { colors } from '../../theme';
 
 export default function EnvironmentPage() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly');
   const [selectedTier, setSelectedTier] = useState<string>('pro');
   const [estimate, setEstimate] = useState<PricingEstimate | null>(null);
@@ -165,7 +165,7 @@ export default function EnvironmentPage() {
 
           <Grid container spacing={4}>
             {/* Calculator */}
-            <Grid item xs={12} md={7}>
+            <Grid size={{ xs: 12, md: 7 }}>
               <EnvironmentCalculator
                 tiers={tiers}
                 selectedTier={selectedTier}
@@ -176,7 +176,7 @@ export default function EnvironmentPage() {
             </Grid>
 
             {/* Selected tier card */}
-            <Grid item xs={12} md={5}>
+            <Grid size={{ xs: 12, md: 5 }}>
               {currentTier && (
                 <PricingCard
                   tier={currentTier}
