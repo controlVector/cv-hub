@@ -47,14 +47,14 @@ const auth = new Hono<AppEnv>();
 
 // Helper to get userId from context (throws if not authenticated)
 function getUserId(c: { get: (key: 'userId') => string | undefined }): string {
-  const userId = getUserId(c);
+  const userId = c.get('userId');
   if (!userId) throw new AuthenticationError('Not authenticated');
   return userId;
 }
 
 // Helper to get sessionId from context
 function getSessionId(c: { get: (key: 'sessionId') => string | undefined }): string {
-  const sessionId = getSessionId(c);
+  const sessionId = c.get('sessionId');
   if (!sessionId) throw new AuthenticationError('No session');
   return sessionId;
 }
