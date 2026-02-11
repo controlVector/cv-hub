@@ -42,6 +42,7 @@ import {
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
+import { brand } from '../config/brand';
 import { useAuth } from '../contexts/AuthContext';
 
 const drawerWidth = 260;
@@ -95,8 +96,8 @@ export default function Layout() {
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
         <Box
           component="img"
-          src="/logo.png"
-          alt="Control Fabric"
+          src={brand.logoPath}
+          alt={brand.companyName}
           sx={{
             width: 40,
             height: 40,
@@ -115,7 +116,7 @@ export default function Layout() {
               lineHeight: 1.2,
             }}
           >
-            AI Control Fabric
+            {brand.appName}
           </Typography>
         </Box>
       </Box>
@@ -244,7 +245,7 @@ export default function Layout() {
               fontWeight: 600,
             }}
           >
-            Control Fabric
+            {brand.companyName}
           </Box>
         </Typography>
       </Box>

@@ -1,21 +1,46 @@
 import { createTheme, alpha } from '@mui/material/styles';
+import { brand } from '../config/brand';
 
-// Control Fabric Color Palette - Dark theme with purple/violet AI aesthetic
+// Helper to parse hex to rgba for glow effects
+function hexToGlow(hex: string, opacity: number = 0.15): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+// Helper to darken a hex color
+function darken(hex: string, amount: number = 0.15): string {
+  const r = Math.max(0, Math.round(parseInt(hex.slice(1, 3), 16) * (1 - amount)));
+  const g = Math.max(0, Math.round(parseInt(hex.slice(3, 5), 16) * (1 - amount)));
+  const b = Math.max(0, Math.round(parseInt(hex.slice(5, 7), 16) * (1 - amount)));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Helper to lighten a hex color
+function lighten(hex: string, amount: number = 0.2): string {
+  const r = Math.min(255, Math.round(parseInt(hex.slice(1, 3), 16) + (255 - parseInt(hex.slice(1, 3), 16)) * amount));
+  const g = Math.min(255, Math.round(parseInt(hex.slice(3, 5), 16) + (255 - parseInt(hex.slice(3, 5), 16)) * amount));
+  const b = Math.min(255, Math.round(parseInt(hex.slice(5, 7), 16) + (255 - parseInt(hex.slice(5, 7), 16)) * amount));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Brand-driven Color Palette
 const colors = {
-  // Base dark colors
-  slate: '#0f172a',       // Deepest background
-  slateLight: '#1e293b',  // Card/paper background
+  // Base dark colors (from brand config)
+  slate: brand.colors.bg,
+  slateLight: brand.colors.bgLight,
   slateLighter: '#334155', // Borders, dividers
 
-  // Primary purple/violet spectrum
-  violet: '#8b5cf6',      // Primary - vibrant violet
-  violetLight: '#a78bfa', // Lighter variant
-  violetDark: '#7c3aed',  // Darker/hover variant
-  purple: '#a855f7',      // Secondary purple
+  // Primary color spectrum (from brand config)
+  violet: brand.colors.primary,
+  violetLight: lighten(brand.colors.primary),
+  violetDark: darken(brand.colors.primary),
+  purple: brand.colors.accent,
 
   // Accent colors
-  cyan: '#06b6d4',        // Accent - bright cyan for contrast
-  cyanLight: '#22d3ee',   // Light cyan
+  cyan: brand.colors.secondary,
+  cyanLight: lighten(brand.colors.secondary),
 
   // Text
   textLight: '#f8fafc',
@@ -28,17 +53,17 @@ const colors = {
   rose: '#f43f5e',        // Error/danger
   teal: '#14b8a6',        // Teal
 
-  // Glow effects
-  violetGlow: 'rgba(139, 92, 246, 0.15)',
-  cyanGlow: 'rgba(6, 182, 212, 0.15)',
+  // Glow effects (derived from brand primary)
+  violetGlow: hexToGlow(brand.colors.primary),
+  cyanGlow: hexToGlow(brand.colors.secondary),
 
-  // Legacy aliases (for backward compatibility during migration)
-  navy: '#0f172a',        // -> slate
-  navyLight: '#1e293b',   // -> slateLight
-  navyLighter: '#334155', // -> slateLighter
-  orange: '#8b5cf6',      // -> violet (primary)
-  coral: '#f43f5e',       // -> rose (error/accent)
-  amberGlow: 'rgba(139, 92, 246, 0.15)', // -> violetGlow
+  // Legacy aliases (for backward compatibility)
+  navy: brand.colors.bg,
+  navyLight: brand.colors.bgLight,
+  navyLighter: '#334155',
+  orange: brand.colors.primary,
+  coral: '#f43f5e',
+  amberGlow: hexToGlow(brand.colors.primary),
 };
 
 const theme = createTheme({

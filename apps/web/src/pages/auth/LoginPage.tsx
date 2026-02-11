@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuth } from '../../contexts/AuthContext';
+import { brand } from '../../config/brand';
 import { api, setAccessToken } from '../../lib/api';
 
 interface MFAState {
@@ -275,7 +276,7 @@ export default function LoginPage() {
             Sign In
           </Typography>
           <Typography variant="body2" align="center" sx={{ mb: 3, color: 'rgba(255,255,255,0.7)' }}>
-            Welcome back to Control Fabric
+            Welcome back to {brand.companyName}
           </Typography>
 
           {error && (

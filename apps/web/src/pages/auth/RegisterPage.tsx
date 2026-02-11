@@ -12,6 +12,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
+import { brand } from '../../config/brand';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -82,7 +83,7 @@ export default function RegisterPage() {
             Create Account
           </Typography>
           <Typography variant="body2" align="center" sx={{ mb: 3, color: 'rgba(255,255,255,0.7)' }}>
-            Join Control Fabric today
+            Join {brand.companyName} today
           </Typography>
 
           {error && (

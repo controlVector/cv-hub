@@ -17,6 +17,6 @@ services:
       start_period: 10s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.cv-hub.rule=Host(`git.controlvector.io`)"
+      - "traefik.http.routers.cv-hub.rule=Host(`git.${BRAND_DOMAIN:-controlvector.io}`)"
       - "traefik.http.routers.cv-hub.tls=true"
       - "traefik.http.routers.cv-hub.tls.certresolver=letsencrypt"

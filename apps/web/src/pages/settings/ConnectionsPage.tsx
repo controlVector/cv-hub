@@ -25,6 +25,7 @@ import {
   Error as ErrorIcon,
 } from '@mui/icons-material';
 import { api } from '../../lib/api';
+import { brand } from '../../config/brand';
 
 interface GitHubConnection {
   id: string;
@@ -258,7 +259,7 @@ export default function ConnectionsPage() {
             Your GitHub Repositories
           </Typography>
           <Typography variant="body2" color="text.secondary" paragraph>
-            These repositories can be imported to AI Control Fabric.
+            These repositories can be imported to {brand.shortName}.
           </Typography>
 
           <List>

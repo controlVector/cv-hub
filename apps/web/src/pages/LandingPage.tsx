@@ -27,6 +27,7 @@ import {
   PersonAdd as RegisterIcon,
 } from '@mui/icons-material';
 import { colors } from '../theme';
+import { brand } from '../config/brand';
 import { api } from '../lib/api';
 
 // Extended colors for landing page
@@ -109,7 +110,7 @@ export default function LandingPage() {
       <AppBar position="static" sx={{ backgroundColor: 'transparent', boxShadow: 'none' }}>
         <Toolbar sx={{ justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <img src="/logo.png" alt="AI Control Fabric" style={{ height: 36, borderRadius: 8 }} />
+            <img src={brand.logoPath} alt={brand.appName} style={{ height: 36, borderRadius: 8 }} />
             <Typography
               variant="h6"
               sx={{
@@ -120,7 +121,7 @@ export default function LandingPage() {
                 WebkitTextFillColor: 'transparent',
               }}
             >
-              AI Control Fabric
+              {brand.appName}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -384,7 +385,7 @@ export default function LandingPage() {
             Ready to get started?
           </Typography>
           <Typography variant="body1" sx={{ color: colors.textMuted, mb: 3 }}>
-            Join developers using AI Control Fabric to build better software with AI assistance.
+            Join developers using {brand.appName} to build better software with AI assistance.
           </Typography>
           <Button
             variant="contained"
@@ -411,7 +412,7 @@ export default function LandingPage() {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                &copy; 2026 Control Fabric. All rights reserved.
+                &copy; {new Date().getFullYear()} {brand.companyName}. All rights reserved.
               </Typography>
               <Typography
                 variant="body2"
@@ -431,7 +432,7 @@ export default function LandingPage() {
                     fontWeight: 600,
                   }}
                 >
-                  Control Fabric
+                  {brand.companyName}
                 </Box>
               </Typography>
             </Box>
