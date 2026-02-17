@@ -126,6 +126,12 @@ export default function LandingPage() {
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
+              onClick={() => navigate('/blog')}
+              sx={{ color: colors.orange, fontWeight: 600 }}
+            >
+              Blog
+            </Button>
+            <Button
               variant="outlined"
               startIcon={<LoginIcon />}
               onClick={() => navigate('/login')}
