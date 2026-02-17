@@ -56,10 +56,7 @@ export default function BlogPost() {
               variant="h6"
               sx={{
                 fontWeight: 700,
-                background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
+                color: colors.orange,
               }}
             >
               {brand.appName}
