@@ -1,4 +1,4 @@
-import post1 from './2026-02-18-metadata-is-not-understanding.md?raw';
+import post1 from './2026-02-17-metadata-is-not-understanding.md?raw';
 
 export interface BlogPost {
   title: string;

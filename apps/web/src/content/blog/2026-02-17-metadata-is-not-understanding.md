@@ -1,6 +1,6 @@
 ---
 title: "Why Metadata Is Not Understanding: The Case for Knowledge Graph Version Control"
-date: "2026-02-18"
+date: "2026-02-17"
 author: "John Schmotzer"
 excerpt: "Entire just raised $60M to bolt metadata onto Git. Here's why that's the wrong architecture - and what we're building instead."
 slug: "metadata-is-not-understanding"
@@ -8,7 +8,7 @@ slug: "metadata-is-not-understanding"
 
 # Why Metadata Is Not Understanding: The Case for Knowledge Graph Version Control
 
-*John Schmotzer - February 18, 2026*
+*John Schmotzer - February 17, 2026*
 
 ---
 
