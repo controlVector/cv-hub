@@ -10,6 +10,7 @@ export const brand = {
   companyName: import.meta.env.VITE_BRAND_COMPANY_NAME || 'ControlVector',
   tagline: import.meta.env.VITE_BRAND_TAGLINE || 'AI-Native Git Platform',
   logoPath: import.meta.env.VITE_BRAND_LOGO_PATH || '/branding/controlvector/logo.png',
+  logoFullPath: import.meta.env.VITE_BRAND_LOGO_FULL_PATH || '/branding/controlvector/logo-full.png',
   faviconPath: import.meta.env.VITE_BRAND_FAVICON_PATH || '/branding/controlvector/favicon.png',
   colors: {
     primary: import.meta.env.VITE_BRAND_COLOR_PRIMARY || '#f97316',
