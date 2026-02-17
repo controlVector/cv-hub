@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Container,
@@ -8,101 +7,52 @@ import {
   Card,
   CardContent,
   Grid,
-  Avatar,
-  Chip,
-  Skeleton,
+  Link,
   AppBar,
   Toolbar,
 } from '@mui/material';
 import {
-  Download as DownloadIcon,
   GitHub as GitHubIcon,
-  Code as CodeIcon,
-  Memory as AIIcon,
-  Search as SearchIcon,
-  AccountTree as GraphIcon,
-  Verified as VerifiedIcon,
-  ArrowForward as ArrowForwardIcon,
+  AutoStories as ReadIcon,
   Login as LoginIcon,
   PersonAdd as RegisterIcon,
+  AccountTree as GraphIcon,
+  Search as SearchIcon,
+  Shield as ShieldIcon,
 } from '@mui/icons-material';
 import { colors } from '../theme';
 import { brand } from '../config/brand';
-import { api } from '../lib/api';
 
-// Extended colors for landing page
 const extendedColors = {
-  ...colors,
   navyDark: '#1a2433',
   text: colors.textLight,
   orangeHover: '#e09518',
   border: colors.navyLighter,
 };
 
-interface App {
-  id: string;
-  name: string;
-  description: string;
-  iconUrl?: string;
-  category: string;
-  isFeatured: boolean;
-  isActive: boolean;
-  totalDownloads: number;
-  latestRelease?: {
-    version: string;
-  } | null;
-  organization?: {
-    slug: string;
-    name: string;
-    logoUrl: string | null;
-    isVerified: boolean;
-  } | null;
-}
-
-interface AppsResponse {
-  apps: App[];
-  stats: {
-    totalApps: number;
-    totalDownloads: number;
-    totalReleases: number;
-  };
-}
-
-const features = [
+const valueProps = [
   {
-    icon: <GitHubIcon sx={{ fontSize: 40 }} />,
-    title: 'Git Hosting',
-    description: 'Host your repositories with a familiar GitHub-like experience.',
+    icon: <GraphIcon sx={{ fontSize: 36 }} />,
+    title: 'Beyond Prompt Logs',
+    description:
+      'AI coding tools capture what the AI said. CV-Git captures the semantic relationships, causal chains, and design decisions that give your codebase its meaning.',
   },
   {
-    icon: <AIIcon sx={{ fontSize: 40 }} />,
-    title: 'AI-Powered',
-    description: 'Intelligent code analysis, semantic search, and smart suggestions.',
+    icon: <SearchIcon sx={{ fontSize: 36 }} />,
+    title: 'Five Queries Others Can\'t Answer',
+    description:
+      'Impact analysis. Multi-agent conflict detection. Design decision archaeology. Safety boundary detection. Causal tracing under failure. These require a knowledge graph - not a text search.',
   },
   {
-    icon: <GraphIcon sx={{ fontSize: 40 }} />,
-    title: 'Knowledge Graphs',
-    description: 'Visualize code relationships and understand your codebase structure.',
-  },
-  {
-    icon: <SearchIcon sx={{ fontSize: 40 }} />,
-    title: 'Semantic Search',
-    description: 'Find code using natural language across all your repositories.',
+    icon: <ShieldIcon sx={{ fontSize: 36 }} />,
+    title: 'Built for Regulated Industries',
+    description:
+      'Defense. Automotive. Aerospace. Medical devices. When compliance requires traceable reasoning chains from design decision to deployed code, prompt logs don\'t cut it.',
   },
 ];
 
 export default function LandingPage() {
   const navigate = useNavigate();
-
-  const { data, isLoading } = useQuery<AppsResponse>({
-    queryKey: ['featured-apps'],
-    queryFn: async () => {
-      const response = await api.get('/v1/apps?featured=true');
-      return response.data;
-    },
-  });
-
-  const featuredApps = data?.apps.filter(app => app.isFeatured) || [];
 
   return (
     <Box sx={{ minHeight: '100vh', backgroundColor: extendedColors.navyDark }}>
@@ -164,92 +114,103 @@ export default function LandingPage() {
       </AppBar>
 
       {/* Hero Section */}
-      <Container maxWidth="lg" sx={{ pt: 8, pb: 12 }}>
+      <Container maxWidth="md" sx={{ pt: { xs: 6, md: 10 }, pb: { xs: 6, md: 10 } }}>
         <Box sx={{ textAlign: 'center', mb: 8 }}>
           <Typography
             variant="h2"
             sx={{
               fontWeight: 800,
-              mb: 2,
+              mb: 3,
+              fontSize: { xs: '2rem', md: '3rem' },
+              lineHeight: 1.15,
               background: `linear-gradient(135deg, ${extendedColors.text} 0%, ${colors.orange} 100%)`,
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}
           >
-            AI-Native Git Platform
+            Knowledge Graph Version Control for AI-Generated Code
           </Typography>
           <Typography
             variant="h5"
-            sx={{ color: colors.textMuted, mb: 4, maxWidth: 600, mx: 'auto' }}
+            sx={{
+              color: colors.textMuted,
+              mb: 5,
+              maxWidth: 680,
+              mx: 'auto',
+              fontSize: { xs: '1.1rem', md: '1.35rem' },
+              lineHeight: 1.6,
+            }}
           >
-            Host repositories, explore code with knowledge graphs, and search semantically.
-            Built for developers who want more from their Git platform.
+            Metadata is not understanding. CV-Git captures why your code exists - not just what conversation produced it.
           </Typography>
-          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
               variant="contained"
               size="large"
-              onClick={() => navigate('/register')}
+              startIcon={<ReadIcon />}
+              onClick={() => navigate('/blog/metadata-is-not-understanding')}
               sx={{
                 backgroundColor: colors.orange,
                 px: 4,
                 py: 1.5,
-                fontSize: '1.1rem',
+                fontSize: '1rem',
                 '&:hover': {
                   backgroundColor: extendedColors.orangeHover,
                 },
               }}
             >
-              Start for Free
+              Read the Technical Case
             </Button>
             <Button
               variant="outlined"
               size="large"
-              onClick={() => navigate('/apps')}
+              startIcon={<GitHubIcon />}
+              component="a"
+              href="https://github.com/controlVector/cv-git"
+              target="_blank"
+              rel="noopener noreferrer"
               sx={{
                 borderColor: extendedColors.border,
                 color: extendedColors.text,
                 px: 4,
                 py: 1.5,
-                fontSize: '1.1rem',
+                fontSize: '1rem',
                 '&:hover': {
                   borderColor: colors.orange,
                   backgroundColor: 'rgba(245, 166, 35, 0.1)',
                 },
               }}
             >
-              Browse Apps
+              View on GitHub
             </Button>
           </Box>
         </Box>
 
-        {/* Features Grid */}
-        <Grid container spacing={3} sx={{ mb: 8 }}>
-          {features.map((feature, index) => (
-            <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
+        {/* Value Props */}
+        <Grid container spacing={3} sx={{ mb: 10 }}>
+          {valueProps.map((prop, index) => (
+            <Grid size={{ xs: 12, md: 4 }} key={index}>
               <Card
                 sx={{
                   height: '100%',
-                  textAlign: 'center',
                   backgroundColor: colors.navy,
                   border: `1px solid ${extendedColors.border}`,
                   '&:hover': {
                     borderColor: colors.orange,
-                    transform: 'translateY(-4px)',
                   },
-                  transition: 'all 0.2s ease',
+                  transition: 'border-color 0.2s ease',
                 }}
               >
                 <CardContent sx={{ p: 3 }}>
                   <Box sx={{ color: colors.orange, mb: 2 }}>
-                    {feature.icon}
+                    {prop.icon}
                   </Box>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                    {feature.title}
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>
+                    {prop.title}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                    {feature.description}
+                  <Typography variant="body2" sx={{ color: colors.textMuted, lineHeight: 1.7 }}>
+                    {prop.description}
                   </Typography>
                 </CardContent>
               </Card>
@@ -257,194 +218,47 @@ export default function LandingPage() {
           ))}
         </Grid>
 
-        {/* Featured Apps Section */}
-        <Box sx={{ mb: 8 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h4" sx={{ fontWeight: 700 }}>
-              Featured Apps
-            </Typography>
-            <Button
-              endIcon={<ArrowForwardIcon />}
-              onClick={() => navigate('/apps')}
-              sx={{ color: colors.orange }}
-            >
-              View All
-            </Button>
-          </Box>
-
-          {isLoading ? (
-            <Grid container spacing={3}>
-              {[1, 2, 3].map((i) => (
-                <Grid size={{ xs: 12, md: 4 }} key={i}>
-                  <Card sx={{ backgroundColor: colors.navy }}>
-                    <CardContent>
-                      <Skeleton variant="circular" width={48} height={48} sx={{ mb: 2 }} />
-                      <Skeleton variant="text" width="60%" height={28} />
-                      <Skeleton variant="text" width="100%" />
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-          ) : (
-            <Grid container spacing={3}>
-              {featuredApps.map((app) => (
-                <Grid size={{ xs: 12, md: 4 }} key={app.id}>
-                  <Card
-                    onClick={() => navigate(`/apps/${app.id}`)}
-                    sx={{
-                      cursor: 'pointer',
-                      height: '100%',
-                      backgroundColor: colors.navy,
-                      border: `1px solid ${extendedColors.border}`,
-                      '&:hover': {
-                        borderColor: colors.orange,
-                        transform: 'translateY(-4px)',
-                      },
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    <CardContent>
-                      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                        <Avatar
-                          src={app.iconUrl}
-                          sx={{
-                            width: 48,
-                            height: 48,
-                            backgroundColor: colors.navyLighter,
-                          }}
-                        >
-                          <CodeIcon />
-                        </Avatar>
-                        <Box>
-                          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                            {app.name}
-                          </Typography>
-                          {app.organization && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="caption" sx={{ color: colors.textMuted }}>
-                                by {app.organization.name}
-                              </Typography>
-                              {app.organization.isVerified && (
-                                <VerifiedIcon sx={{ fontSize: 14, color: colors.orange }} />
-                              )}
-                            </Box>
-                          )}
-                        </Box>
-                      </Box>
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: colors.textMuted,
-                          mb: 2,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {app.description}
-                      </Typography>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        {!app.isActive ? (
-                          <Chip
-                            label="Coming Soon"
-                            size="small"
-                            sx={{
-                              backgroundColor: 'transparent',
-                              border: `1px solid ${colors.orange}`,
-                              color: colors.orange,
-                            }}
-                          />
-                        ) : app.latestRelease ? (
-                          <Chip
-                            label={`v${app.latestRelease.version}`}
-                            size="small"
-                            sx={{ backgroundColor: colors.navyLighter }}
-                          />
-                        ) : null}
-                        {app.isActive && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: colors.textMuted }}>
-                            <DownloadIcon sx={{ fontSize: 16 }} />
-                            <Typography variant="caption">{app.totalDownloads}</Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-          )}
-        </Box>
-
-        {/* CTA Section */}
-        <Card
+        {/* Bottom Section */}
+        <Box
           sx={{
-            backgroundColor: colors.navy,
-            border: `2px solid ${colors.orange}`,
             textAlign: 'center',
-            p: 4,
+            py: 4,
+            borderTop: `1px solid ${extendedColors.border}`,
           }}
         >
-          <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
-            Ready to get started?
+          <Typography variant="body1" sx={{ color: colors.textMuted, mb: 1 }}>
+            The Context Manifold paper is available at{' '}
+            <Link
+              href="https://controlvector.io/research"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{ color: colors.orange }}
+            >
+              controlvector.io/research
+            </Link>
           </Typography>
-          <Typography variant="body1" sx={{ color: colors.textMuted, mb: 3 }}>
-            Join developers using {brand.appName} to build better software with AI assistance.
+          <Typography variant="body1" sx={{ color: colors.textMuted }}>
+            Questions?{' '}
+            <Link
+              href="mailto:schmotz@controlvector.io"
+              sx={{ color: colors.orange }}
+            >
+              schmotz@controlvector.io
+            </Link>
           </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => navigate('/register')}
-            sx={{
-              backgroundColor: colors.orange,
-              px: 6,
-              py: 1.5,
-              fontSize: '1.1rem',
-              '&:hover': {
-                backgroundColor: extendedColors.orangeHover,
-              },
-            }}
-          >
-            Create Free Account
-          </Button>
-        </Card>
+        </Box>
       </Container>
 
       {/* Footer */}
       <Box sx={{ borderTop: `1px solid ${extendedColors.border}`, py: 3 }}>
         <Container maxWidth="lg">
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                &copy; {new Date().getFullYear()} {brand.companyName}. All rights reserved.
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: colors.textMuted,
-                  fontSize: '0.8rem',
-                }}
-              >
-                powered by{' '}
-                <Box
-                  component="span"
-                  sx={{
-                    background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    fontWeight: 600,
-                  }}
-                >
-                  {brand.companyName}
-                </Box>
-              </Typography>
-            </Box>
+            <Typography variant="body2" sx={{ color: colors.textMuted }}>
+              &copy; {new Date().getFullYear()} {brand.companyName}. All rights reserved.
+            </Typography>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button size="small" sx={{ color: colors.textMuted }}>
-                Documentation
+              <Button size="small" onClick={() => navigate('/blog')} sx={{ color: colors.textMuted }}>
+                Blog
               </Button>
               <Button size="small" sx={{ color: colors.textMuted }}>
                 Privacy
