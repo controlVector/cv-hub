@@ -53,8 +53,8 @@ export const testOrganizations: Record<string, Omit<NewOrganization, 'id'>> = {
     ssoEnforced: false, // SSO available but not enforced
     ssoAutoProvision: true,
     brandingConfig: {
-      appName: 'Control Fabric',
-      appTagline: 'The AI Development Platform',
+      appName: 'Enterprise Hub',
+      appTagline: 'Custom AI Platform',
       primaryColor: '#8b5cf6',
       secondaryColor: '#06b6d4',
       accentColor: '#a855f7',
@@ -64,18 +64,18 @@ export const testOrganizations: Record<string, Omit<NewOrganization, 'id'>> = {
 
 export const testBrandingConfigs: Record<string, BrandingConfig> = {
   default: {
-    appName: 'Control Fabric',
-    appTagline: 'The AI Development Platform',
-    primaryColor: '#8b5cf6',
+    appName: 'ControlVector Hub',
+    appTagline: 'AI-Native Git Platform',
+    primaryColor: '#f97316',
     secondaryColor: '#06b6d4',
-    accentColor: '#a855f7',
+    accentColor: '#fb923c',
   },
 
   controlfabric: {
     logo: 'https://hub.controlfab.ai/logo.png',
     logoAlt: 'Control Fabric Logo',
     favicon: 'https://hub.controlfab.ai/favicon.ico',
-    appName: 'Control Fabric',
+    appName: 'AI Control Fabric',
     appTagline: 'The AI Development Platform',
     primaryColor: '#8b5cf6',
     secondaryColor: '#06b6d4',

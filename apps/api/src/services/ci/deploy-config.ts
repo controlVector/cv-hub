@@ -3,7 +3,13 @@
  *
  * Environment-aware deploy config derived from the trigger branch.
  * Pipeline YAML references $CV_HUB_ENV_* variables that are resolved at runtime.
+ * URLs and service names are derived from BRAND_DOMAIN (defaults to controlvector.io).
  */
+
+import { brand } from '../../config/brand';
+
+const domain = brand.domain;
+const slug = domain.replace(/\./g, '-').replace(/-io$|-ai$/, '');
 
 export interface DeployConfig {
   environment: 'dev' | 'production';
@@ -26,22 +32,22 @@ export function getDeployConfig(branch: string): DeployConfig {
   if (branchName === 'develop') {
     return {
       environment: 'dev',
-      apiUrl: 'https://api-dev.controlfab.ai',
-      appUrl: 'https://hub-dev.controlfab.ai',
-      service: 'controlfab-api-dev',
-      staticBucket: 'controlfab-web-assets-dev',
-      cdnDistribution: '',
+      apiUrl: `https://api-dev.${domain}`,
+      appUrl: `https://hub-dev.${domain}`,
+      service: `${slug}-api-dev`,
+      staticBucket: `${slug}-web-assets-dev`,
+      cdnDistribution: process.env.CLOUDFRONT_DISTRIBUTION_DEV || '',
     };
   }
 
   // main/master and everything else defaults to production
   return {
     environment: 'production',
-    apiUrl: 'https://api.hub.controlfab.ai',
-    appUrl: 'https://hub.controlfab.ai',
-    service: 'controlfab-api',
-    staticBucket: 'controlfab-web-assets',
-    cdnDistribution: 'E1D32I9T5NEP6A',
+    apiUrl: `https://api.hub.${domain}`,
+    appUrl: `https://hub.${domain}`,
+    service: `${slug}-api`,
+    staticBucket: `${slug}-web-assets`,
+    cdnDistribution: process.env.CLOUDFRONT_DISTRIBUTION_PROD || '',
   };
 }
 
