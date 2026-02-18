@@ -40,6 +40,7 @@ import { autoMergeRoutes } from './routes/auto-merge';
 import adminRoutes from './routes/admin';
 import { configRoutes } from './routes/config';
 import featureFlagsRoutes from './routes/feature-flags';
+import { cliApiRoutes } from './routes/cli-api';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -57,8 +58,13 @@ const app = new Hono<AppEnv>();
 // Global middleware
 app.use('*', logger());
 app.use('*', secureHeaders());
+const allowedOrigins = [
+  env.APP_URL,
+  env.API_URL,
+  ...(env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []),
+];
 app.use('*', cors({
-  origin: [env.APP_URL, env.API_URL], // Allow both frontend and API origin (for test client)
+  origin: allowedOrigins,
   credentials: true,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
@@ -168,6 +174,9 @@ app.route('/api/v1/config', configRoutes);
 
 // Feature Flags API (feature toggles, segments, targeting)
 app.route('/api/v1/flags', featureFlagsRoutes);
+
+// CLI API (CV-Git CLI integration - snake_case responses)
+app.route('/v1', cliApiRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {
