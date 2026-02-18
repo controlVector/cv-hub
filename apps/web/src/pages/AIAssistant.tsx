@@ -32,6 +32,7 @@ import {
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { colors } from '../theme';
+import { brand } from '../config/brand';
 import { api } from '../lib/api';
 
 interface Message {
@@ -84,7 +85,7 @@ const commandTypes = [
 const welcomeMessage: Message = {
   id: 'welcome',
   role: 'assistant',
-  content: `Welcome to the Control Fabric AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
+  content: `Welcome to the ${brand.companyName} AI Assistant! I can help you understand your codebase, find relevant code, review changes, and execute development tasks.
 
 **Available commands:**
 - **explain** - Get detailed explanations of functions, files, or concepts

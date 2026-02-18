@@ -33,6 +33,7 @@ import {
   Business as BusinessIcon,
 } from '@mui/icons-material';
 import { colors } from '../../theme';
+import { brand } from '../../config/brand';
 import { api } from '../../lib/api';
 
 // Types matching the backend
@@ -174,7 +175,7 @@ export default function AppStore() {
           App Store
         </Typography>
         <Typography variant="body1" sx={{ color: colors.textMuted }}>
-          Discover and download Control Fabric applications
+          Discover and download {brand.companyName} applications
         </Typography>
       </Box>
 

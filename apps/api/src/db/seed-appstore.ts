@@ -4,18 +4,19 @@ import { Pool } from 'pg';
 import * as schema from './schema';
 import { apps, releases, releaseAssets, organizations, organizationMembers, users } from './schema';
 import { eq } from 'drizzle-orm';
+import { brand } from '../config/brand';
 
 // Configuration - update these for your environment
-const API_URL = process.env.API_URL || 'https://api.hub.controlfab.ai';
-const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || 'https://releases.hub.controlfab.ai';
-const ORG_LOGO_URL = 'https://hub.controlfab.ai/logo.png';
+const API_URL = process.env.API_URL || `https://api.hub.${brand.domain}`;
+const STORAGE_BASE_URL = process.env.STORAGE_BASE_URL || `https://releases.hub.${brand.domain}`;
+const ORG_LOGO_URL = `https://hub.${brand.domain}/logo.png`;
 
 /**
  * Seed script for App Store
  *
  * Run with: pnpm run db:seed-appstore
  *
- * This creates the Control Fabric organization and its apps (cv-git, cv-prd, cv-hub, mcp-gateway).
+ * This creates the ${brand.companyName} organization and its apps (cv-git, cv-prd, cv-hub, mcp-gateway).
  * Download URLs will point to storage - upload actual binaries separately.
  */
 
@@ -32,12 +33,12 @@ async function seed() {
 
   // Check if already seeded
   const existingOrg = await db.query.organizations.findFirst({
-    where: eq(organizations.slug, 'controlfabric'),
+    where: eq(organizations.slug, brand.shortName.toLowerCase().replace(/\s+/g, '')),
   });
 
   if (existingOrg) {
     console.log('');
-    console.log('⚠️  Control Fabric organization already exists.');
+    console.log(`⚠️  ${brand.companyName} organization already exists.`);
     console.log('   Run with --force to recreate, or update releases manually.');
 
     // Just update asset URLs to current storage URL
@@ -64,14 +65,15 @@ async function seed() {
 
   // Create organization
   console.log('');
-  console.log('📦 Creating Control Fabric organization...');
+  const orgSlug = brand.shortName.toLowerCase().replace(/\s+/g, '');
+  console.log(`📦 Creating ${brand.companyName} organization...`);
 
   const [controlfabricOrg] = await db.insert(organizations).values({
-    slug: 'controlfabric',
-    name: 'Control Fabric',
+    slug: orgSlug,
+    name: brand.companyName,
     description: 'AI-powered developer tools for the modern software team. Building intelligent applications that understand code.',
     logoUrl: ORG_LOGO_URL,
-    websiteUrl: 'https://controlfab.ai',
+    websiteUrl: `https://${brand.domain}`,
     isPublic: true,
     isVerified: true,
   }).returning();
@@ -141,8 +143,8 @@ Search your code using natural language. Find functions by what they do, not jus
 CV-Git processes your code locally. Your code is never sent to external servers unless you explicitly enable cloud features.`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlfab.ai/apps/cv-git',
-      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-git',
+      homepageUrl: 'https://hub.${brand.domain}/apps/cv-git',
+      repositoryUrl: 'https://hub.${brand.domain}/${orgSlug}/cv-git',
       isActive: true,
       isFeatured: true,
       totalDownloads: 0,
@@ -184,8 +186,8 @@ Visualize relationships between features, requirements, and dependencies.
 - **Docker**: Required for local database services`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlfab.ai/apps/cv-prd',
-      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-prd',
+      homepageUrl: 'https://hub.${brand.domain}/apps/cv-prd',
+      repositoryUrl: 'https://hub.${brand.domain}/${orgSlug}/cv-prd',
       isActive: true,
       isFeatured: true,
       totalDownloads: 0,
@@ -223,11 +225,11 @@ CV-Hub can be deployed on:
 - **Docker Compose** (for development/small teams)
 - **Single server** (for personal use)
 
-See deployment documentation at https://hub.controlfab.ai/docs`,
+See deployment documentation at https://hub.${brand.domain}/docs`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://hub.controlfab.ai',
-      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/cv-hub',
+      homepageUrl: 'https://hub.${brand.domain}',
+      repositoryUrl: 'https://hub.${brand.domain}/${orgSlug}/cv-hub',
       isActive: true,
       isFeatured: false,
       totalDownloads: 0,
@@ -270,15 +272,15 @@ MCP Gateway is an enterprise-grade platform for managing Model Context Protocol 
 
 ## Getting Started
 
-Visit [mcp.controlfab.ai](https://mcp.controlfab.ai) to access the hosted MCP Gateway or deploy your own instance.
+Visit [mcp.${brand.domain}](https://mcp.${brand.domain}) to access the hosted MCP Gateway or deploy your own instance.
 
 ## Documentation
 
-Full documentation available at https://mcp.controlfab.ai/docs`,
+Full documentation available at https://mcp.${brand.domain}/docs`,
       iconUrl: `${ORG_LOGO_URL}`,
       category: 'developer-tools',
-      homepageUrl: 'https://mcp.controlfab.ai',
-      repositoryUrl: 'https://hub.controlfab.ai/controlfabric/mcp-gateway',
+      homepageUrl: 'https://mcp.${brand.domain}',
+      repositoryUrl: 'https://hub.${brand.domain}/${orgSlug}/mcp-gateway',
       isActive: true,
       isFeatured: true,
       totalDownloads: 0,
@@ -314,7 +316,7 @@ Full documentation available at https://mcp.controlfab.ai/docs`,
 
 **Quick Install (Linux/macOS):**
 \`\`\`bash
-curl -fsSL https://hub.controlfab.ai/install.sh | bash
+curl -fsSL https://hub.${brand.domain}/install.sh | bash
 \`\`\`
 
 **Post-Installation:**
@@ -332,7 +334,7 @@ cv sync      # Build knowledge graph
 - MCP (Model Context Protocol) integration
 
 ### Feedback
-Report issues at https://hub.controlfab.ai/controlfabric/cv-git/issues`,
+Report issues at https://hub.${brand.domain}/${orgSlug}/cv-git/issues`,
     isPrerelease: false,
     isLatest: true,
     downloadCount: 0,
@@ -465,7 +467,7 @@ Report issues at https://hub.controlfab.ai/controlfabric/cv-git/issues`,
   console.log('═══════════════════════════════════════════════════════════════');
   console.log('');
   console.log('Created:');
-  console.log('  • 1 organization: controlfabric');
+  console.log(`  • 1 organization: ${orgSlug}`);
   console.log('  • 4 apps: cv-git, cv-prd, cv-hub, mcp-gateway');
   console.log('  • 2 releases with 8 platform assets');
   console.log('');
@@ -474,11 +476,11 @@ Report issues at https://hub.controlfab.ai/controlfabric/cv-git/issues`,
   console.log(`     ${STORAGE_BASE_URL}/releases/cv-git/0.5.0/`);
   console.log('  2. Update file hashes and signatures in the database');
   console.log('  3. Test downloads at:');
-  console.log('     https://hub.controlfab.ai/apps/cv-git');
-  console.log('     https://hub.controlfab.ai/apps/cv-prd');
+  console.log('     https://hub.${brand.domain}/apps/cv-git');
+  console.log('     https://hub.${brand.domain}/apps/cv-prd');
   console.log('');
   console.log('Organization storefront:');
-  console.log('  https://hub.controlfab.ai/orgs/controlfabric');
+  console.log(`  https://hub.${brand.domain}/orgs/${orgSlug}`);
   console.log('');
 
   await pool.end();

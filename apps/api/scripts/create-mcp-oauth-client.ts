@@ -2,6 +2,7 @@ import { db } from '../src/db';
 import { oauthClients } from '../src/db/schema';
 import { hashToken } from '../src/utils/crypto';
 import { eq } from 'drizzle-orm';
+import { brand } from '../src/config/brand';
 
 async function createMCPGatewayClient() {
   const clientId = 'mcp-gateway-prod';
@@ -24,9 +25,9 @@ async function createMCPGatewayClient() {
         .set({
           clientSecretHash,
           name: 'MCP Gateway',
-          description: 'Control Fabric AI - MCP Gateway SSO',
-          redirectUris: ['https://mcp.controlfab.ai/auth/callback'],
-          websiteUrl: 'https://mcp.controlfab.ai',
+          description: `${brand.companyName} - MCP Gateway SSO`,
+          redirectUris: [`https://mcp.${brand.domain}/auth/callback`],
+          websiteUrl: `https://mcp.${brand.domain}`,
           allowedScopes: ['openid', 'profile', 'email'],
           allowedGrantTypes: ['authorization_code', 'refresh_token'],
           requirePkce: true,
@@ -42,9 +43,9 @@ async function createMCPGatewayClient() {
         clientId,
         clientSecretHash,
         name: 'MCP Gateway',
-        description: 'Control Fabric AI - MCP Gateway SSO',
-        redirectUris: ['https://mcp.controlfab.ai/auth/callback'],
-        websiteUrl: 'https://mcp.controlfab.ai',
+        description: `${brand.companyName} - MCP Gateway SSO`,
+        redirectUris: [`https://mcp.${brand.domain}/auth/callback`],
+        websiteUrl: `https://mcp.${brand.domain}`,
         allowedScopes: ['openid', 'profile', 'email'],
         allowedGrantTypes: ['authorization_code', 'refresh_token'],
         requirePkce: true,

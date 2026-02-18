@@ -12,6 +12,7 @@
 
 import { randomUUID } from 'crypto';
 import { env } from '../config/env';
+import { brand } from '../config/brand';
 import { db } from '../db';
 import {
   repositoryEmbeddingConfig,
@@ -263,7 +264,7 @@ export async function generateEmbedding(
       'Authorization': `Bearer ${effectiveConfig.apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': env.APP_URL,
-      'X-Title': 'Control Fabric Hub',
+      'X-Title': brand.appName,
     },
     body: JSON.stringify({
       model: effectiveConfig.model,
@@ -327,7 +328,7 @@ export async function generateEmbeddingsBatch(
         'Authorization': `Bearer ${effectiveConfig.apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': env.APP_URL,
-        'X-Title': 'Control Fabric Hub',
+        'X-Title': brand.appName,
       },
       body: JSON.stringify({
         model: effectiveConfig.model,

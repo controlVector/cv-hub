@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { env } from '../config/env';
+import { brand } from '../config/brand';
 import { logger } from '../utils/logger';
 
 // Email templates
@@ -21,7 +22,7 @@ interface TemplateContent {
 // Template definitions
 const templates: Record<EmailTemplate, (data: Record<string, string>) => TemplateContent> = {
   'verify-email': (data) => ({
-    subject: 'Verify your Control Vector email',
+    subject: `Verify your ${brand.companyName} email`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -39,7 +40,7 @@ const templates: Record<EmailTemplate, (data: Record<string, string>) => Templat
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="color: #6366f1; margin: 0;">Control Vector</h1>
+              <h1 style="color: #6366f1; margin: 0;">${brand.companyName}</h1>
             </div>
             <div class="content">
               <h2>Verify your email address</h2>
@@ -56,14 +57,14 @@ const templates: Record<EmailTemplate, (data: Record<string, string>) => Templat
             </div>
             <div class="footer">
               <p>If you didn't create an account, you can safely ignore this email.</p>
-              <p>&copy; ${new Date().getFullYear()} Control Vector</p>
+              <p>&copy; ${new Date().getFullYear()} ${brand.companyName}</p>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-Control Vector - Verify Your Email
+${brand.companyName} - Verify Your Email
 
 Hi ${data.username},
 
@@ -80,7 +81,7 @@ If you didn't create an account, you can safely ignore this email.
   }),
 
   'password-reset': (data) => ({
-    subject: 'Reset your Control Vector password',
+    subject: `Reset your ${brand.companyName} password`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -98,7 +99,7 @@ If you didn't create an account, you can safely ignore this email.
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="color: #6366f1; margin: 0;">Control Vector</h1>
+              <h1 style="color: #6366f1; margin: 0;">${brand.companyName}</h1>
             </div>
             <div class="content">
               <h2>Reset your password</h2>
@@ -113,14 +114,14 @@ If you didn't create an account, you can safely ignore this email.
               </div>
             </div>
             <div class="footer">
-              <p>&copy; ${new Date().getFullYear()} Control Vector</p>
+              <p>&copy; ${new Date().getFullYear()} ${brand.companyName}</p>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-Control Vector - Reset Your Password
+${brand.companyName} - Reset Your Password
 
 Hi ${data.username},
 
@@ -135,7 +136,7 @@ If you didn't request this, you can safely ignore this email.
   }),
 
   'new-login': (data) => ({
-    subject: 'New sign-in to your Control Vector account',
+    subject: `New sign-in to your ${brand.companyName} account`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -155,7 +156,7 @@ If you didn't request this, you can safely ignore this email.
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="color: #6366f1; margin: 0;">Control Vector</h1>
+              <h1 style="color: #6366f1; margin: 0;">${brand.companyName}</h1>
             </div>
             <div class="content">
               <h2>New sign-in detected</h2>
@@ -176,14 +177,14 @@ If you didn't request this, you can safely ignore this email.
               </p>
             </div>
             <div class="footer">
-              <p>&copy; ${new Date().getFullYear()} Control Vector</p>
+              <p>&copy; ${new Date().getFullYear()} ${brand.companyName}</p>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-Control Vector - New Sign-in Detected
+${brand.companyName} - New Sign-in Detected
 
 Hi ${data.username},
 
@@ -217,7 +218,7 @@ If this wasn't you, secure your account immediately: ${data.securityUrl}
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="color: #6366f1; margin: 0;">Control Vector</h1>
+              <h1 style="color: #6366f1; margin: 0;">${brand.companyName}</h1>
             </div>
             <div class="content">
               <h2>Two-factor authentication enabled</h2>
@@ -231,14 +232,14 @@ If this wasn't you, secure your account immediately: ${data.securityUrl}
             </div>
             <div class="footer">
               <p>If you didn't make this change, contact support immediately.</p>
-              <p>&copy; ${new Date().getFullYear()} Control Vector</p>
+              <p>&copy; ${new Date().getFullYear()} ${brand.companyName}</p>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-Control Vector - Two-Factor Authentication Enabled
+${brand.companyName} - Two-Factor Authentication Enabled
 
 Hi ${data.username},
 
@@ -255,7 +256,7 @@ If you didn't make this change, contact support immediately.
   }),
 
   'password-changed': (data) => ({
-    subject: 'Your Control Vector password was changed',
+    subject: `Your ${brand.companyName} password was changed`,
     html: `
       <!DOCTYPE html>
       <html>
@@ -273,7 +274,7 @@ If you didn't make this change, contact support immediately.
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="color: #6366f1; margin: 0;">Control Vector</h1>
+              <h1 style="color: #6366f1; margin: 0;">${brand.companyName}</h1>
             </div>
             <div class="content">
               <h2>Password changed</h2>
@@ -288,14 +289,14 @@ If you didn't make this change, contact support immediately.
               </p>
             </div>
             <div class="footer">
-              <p>&copy; ${new Date().getFullYear()} Control Vector</p>
+              <p>&copy; ${new Date().getFullYear()} ${brand.companyName}</p>
             </div>
           </div>
         </body>
       </html>
     `,
     text: `
-Control Vector - Password Changed
+${brand.companyName} - Password Changed
 
 Hi ${data.username},
 
@@ -352,10 +353,10 @@ export async function sendEmail(options: EmailData): Promise<boolean> {
     const content = template(options.data);
     const transport = getTransporter();
 
-    const fromAddress = env.EMAIL_FROM || 'noreply@controlfab.ai';
+    const fromAddress = env.EMAIL_FROM || brand.noreplyEmail;
 
     const info = await transport.sendMail({
-      from: `"Control Fabric" <${fromAddress}>`,
+      from: `"${brand.companyName}" <${fromAddress}>`,
       to: options.to,
       subject: content.subject,
       text: content.text,

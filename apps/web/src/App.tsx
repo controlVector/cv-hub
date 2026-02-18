@@ -49,6 +49,8 @@ import { PricingPage } from './pages/pricing';
 import EnvironmentPage from './pages/settings/EnvironmentPage';
 import { ConfigDashboard, ConfigSetEditor, SchemaEditor } from './pages/config';
 import { FlagsDashboard, FlagEditor } from './pages/flags';
+import BlogList from './pages/blog/BlogList';
+import BlogPost from './pages/blog/BlogPost';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +94,10 @@ function App() {
 
               {/* Public pricing page */}
               <Route path="/pricing" element={<PricingPage />} />
+
+              {/* Public blog pages */}
+              <Route path="/blog" element={<BlogList />} />
+              <Route path="/blog/:slug" element={<BlogPost />} />
 
               {/* Protected routes */}
               <Route
