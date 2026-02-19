@@ -38,7 +38,7 @@ interface PipelineEditorProps {
 }
 
 // Example pipeline YAML for placeholder
-const PLACEHOLDER_YAML = `# AI Control Fabric Pipeline Configuration
+const PLACEHOLDER_YAML = `# Pipeline Configuration
 version: "1.0"
 name: Build and Test
 

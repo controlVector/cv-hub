@@ -4,11 +4,15 @@
  * Defaults to ControlVector branding if no env vars are set.
  */
 
+const domain = import.meta.env.VITE_BRAND_DOMAIN || 'controlvector.io';
+
 export const brand = {
   appName: import.meta.env.VITE_BRAND_APP_NAME || 'ControlVector Hub',
   shortName: import.meta.env.VITE_BRAND_SHORT_NAME || 'ControlVector',
   companyName: import.meta.env.VITE_BRAND_COMPANY_NAME || 'ControlVector',
   tagline: import.meta.env.VITE_BRAND_TAGLINE || 'AI-Native Git Platform',
+  domain,
+  contactEmail: import.meta.env.VITE_BRAND_CONTACT_EMAIL || `sales@${domain}`,
   logoPath: import.meta.env.VITE_BRAND_LOGO_PATH || '/branding/controlvector/logo.png',
   logoFullPath: import.meta.env.VITE_BRAND_LOGO_FULL_PATH || '/branding/controlvector/logo-full.png',
   faviconPath: import.meta.env.VITE_BRAND_FAVICON_PATH || '/branding/controlvector/favicon.png',

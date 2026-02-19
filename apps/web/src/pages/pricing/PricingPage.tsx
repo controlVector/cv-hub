@@ -22,6 +22,7 @@ import { PricingCard, FeatureComparison, QuoteRequestForm } from '../../componen
 import type { PricingTier, BillingInterval } from '../../types/pricing';
 import { fetchPricingTiers } from '../../services/pricing';
 import { colors } from '../../theme';
+import { brand } from '../../config/brand';
 
 export default function PricingPage() {
   const navigate = useNavigate();
@@ -77,7 +78,7 @@ export default function PricingPage() {
               fontWeight: 700,
             }}
           >
-            Control Fabric
+            {brand.shortName}
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
           <Button
@@ -241,10 +242,10 @@ export default function PricingPage() {
             Contact our team at{' '}
             <Box
               component="a"
-              href="mailto:sales@controlfabric.ai"
+              href={`mailto:${brand.contactEmail}`}
               sx={{ color: colors.violet }}
             >
-              sales@controlfabric.ai
+              {brand.contactEmail}
             </Box>
           </Typography>
         </Box>

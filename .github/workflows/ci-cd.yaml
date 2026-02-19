@@ -11,6 +11,9 @@ env:
   AWS_REGION: us-west-2
   ECR_REGISTRY: 700239047066.dkr.ecr.us-west-2.amazonaws.com
   ECR_REPOSITORY: controlfab-api
+  # Brand domain - change to switch between controlvector.io / controlfab.ai
+  BRAND_DOMAIN: ${{ vars.BRAND_DOMAIN || 'controlvector.io' }}
+  BRAND_SLUG: ${{ vars.BRAND_SLUG || 'controlvector' }}
 
 jobs:
   test:
@@ -102,24 +105,26 @@ jobs:
       - name: Set environment variables
         id: env
         run: |
+          DOMAIN="${{ env.BRAND_DOMAIN }}"
+          SLUG="${{ env.BRAND_SLUG }}"
           if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "api_url=https://api-dev.controlfab.ai/api" >> $GITHUB_OUTPUT
-            echo "app_url=https://hub-dev.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "api_url=https://api-dev.${DOMAIN}/api" >> $GITHUB_OUTPUT
+            echo "app_url=https://hub-dev.${DOMAIN}" >> $GITHUB_OUTPUT
             echo "image_tag=dev" >> $GITHUB_OUTPUT
-            echo "ecs_service=controlfab-api-dev" >> $GITHUB_OUTPUT
-            echo "task_definition=controlfab-api-dev" >> $GITHUB_OUTPUT
-            echo "s3_bucket=controlfab-web-assets-dev" >> $GITHUB_OUTPUT
+            echo "ecs_service=${SLUG}-api-dev" >> $GITHUB_OUTPUT
+            echo "task_definition=${SLUG}-api-dev" >> $GITHUB_OUTPUT
+            echo "s3_bucket=${SLUG}-web-assets-dev" >> $GITHUB_OUTPUT
             echo "cloudfront_distribution=" >> $GITHUB_OUTPUT
           else
             echo "environment=production" >> $GITHUB_OUTPUT
-            echo "api_url=https://api.hub.controlfab.ai/api" >> $GITHUB_OUTPUT
-            echo "app_url=https://hub.controlfab.ai" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.hub.${DOMAIN}/api" >> $GITHUB_OUTPUT
+            echo "app_url=https://hub.${DOMAIN}" >> $GITHUB_OUTPUT
             echo "image_tag=latest" >> $GITHUB_OUTPUT
-            echo "ecs_service=controlfab-api" >> $GITHUB_OUTPUT
-            echo "task_definition=controlfab-api" >> $GITHUB_OUTPUT
-            echo "s3_bucket=controlfab-web-assets" >> $GITHUB_OUTPUT
-            echo "cloudfront_distribution=E1D32I9T5NEP6A" >> $GITHUB_OUTPUT
+            echo "ecs_service=${SLUG}-api" >> $GITHUB_OUTPUT
+            echo "task_definition=${SLUG}-api" >> $GITHUB_OUTPUT
+            echo "s3_bucket=${SLUG}-web-assets" >> $GITHUB_OUTPUT
+            echo "cloudfront_distribution=${{ vars.CLOUDFRONT_DISTRIBUTION_PROD || '' }}" >> $GITHUB_OUTPUT
           fi
 
       # Build and push API to ECR
@@ -148,6 +153,14 @@ jobs:
           VITE_API_URL: ${{ steps.env.outputs.api_url }}
           VITE_APP_URL: ${{ steps.env.outputs.app_url }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_BRAND_APP_NAME: ${{ vars.VITE_BRAND_APP_NAME || 'ControlVector Hub' }}
+          VITE_BRAND_SHORT_NAME: ${{ vars.VITE_BRAND_SHORT_NAME || 'ControlVector' }}
+          VITE_BRAND_COMPANY_NAME: ${{ vars.VITE_BRAND_COMPANY_NAME || 'ControlVector' }}
+          VITE_BRAND_TAGLINE: ${{ vars.VITE_BRAND_TAGLINE || 'AI-Native Git Platform' }}
+          VITE_BRAND_DOMAIN: ${{ vars.BRAND_DOMAIN || 'controlvector.io' }}
+          VITE_BRAND_COLOR_PRIMARY: ${{ vars.VITE_BRAND_COLOR_PRIMARY || '#f97316' }}
+          VITE_BRAND_COLOR_SECONDARY: ${{ vars.VITE_BRAND_COLOR_SECONDARY || '#06b6d4' }}
+          VITE_BRAND_COLOR_ACCENT: ${{ vars.VITE_BRAND_COLOR_ACCENT || '#fb923c' }}
 
       # Deploy API to ECS
       - name: Download current task definition
@@ -179,7 +192,7 @@ jobs:
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ steps.env.outputs.ecs_service }}
-          cluster: controlfab-cluster
+          cluster: ${{ vars.ECS_CLUSTER || 'controlfab-cluster' }}
           wait-for-service-stability: true
 
       # Deploy Web to S3

@@ -20,6 +20,9 @@ const envSchema = z.object({
   APP_URL: z.string().url().default('http://localhost:5173'),
   API_URL: z.string().url().default('http://localhost:3000'),
 
+  // Additional CORS origins (comma-separated URLs)
+  ALLOWED_ORIGINS: z.string().optional(),
+
   // CSRF
   CSRF_SECRET: z.string().min(32),
 
@@ -82,10 +85,6 @@ const envSchema = z.object({
   SSO_DEFAULT_IDP_ISSUER: z.string().url().optional(),
   SSO_DEFAULT_IDP_CLIENT_ID: z.string().optional(),
   SSO_DEFAULT_IDP_CLIENT_SECRET: z.string().optional(),
-
-  // Branding (for Control Fabric)
-  APP_NAME: z.string().default('Control Fabric'),
-  APP_TAGLINE: z.string().default('The AI Development Platform'),
 
   // Stripe (for payments)
   STRIPE_SECRET_KEY: z.string().optional(),
