@@ -156,6 +156,9 @@ patches:
       - op: replace
         path: /data/app-url
         value: "https://hub.controlvector.io"
+      - op: add
+        path: /data/cookie-domain
+        value: ".controlvector.io"
 
 images:
   - name: cv-hub/api

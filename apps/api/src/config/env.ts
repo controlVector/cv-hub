@@ -20,6 +20,9 @@ const envSchema = z.object({
   APP_URL: z.string().url().default('http://localhost:5173'),
   API_URL: z.string().url().default('http://localhost:3000'),
 
+  // Cookie domain for cross-subdomain auth (e.g. '.controlvector.io')
+  COOKIE_DOMAIN: z.string().optional(),
+
   // Additional CORS origins (comma-separated URLs)
   ALLOWED_ORIGINS: z.string().optional(),
 

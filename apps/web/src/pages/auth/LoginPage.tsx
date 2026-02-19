@@ -100,6 +100,7 @@ export default function LoginPage() {
       } else {
         // No MFA - complete login
         setAccessToken(res.data.accessToken);
+        localStorage.setItem('cv_has_session', '1');
         setAuthenticatedUser(res.data.user);
         redirectToDestination();
       }
@@ -133,6 +134,7 @@ export default function LoginPage() {
 
       const res = await api.post('/auth/login/mfa', payload);
       setAccessToken(res.data.accessToken);
+      localStorage.setItem('cv_has_session', '1');
       setAuthenticatedUser(res.data.user);
       redirectToDestination();
     } catch (err: any) {

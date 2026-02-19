@@ -29,12 +29,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
   const initializeAuth = useCallback(async () => {
+    // Skip refresh attempt if no prior session exists (avoids 401 console noise)
+    if (!localStorage.getItem('cv_has_session')) {
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      return;
+    }
+
     try {
-      // Try to refresh token on page load
       const response = await api.post('/auth/refresh');
       setAccessToken(response.data.accessToken);
 
-      // Fetch user data
       const userResponse = await api.get('/auth/me');
       setState({
         user: userResponse.data.user,
@@ -42,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: true,
       });
     } catch {
+      localStorage.removeItem('cv_has_session');
       setState({
         user: null,
         isLoading: false,
@@ -58,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (data: LoginInput) => {
     const response = await api.post('/auth/login', data);
     setAccessToken(response.data.accessToken);
+    localStorage.setItem('cv_has_session', '1');
     setState({
       user: response.data.user,
       isLoading: false,
@@ -68,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(async (data: RegisterInput) => {
     const response = await api.post('/auth/register', data);
     setAccessToken(response.data.accessToken);
+    localStorage.setItem('cv_has_session', '1');
     setState({
       user: response.data.user,
       isLoading: false,
@@ -80,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.post('/auth/logout');
     } finally {
       setAccessToken(null);
+      localStorage.removeItem('cv_has_session');
       setState({
         user: null,
         isLoading: false,

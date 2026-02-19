@@ -75,11 +75,13 @@ const SESSION_COOKIE_NAME = 'cv_session';
 function setAuthCookies(c: any, sessionId: string, refreshToken: string) {
   const secure = env.NODE_ENV === 'production';
   const maxAge = 7 * 24 * 60 * 60; // 7 days
+  const domain = env.COOKIE_DOMAIN || undefined;
 
   setCookie(c, SESSION_COOKIE_NAME, sessionId, {
     httpOnly: true,
     secure,
     sameSite: 'Lax',
+    domain,
     path: '/',
     maxAge,
   });
@@ -88,14 +90,16 @@ function setAuthCookies(c: any, sessionId: string, refreshToken: string) {
     httpOnly: true,
     secure,
     sameSite: 'Lax',
-    path: '/api/auth/refresh',
+    domain,
+    path: '/',
     maxAge,
   });
 }
 
 function clearAuthCookies(c: any) {
-  deleteCookie(c, SESSION_COOKIE_NAME, { path: '/' });
-  deleteCookie(c, REFRESH_COOKIE_NAME, { path: '/api/auth/refresh' });
+  const domain = env.COOKIE_DOMAIN || undefined;
+  deleteCookie(c, SESSION_COOKIE_NAME, { path: '/', domain });
+  deleteCookie(c, REFRESH_COOKIE_NAME, { path: '/', domain });
 }
 
 // POST /api/auth/register
