@@ -10,6 +10,7 @@ import {
 } from '../services/git/git-http.service';
 import {
   repoExists,
+  initBareRepo,
 } from '../services/git/git-backend.service';
 import { processPostReceive } from '../services/git/sync.service';
 import {
@@ -111,6 +112,16 @@ async function authenticateWithPAT(
   return null;
 }
 
+// Ensure bare repo exists on disk, lazily initializing if the DB record exists but storage doesn't
+async function ensureRepoStorage(owner: string, repo: string, defaultBranch = 'main'): Promise<void> {
+  const exists = await repoExists(owner, repo);
+  if (!exists) {
+    // Repo is in DB (verified by verifyRepoAccess) but not on disk — initialize it
+    console.log(`[Git] Lazy-initializing bare repo for ${owner}/${repo}`);
+    await initBareRepo(owner, repo, defaultBranch);
+  }
+}
+
 // GET /:owner/:repo.git/info/refs - Discovery endpoint
 gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
   const { owner } = c.req.param();
@@ -153,11 +164,8 @@ gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
     throw err;
   }
 
-  // Check if bare repo exists on disk
-  const exists = await repoExists(owner, repo);
-  if (!exists) {
-    throw new NotFoundError('Repository storage not initialized');
-  }
+  // Ensure bare repo exists on disk (lazy-init if DB record exists but storage doesn't)
+  await ensureRepoStorage(owner, repo);
 
   const result = await handleInfoRefs(owner, repo, service);
 
@@ -190,10 +198,8 @@ gitRoutes.post('/:owner/:repo/git-upload-pack', optionalAuth, async (c) => {
 
   await verifyRepoAccess(owner, repo, userId, false);
 
-  const exists = await repoExists(owner, repo);
-  if (!exists) {
-    throw new NotFoundError('Repository storage not initialized');
-  }
+  // Ensure bare repo exists on disk (lazy-init if needed)
+  await ensureRepoStorage(owner, repo);
 
   const requestBody = Buffer.from(await c.req.arrayBuffer());
   const result = await handleUploadPack(owner, repo, requestBody);
@@ -232,10 +238,8 @@ gitRoutes.post('/:owner/:repo/git-receive-pack', optionalAuth, async (c) => {
 
   const { repoId } = await verifyRepoAccess(owner, repo, userId, true);
 
-  const exists = await repoExists(owner, repo);
-  if (!exists) {
-    throw new NotFoundError('Repository storage not initialized');
-  }
+  // Ensure bare repo exists on disk (lazy-init if needed)
+  await ensureRepoStorage(owner, repo);
 
   const requestBody = Buffer.from(await c.req.arrayBuffer());
 

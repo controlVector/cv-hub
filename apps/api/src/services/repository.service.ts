@@ -18,6 +18,7 @@ import {
   type RepoProvider,
 } from '../db/schema';
 import { logger } from '../utils/logger';
+import { initBareRepo } from './git/git-backend.service';
 
 // ============================================================================
 // Types
@@ -285,6 +286,41 @@ export async function createRepository(
     sha: '0000000000000000000000000000000000000000', // Placeholder until first push
     isDefault: true,
   });
+
+  // Initialize bare git repo on disk for local repos
+  if (!repo.provider || repo.provider === 'local') {
+    // Resolve owner slug (org slug or username)
+    let ownerSlug: string;
+    if (repo.organizationId) {
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.id, repo.organizationId),
+      });
+      ownerSlug = org?.slug || 'unknown';
+    } else if (repo.userId) {
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, repo.userId),
+      });
+      ownerSlug = user?.username || 'unknown';
+    } else {
+      ownerSlug = 'unknown';
+    }
+
+    try {
+      const repoPath = await initBareRepo(ownerSlug, repo.slug, repo.defaultBranch);
+      // Store the local path in the database
+      await db.update(repositories)
+        .set({ localPath: repoPath })
+        .where(eq(repositories.id, repo.id));
+      repo.localPath = repoPath;
+      logger.info('general', 'Bare git repo initialized', { repoId: repo.id, path: repoPath });
+    } catch (err: any) {
+      logger.error('general', 'Failed to initialize bare git repo', {
+        repoId: repo.id,
+        error: err.message,
+      });
+      // Don't fail the entire creation — repo is in DB, git init can be retried
+    }
+  }
 
   logger.info('general', 'Repository created', {
     repoId: repo.id,
