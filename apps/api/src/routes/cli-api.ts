@@ -31,10 +31,10 @@ import * as releaseService from '../services/release.service';
 import * as issueService from '../services/issue.service';
 import * as gitBackend from '../services/git/git-backend.service';
 
-// DB for branch queries
+// DB for branch queries and user lookups
 import { db } from '../db';
-import { branches } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { branches, users } from '../db/schema';
+import { eq, and, inArray } from 'drizzle-orm';
 
 // ============================================================================
 // Extended Hono context type for CLI auth
@@ -144,6 +144,7 @@ function formatRepo(repo: {
   const ownerSlug = repo.owner?.slug ?? '';
   return {
     id: repo.id,
+    owner: ownerSlug,
     name: repo.name,
     full_name: `${ownerSlug}/${repo.slug}`,
     description: repo.description ?? '',
@@ -228,11 +229,26 @@ function formatRelease(
   };
 }
 
-function formatIssue(
-  issue: issueService.IssueWithDetails,
+async function resolveAssignees(assigneeIds: string[] | null | undefined) {
+  if (!assigneeIds || assigneeIds.length === 0) return [];
+  const assignees = await db
+    .select({ id: users.id, username: users.username, displayName: users.displayName, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(inArray(users.id, assigneeIds));
+  return assignees.map((u) => ({
+    id: u.id,
+    username: u.username,
+    name: u.displayName ?? u.username,
+    avatar_url: u.avatarUrl ?? null,
+  }));
+}
+
+async function formatIssue(
+  issue: issueService.IssueWithDetails & { assigneeIds?: string[] | null },
   owner: string,
   repo: string,
 ) {
+  const assignees = await resolveAssignees(issue.assigneeIds);
   return {
     id: issue.id,
     number: issue.number,
@@ -241,6 +257,7 @@ function formatIssue(
     state: issue.state,
     priority: issue.priority,
     labels: issue.labels ?? [],
+    assignees,
     author: issue.author
       ? { id: issue.author.id, username: issue.author.username, name: issue.author.displayName }
       : null,
@@ -270,14 +287,28 @@ function formatCommit(
 
 function formatBranch(
   branch: { name: string; isProtected?: boolean; isDefault?: boolean },
-  commit?: { sha: string; message?: string; date?: string },
+  commit?: {
+    sha: string;
+    message?: string;
+    date?: string;
+    author_name?: string;
+    author_email?: string;
+    parents?: string[];
+  },
 ) {
   return {
     name: branch.name,
     is_protected: branch.isProtected ?? false,
     is_default: branch.isDefault ?? false,
     commit: commit
-      ? { sha: commit.sha, message: commit.message ?? '', date: commit.date ?? null }
+      ? {
+          sha: commit.sha,
+          message: commit.message ?? '',
+          date: commit.date ?? null,
+          author_name: commit.author_name ?? null,
+          author_email: commit.author_email ?? null,
+          parents: commit.parents ?? [],
+        }
       : null,
   };
 }
@@ -382,16 +413,13 @@ cliApi.get('/repos/:owner/:repo/pulls', async (c) => {
   const limit = parseInt(c.req.query('limit') ?? '30', 10);
   const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
-  const { pullRequests, total } = await prService.listPullRequests(repoData.id, {
+  const { pullRequests } = await prService.listPullRequests(repoData.id, {
     state: state === 'all' ? 'all' : state,
     limit,
     offset,
   });
 
-  return c.json({
-    items: pullRequests.map((pr) => formatPR(pr, owner, repoSlug)),
-    total,
-  });
+  return c.json(pullRequests.map((pr) => formatPR(pr, owner, repoSlug)));
 });
 
 cliApi.post(
@@ -484,16 +512,13 @@ cliApi.get('/repos/:owner/:repo/releases', async (c) => {
   const limit = parseInt(c.req.query('limit') ?? '30', 10);
   const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
-  const { releases, total } = await releaseService.listReleases(repoData.id, {
+  const { releases } = await releaseService.listReleases(repoData.id, {
     limit,
     offset,
     includeDrafts: true,
   });
 
-  return c.json({
-    items: releases.map((r) => formatRelease(r as any, owner, repoSlug)),
-    total,
-  });
+  return c.json(releases.map((r) => formatRelease(r as any, owner, repoSlug)));
 });
 
 cliApi.post(
@@ -557,16 +582,13 @@ cliApi.get('/repos/:owner/:repo/issues', async (c) => {
   const limit = parseInt(c.req.query('limit') ?? '30', 10);
   const offset = parseInt(c.req.query('offset') ?? '0', 10);
 
-  const { issues, total } = await issueService.listIssues(repoData.id, {
+  const { issues } = await issueService.listIssues(repoData.id, {
     state: state === 'all' ? 'all' : state,
     limit,
     offset,
   });
 
-  return c.json({
-    items: issues.map((i) => formatIssue(i, owner, repoSlug)),
-    total,
-  });
+  return c.json(await Promise.all(issues.map((i) => formatIssue(i, owner, repoSlug))));
 });
 
 cliApi.post(
@@ -587,7 +609,7 @@ cliApi.post(
     });
 
     const full = await issueService.getIssueByNumber(repoData.id, issue.number);
-    return c.json(formatIssue(full!, owner, repoSlug), 201);
+    return c.json(await formatIssue(full!, owner, repoSlug), 201);
   },
 );
 
@@ -599,7 +621,7 @@ cliApi.get('/repos/:owner/:repo/issues/:number', async (c) => {
   const issue = await issueService.getIssueByNumber(repoData.id, parseInt(number, 10));
   if (!issue) throw new NotFoundError('Issue');
 
-  return c.json(formatIssue(issue, owner, repoSlug));
+  return c.json(await formatIssue(issue, owner, repoSlug));
 });
 
 cliApi.patch(
@@ -622,7 +644,7 @@ cliApi.patch(
     }, userId);
 
     const updated = await issueService.getIssueByNumber(repoData.id, parseInt(number, 10));
-    return c.json(formatIssue(updated!, owner, repoSlug));
+    return c.json(await formatIssue(updated!, owner, repoSlug));
   },
 );
 
@@ -694,17 +716,34 @@ cliApi.get('/repos/:owner/:repo/branches', async (c) => {
   });
   const dbMap = new Map(dbBranches.map((b) => [b.name, b]));
 
-  const result = branchRefs.map((ref) => {
-    const dbBranch = dbMap.get(ref.name);
-    return formatBranch(
-      {
-        name: ref.name,
-        isProtected: dbBranch?.isProtected ?? false,
-        isDefault: ref.isDefault ?? dbBranch?.isDefault ?? (ref.name === repoData.defaultBranch),
-      },
-      { sha: ref.sha },
-    );
-  });
+  // Fetch full commit details for each branch
+  const result = await Promise.all(
+    branchRefs.map(async (ref) => {
+      const dbBranch = dbMap.get(ref.name);
+      let commitInfo: { sha: string; message?: string; date?: string; author_name?: string; author_email?: string; parents?: string[] } = { sha: ref.sha };
+      try {
+        const gc = await gitBackend.getCommit(owner, repoSlug, ref.sha);
+        commitInfo = {
+          sha: gc.sha,
+          message: gc.message,
+          date: gc.author.date.toISOString(),
+          author_name: gc.author.name,
+          author_email: gc.author.email,
+          parents: gc.parents,
+        };
+      } catch {
+        // If commit fetch fails, return minimal info
+      }
+      return formatBranch(
+        {
+          name: ref.name,
+          isProtected: dbBranch?.isProtected ?? false,
+          isDefault: ref.isDefault ?? dbBranch?.isDefault ?? (ref.name === repoData.defaultBranch),
+        },
+        commitInfo,
+      );
+    }),
+  );
 
   return c.json(result);
 });
@@ -741,6 +780,9 @@ cliApi.get('/repos/:owner/:repo/branches/:name{.+}', async (c) => {
         sha: commit.sha,
         message: commit.message,
         date: commit.author.date.toISOString(),
+        author_name: commit.author.name,
+        author_email: commit.author.email,
+        parents: commit.parents,
       },
     ),
   );
