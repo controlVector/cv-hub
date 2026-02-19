@@ -46,7 +46,7 @@ async function createMCPGatewayClient() {
         description: `${brand.companyName} - MCP Gateway SSO`,
         redirectUris: [`https://mcp.${brand.domain}/auth/callback`],
         websiteUrl: `https://mcp.${brand.domain}`,
-        allowedScopes: ['openid', 'profile', 'email'],
+        allowedScopes: ['openid', 'profile', 'email', 'offline_access', 'mcp:tools', 'mcp:tasks', 'mcp:threads', 'mcp:execute'],
         allowedGrantTypes: ['authorization_code', 'refresh_token'],
         requirePkce: true,
         isFirstParty: true,  // Skip consent screen

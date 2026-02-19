@@ -41,6 +41,9 @@ import adminRoutes from './routes/admin';
 import { configRoutes } from './routes/config';
 import featureFlagsRoutes from './routes/feature-flags';
 import { cliApiRoutes } from './routes/cli-api';
+import { mcpOAuthRoutes } from './routes/mcp-oauth';
+import { mcpRoutes } from './routes/mcp';
+import { executorRoutes } from './routes/executors';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -178,6 +181,15 @@ app.route('/api/v1/flags', featureFlagsRoutes);
 // CLI API (CV-Git CLI integration - snake_case responses)
 app.route('/v1', cliApiRoutes);
 
+// MCP OAuth (dynamic client registration, protected resource metadata)
+app.route('/oauth', mcpOAuthRoutes);
+
+// MCP Streamable HTTP Transport (Remote MCP Server for Claude.ai)
+app.route('/mcp', mcpRoutes);
+
+// Executor API (Claude Code agents register, poll, submit results)
+app.route('/api/v1/executors', executorRoutes);
+
 // OpenID Connect discovery (well-known needs to be at root)
 app.get('/.well-known/openid-configuration', (c) => {
   const issuer = env.API_URL;
@@ -186,11 +198,16 @@ app.get('/.well-known/openid-configuration', (c) => {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    registration_endpoint: `${issuer}/oauth/register`,
     device_authorization_endpoint: `${issuer}/oauth/device/authorize`,
     userinfo_endpoint: `${issuer}/oauth/userinfo`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
     introspection_endpoint: `${issuer}/oauth/introspect`,
-    scopes_supported: ['openid', 'profile', 'email', 'offline_access', 'repo:read', 'repo:write', 'repo:admin'],
+    scopes_supported: [
+      'openid', 'profile', 'email', 'offline_access',
+      'repo:read', 'repo:write', 'repo:admin',
+      'mcp:tools', 'mcp:tasks', 'mcp:threads', 'mcp:execute',
+    ],
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: [

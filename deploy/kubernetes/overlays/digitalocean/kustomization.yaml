@@ -5,6 +5,7 @@ namespace: cv-hub
 
 resources:
   - ../../base
+  - mcp-ingress.yaml
 
 # DigitalOcean-specific patches
 patches:

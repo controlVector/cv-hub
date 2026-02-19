@@ -1,0 +1,40 @@
+# Dedicated MCP Ingress with SSE-optimized settings
+# mcp.controlvector.io → cv-hub-api:3000
+#
+# MCP uses Server-Sent Events (SSE) for server-initiated notifications,
+# which requires longer timeouts and disabled proxy buffering.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cv-hub-mcp-ingress
+  namespace: cv-hub
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # SSE requires no buffering and long timeouts
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Allow chunked transfer encoding for SSE streams
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # JSON-RPC bodies can be large with batch requests
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # TLS with cert-manager
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - mcp.controlvector.io
+      secretName: mcp-controlvector-tls
+  rules:
+    - host: mcp.controlvector.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cv-hub-api
+                port:
+                  number: 3000

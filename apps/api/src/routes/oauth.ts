@@ -582,6 +582,7 @@ oauth.get('/.well-known/openid-configuration', (c) => {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
+    registration_endpoint: `${issuer}/oauth/register`,
     device_authorization_endpoint: `${issuer}/oauth/device/authorize`,
     userinfo_endpoint: `${issuer}/oauth/userinfo`,
     revocation_endpoint: `${issuer}/oauth/revoke`,

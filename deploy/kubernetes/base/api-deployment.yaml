@@ -51,6 +51,26 @@ spec:
                 secretKeyRef:
                   name: cv-hub-secrets
                   key: jwt-secret
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: jwt-access-secret
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: jwt-refresh-secret
+            - name: CSRF_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: csrf-secret
+            - name: MFA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: mfa-encryption-key
             - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:

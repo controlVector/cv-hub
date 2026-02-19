@@ -25,6 +25,13 @@ export const STANDARD_SCOPES = {
   profile: 'Access to basic profile information (name, username, avatar)',
   email: 'Access to email address',
   offline_access: 'Request a refresh token for long-term access',
+  'repo:read': 'Clone and fetch repositories',
+  'repo:write': 'Push to repositories',
+  'repo:admin': 'Manage repository settings',
+  'mcp:tools': 'Access MCP tool execution',
+  'mcp:tasks': 'Manage agent tasks (create, read, update)',
+  'mcp:threads': 'Thread continuity operations (create, read, bridge)',
+  'mcp:execute': 'Execute tasks on agent executors',
 } as const;
 
 // ==================== Client Management ====================

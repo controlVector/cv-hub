@@ -10,35 +10,6 @@ data:
   embedding-model: "openai/text-embedding-3-small"
   graph-sync-concurrency: "3"
 ---
-# Secrets template (use external-secrets-operator or sealed-secrets in production)
-# This is a template - DO NOT commit real secrets
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cv-hub-secrets
-  namespace: cv-hub
-type: Opaque
-stringData:
-  # Database
-  postgres-user: "cvhub"
-  postgres-password: "CHANGE_ME_IN_PRODUCTION"
-  database-url: "postgresql://cvhub:CHANGE_ME_IN_PRODUCTION@postgres:5432/cvhub"
-
-  # Redis
-  redis-url: "redis://redis:6379"
-
-  # Auth secrets (generate with: openssl rand -base64 32)
-  session-secret: "GENERATE_ME"
-  jwt-secret: "GENERATE_ME"
-  mfa-encryption-key: "GENERATE_ME"
-
-  # External services
-  openrouter-api-key: "YOUR_OPENROUTER_API_KEY"
-
-  # OAuth (optional)
-  github-client-id: ""
-  github-client-secret: ""
----
 # Network Policy - restrict database access
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

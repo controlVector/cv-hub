@@ -23,3 +23,4 @@ export * from './tag-protection';
 export * from './deploy-keys';
 export * from './config';
 export * from './feature-flags';
+export * from './agent-bridge';

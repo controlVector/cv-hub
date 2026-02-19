@@ -5,8 +5,12 @@ import { app } from './app';
 import { env } from './config/env';
 import { logger } from './utils/logger';
 import { startSshServer, getSshServerStatus } from './services/git/ssh-server';
+import { registerAllMCPTools } from './mcp/register-tools';
 
 logger.info('general', `Starting server in ${env.NODE_ENV} mode`);
+
+// Register MCP tools
+registerAllMCPTools();
 
 serve({
   fetch: app.fetch,
