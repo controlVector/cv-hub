@@ -156,8 +156,8 @@ gitRoutes.get('/:owner/:repo/info/refs', optionalAuth, async (c) => {
   try {
     await verifyRepoAccess(owner, repo, userId, requireWrite);
   } catch (err) {
-    if (requireWrite && !userId) {
-      // Request authentication for push
+    if (!userId) {
+      // Request authentication — git needs 401 + WWW-Authenticate to send credentials
       c.header('WWW-Authenticate', 'Basic realm="CV-Hub Git"');
       return c.text('Authentication required', 401);
     }
@@ -196,7 +196,15 @@ gitRoutes.post('/:owner/:repo/git-upload-pack', optionalAuth, async (c) => {
     userId = await authenticateWithPAT(authHeader, ['repo:read', 'repo:write', 'repo:admin']);
   }
 
-  await verifyRepoAccess(owner, repo, userId, false);
+  try {
+    await verifyRepoAccess(owner, repo, userId, false);
+  } catch (err) {
+    if (!userId) {
+      c.header('WWW-Authenticate', 'Basic realm="CV-Hub Git"');
+      return c.text('Authentication required', 401);
+    }
+    throw err;
+  }
 
   // Ensure bare repo exists on disk (lazy-init if needed)
   await ensureRepoStorage(owner, repo);

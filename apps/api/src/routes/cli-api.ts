@@ -25,15 +25,16 @@ import { getUserById } from '../services/user.service';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
+  createRepository,
 } from '../services/repository.service';
 import * as prService from '../services/pr.service';
 import * as releaseService from '../services/release.service';
 import * as issueService from '../services/issue.service';
 import * as gitBackend from '../services/git/git-backend.service';
 
-// DB for branch queries and user lookups
+// DB for branch queries, user lookups, org lookups
 import { db } from '../db';
-import { branches, users } from '../db/schema';
+import { branches, users, organizations } from '../db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 
 // ============================================================================
@@ -373,6 +374,14 @@ const updateIssueSchema = z.object({
   labels: z.array(z.string()).optional(),
 });
 
+const createRepoSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  is_private: z.boolean().optional(),
+  default_branch: z.string().max(255).optional(),
+  org: z.string().optional(),
+});
+
 // ============================================================================
 // User Routes
 // ============================================================================
@@ -392,6 +401,56 @@ cliApi.get('/user/scopes', async (c) => {
 // ============================================================================
 // Repository Routes
 // ============================================================================
+
+cliApi.post(
+  '/repos',
+  zValidator('json', createRepoSchema),
+  async (c) => {
+    const userId = c.get('userId');
+    const body = c.req.valid('json');
+
+    let organizationId: string | null = null;
+
+    if (body.org) {
+      // Look up org by slug
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.slug, body.org),
+      });
+      if (!org) throw new NotFoundError('Organization');
+
+      // Verify user is an org admin
+      const { isOrgAdmin } = await import('../services/organization.service');
+      if (!await isOrgAdmin(org.id, userId)) {
+        throw new AuthenticationError('You must be an admin to create repos in this organization');
+      }
+      organizationId = org.id;
+    }
+
+    const slug = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const visibility = body.is_private ? 'private' as const : 'public' as const;
+
+    const repo = await createRepository(
+      {
+        name: body.name,
+        slug,
+        description: body.description ?? null,
+        visibility,
+        defaultBranch: body.default_branch ?? 'main',
+        organizationId,
+        userId: organizationId ? null : userId,
+      },
+      userId,
+    );
+
+    // Re-fetch with owner info for formatting
+    const full = await getRepositoryByOwnerAndSlug(
+      body.org ?? (await getUserById(userId))!.username,
+      slug,
+    );
+
+    return c.json(formatRepo(full ?? repo as any), 201);
+  },
+);
 
 cliApi.get('/repos/:owner/:repo', async (c) => {
   const { owner, repo: repoSlug } = c.req.param();
