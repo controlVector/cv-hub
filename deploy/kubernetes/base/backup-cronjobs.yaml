@@ -2,19 +2,9 @@
 # All backups upload to DigitalOcean Spaces (S3-compatible)
 # Requires: backup-spaces-credentials secret with access-key, secret-key, endpoint, bucket
 
----
-# Secret template for backup credentials (DO NOT commit real values)
-apiVersion: v1
-kind: Secret
-metadata:
-  name: backup-spaces-credentials
-  namespace: cv-hub
-type: Opaque
-stringData:
-  access-key: "DO_SPACES_KEY"
-  secret-key: "DO_SPACES_SECRET"
-  endpoint: "https://nyc3.digitaloceanspaces.com"
-  bucket: "cv-hub-backups"
+# NOTE: backup-spaces-credentials secret must be created separately.
+# See overlays/digitalocean/secrets.example.yaml for the template.
+# Do NOT define it here — kubectl apply would overwrite real values with placeholders.
 
 ---
 # 3a. PostgreSQL Daily Backup
@@ -73,7 +63,7 @@ spec:
                   # Configure S3
                   export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
                   export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
-                  S3_BASE="s3://${SPACES_BUCKET}/postgres"
+                  S3_BASE="s3://${SPACES_BUCKET}/backups/postgres"
 
                   # Upload daily
                   aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/daily/${FILENAME}" \
@@ -93,10 +83,10 @@ spec:
 
                   # Retention: remove old backups
                   # Daily: keep 7 days
-                  CUTOFF_DAILY=$(date -d "-7 days" +%Y-%m-%d 2>/dev/null || date -v-7d +%Y-%m-%d)
+                  CUTOFF_DAILY=$(date -d @$(($(date +%s) - 86400*7)) +%Y-%m-%d)
                   echo "Pruning daily backups older than ${CUTOFF_DAILY}..."
                   aws s3 ls "${S3_BASE}/daily/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP 'cvhub-\K\d{4}-\d{2}-\d{2}' || true)
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*cvhub-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_DAILY" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting: ${FILE}"
@@ -105,9 +95,9 @@ spec:
                   done
 
                   # Weekly: keep 4 weeks
-                  CUTOFF_WEEKLY=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  CUTOFF_WEEKLY=$(date -d @$(($(date +%s) - 86400*28)) +%Y-%m-%d)
                   aws s3 ls "${S3_BASE}/weekly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' | head -1)
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_WEEKLY" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting weekly: ${FILE}"
@@ -116,9 +106,9 @@ spec:
                   done
 
                   # Monthly: keep 3 months
-                  CUTOFF_MONTHLY=$(date -d "-90 days" +%Y-%m-%d 2>/dev/null || date -v-90d +%Y-%m-%d)
+                  CUTOFF_MONTHLY=$(date -d @$(($(date +%s) - 86400*90)) +%Y-%m-%d)
                   aws s3 ls "${S3_BASE}/monthly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' | head -1)
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_MONTHLY" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting monthly: ${FILE}"
@@ -229,7 +219,7 @@ spec:
                   # Configure S3
                   export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
                   export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
-                  S3_BASE="s3://${SPACES_BUCKET}/git-repos"
+                  S3_BASE="s3://${SPACES_BUCKET}/backups/git-repos"
 
                   # Upload daily
                   aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/daily/${FILENAME}" \
@@ -242,10 +232,10 @@ spec:
                   fi
 
                   # Prune daily older than 7 days
-                  CUTOFF=$(date -d "-7 days" +%Y-%m-%d 2>/dev/null || date -v-7d +%Y-%m-%d)
+                  CUTOFF=$(date -d @$(($(date +%s) - 86400*7)) +%Y-%m-%d)
                   echo "Pruning daily backups older than ${CUTOFF}..."
                   aws s3 ls "${S3_BASE}/daily/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP 'git-repos-\K\d{4}-\d{2}-\d{2}' || true)
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*git-repos-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting: ${FILE}"
@@ -254,9 +244,9 @@ spec:
                   done
 
                   # Prune weekly older than 4 weeks
-                  CUTOFF_W=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  CUTOFF_W=$(date -d @$(($(date +%s) - 86400*28)) +%Y-%m-%d)
                   aws s3 ls "${S3_BASE}/weekly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' | head -1)
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_W" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting weekly: ${FILE}"
@@ -378,17 +368,17 @@ spec:
                   export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
                   export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
 
-                  aws s3 cp "/tmp/${FILENAME}" "s3://${SPACES_BUCKET}/falkordb/${FILENAME}" \
+                  aws s3 cp "/tmp/${FILENAME}" "s3://${SPACES_BUCKET}/backups/falkordb/${FILENAME}" \
                     --endpoint-url "${SPACES_ENDPOINT}"
 
                   # Keep last 4 weekly backups
-                  CUTOFF=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
-                  aws s3 ls "s3://${SPACES_BUCKET}/falkordb/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP 'falkordb-\K\d{4}-\d{2}-\d{2}' || true)
+                  CUTOFF=$(date -d @$(($(date +%s) - 86400*28)) +%Y-%m-%d)
+                  aws s3 ls "s3://${SPACES_BUCKET}/backups/falkordb/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*falkordb-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting: ${FILE}"
-                      aws s3 rm "s3://${SPACES_BUCKET}/falkordb/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                      aws s3 rm "s3://${SPACES_BUCKET}/backups/falkordb/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
                     fi
                   done
 
@@ -503,7 +493,7 @@ spec:
 
                     # Upload to Spaces
                     aws s3 cp "/tmp/${COLLECTION}-${DATE}.snapshot" \
-                      "s3://${SPACES_BUCKET}/qdrant/${COLLECTION}-${DATE}.snapshot" \
+                      "s3://${SPACES_BUCKET}/backups/qdrant/${COLLECTION}-${DATE}.snapshot" \
                       --endpoint-url "${SPACES_ENDPOINT}"
 
                     # Clean up local file
@@ -516,15 +506,15 @@ spec:
                   done
 
                   # Retention: keep 4 weekly snapshots per collection
-                  CUTOFF=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  CUTOFF=$(date -d @$(($(date +%s) - 86400*28)) +%Y-%m-%d)
                   echo ""
                   echo "Pruning snapshots older than ${CUTOFF}..."
-                  aws s3 ls "s3://${SPACES_BUCKET}/qdrant/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
-                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                  aws s3 ls "s3://${SPACES_BUCKET}/backups/qdrant/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | sed -n 's/.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p' | head -1)
                     if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
                       FILE=$(echo "$line" | awk '{print $4}')
                       echo "  Deleting: ${FILE}"
-                      aws s3 rm "s3://${SPACES_BUCKET}/qdrant/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                      aws s3 rm "s3://${SPACES_BUCKET}/backups/qdrant/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
                     fi
                   done
 
