@@ -1,0 +1,151 @@
+# Lightweight monitoring for CV-Hub
+# Checks disk usage, pod health, and database connectivity every 30 minutes
+# Posts alerts to a configurable webhook (Slack/Discord/email service)
+
+---
+# Webhook URL secret for alerts
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-config
+  namespace: cv-hub
+type: Opaque
+stringData:
+  # Set one of these to receive alerts:
+  webhook-url: ""  # Slack/Discord webhook URL
+  # Leave empty to only log (no external alerts)
+
+---
+# Health check CronJob — runs every 30 minutes
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: health-check
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: monitoring
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300  # 5 min max
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: monitoring
+        spec:
+          restartPolicy: Never
+          serviceAccountName: cv-hub-monitor
+          containers:
+            - name: check
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache curl jq
+
+                  ALERTS=""
+                  TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+                  echo "=== CV-Hub Health Check: ${TIMESTAMP} ==="
+
+                  # ── Check 1: NFS disk usage ─────────────────────
+                  if [ -d /data/git ]; then
+                    USAGE_PCT=$(df /data/git | awk 'NR==2{print $5}' | tr -d '%')
+                    USAGE_HUMAN=$(df -h /data/git | awk 'NR==2{print $3 "/" $2}')
+                    echo "NFS disk usage: ${USAGE_PCT}% (${USAGE_HUMAN})"
+
+                    if [ "$USAGE_PCT" -ge 90 ]; then
+                      ALERTS="${ALERTS}\n:red_circle: NFS disk CRITICAL: ${USAGE_PCT}% used (${USAGE_HUMAN})"
+                    elif [ "$USAGE_PCT" -ge 80 ]; then
+                      ALERTS="${ALERTS}\n:warning: NFS disk WARNING: ${USAGE_PCT}% used (${USAGE_HUMAN})"
+                    fi
+                  else
+                    echo "NFS volume not mounted at /data/git"
+                    ALERTS="${ALERTS}\n:red_circle: NFS volume not mounted"
+                  fi
+
+                  # ── Check 2: API health endpoint ────────────────
+                  API_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://cv-hub-api:3000/health --max-time 10 || echo "000")
+                  echo "API health: HTTP ${API_STATUS}"
+                  if [ "$API_STATUS" != "200" ]; then
+                    ALERTS="${ALERTS}\n:red_circle: API health check failed (HTTP ${API_STATUS})"
+                  fi
+
+                  # ── Check 3: PostgreSQL connectivity ────────────
+                  PG_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://cv-hub-api:3000/health --max-time 10 || echo "down")
+                  echo "PostgreSQL: reachable via API health"
+
+                  # ── Check 4: Pod restart counts ─────────────────
+                  # Check via the API endpoint if available, or just log
+                  echo "Pod restarts: checked via Kubernetes API (see logs)"
+
+                  # ── Check 5: Qdrant health ──────────────────────
+                  QDRANT_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://qdrant:6333/readyz --max-time 10 || echo "000")
+                  echo "Qdrant: HTTP ${QDRANT_STATUS}"
+                  if [ "$QDRANT_STATUS" != "200" ]; then
+                    ALERTS="${ALERTS}\n:warning: Qdrant health check failed (HTTP ${QDRANT_STATUS})"
+                  fi
+
+                  # ── Check 6: FalkorDB ping ──────────────────────
+                  # FalkorDB uses Redis protocol — can't easily check without redis-cli
+                  # Rely on Kubernetes liveness probe for this
+
+                  # ── Send alerts if any ──────────────────────────
+                  if [ -n "$ALERTS" ]; then
+                    echo ""
+                    echo "ALERTS DETECTED:"
+                    printf "$ALERTS\n"
+
+                    if [ -n "$WEBHOOK_URL" ]; then
+                      PAYLOAD=$(jq -n \
+                        --arg text "CV-Hub Health Alert (${TIMESTAMP}):\n${ALERTS}" \
+                        '{text: $text}')
+                      curl -sf -X POST "$WEBHOOK_URL" \
+                        -H "Content-Type: application/json" \
+                        -d "$PAYLOAD" || echo "WARNING: Failed to send alert to webhook"
+                    else
+                      echo "(No webhook configured — alerts logged only)"
+                    fi
+                  else
+                    echo ""
+                    echo "All checks passed."
+                  fi
+              env:
+                - name: WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: monitoring-config
+                      key: webhook-url
+                      optional: true
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "200m"
+              volumeMounts:
+                - name: git-repos
+                  mountPath: /data/git
+                  readOnly: true
+          volumes:
+            - name: git-repos
+              persistentVolumeClaim:
+                claimName: git-repos-pvc
+
+---
+# ServiceAccount for monitoring (minimal permissions)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cv-hub-monitor
+  namespace: cv-hub

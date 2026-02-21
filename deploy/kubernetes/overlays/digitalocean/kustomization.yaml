@@ -9,7 +9,7 @@ resources:
 
 # DigitalOcean-specific patches
 patches:
-  # Use DO Load Balancer annotations
+  # ── Ingress: controlvector.io domains ──────────────────
   - target:
       kind: Ingress
       name: cv-hub-ingress
@@ -36,7 +36,7 @@ patches:
         path: /spec/tls/0/secretName
         value: hub-controlvector-tls
 
-  # Scale for minimal setup
+  # ── API Deployment ─────────────────────────────────────
   - target:
       kind: Deployment
       name: cv-hub-api
@@ -57,6 +57,7 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/cpu
         value: "1000m"
 
+  # ── Web Deployment ─────────────────────────────────────
   - target:
       kind: Deployment
       name: cv-hub-web
@@ -65,6 +66,7 @@ patches:
         path: /spec/replicas
         value: 2
 
+  # ── Worker Deployment ──────────────────────────────────
   - target:
       kind: Deployment
       name: cv-hub-worker
@@ -79,7 +81,7 @@ patches:
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: "2Gi"
 
-  # HPA adjustments for smaller scale
+  # ── HPA: 2-6 replicas for DO ──────────────────────────
   - target:
       kind: HorizontalPodAutoscaler
       name: cv-hub-api
@@ -91,23 +93,20 @@ patches:
         path: /spec/maxReplicas
         value: 6
 
-# Use DigitalOcean block storage class for StatefulSets
+  # ── StatefulSets: DO block storage class ───────────────
   - target:
       kind: StatefulSet
       name: postgres
     patch: |-
-      - op: replace
+      - op: add
         path: /spec/volumeClaimTemplates/0/spec/storageClassName
         value: do-block-storage
-      - op: replace
-        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
-        value: 20Gi
 
   - target:
       kind: StatefulSet
       name: redis
     patch: |-
-      - op: replace
+      - op: add
         path: /spec/volumeClaimTemplates/0/spec/storageClassName
         value: do-block-storage
 
@@ -115,37 +114,19 @@ patches:
       kind: StatefulSet
       name: qdrant
     patch: |-
-      - op: replace
+      - op: add
         path: /spec/volumeClaimTemplates/0/spec/storageClassName
         value: do-block-storage
-      - op: replace
-        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
-        value: 20Gi
 
   - target:
       kind: StatefulSet
       name: falkordb
     patch: |-
-      - op: replace
+      - op: add
         path: /spec/volumeClaimTemplates/0/spec/storageClassName
         value: do-block-storage
-      - op: replace
-        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
-        value: 20Gi
 
-  # Patch git repos storage
-  - target:
-      kind: PersistentVolumeClaim
-      name: git-repos-pvc
-    patch: |-
-      - op: replace
-        path: /spec/storageClassName
-        value: do-block-storage
-      - op: replace
-        path: /spec/resources/requests/storage
-        value: 100Gi
-
-  # Patch ConfigMap with correct URLs
+  # ── ConfigMap: correct URLs + cookie domain ────────────
   - target:
       kind: ConfigMap
       name: cv-hub-config
@@ -156,9 +137,18 @@ patches:
       - op: replace
         path: /data/app-url
         value: "https://hub.controlvector.io"
-      - op: add
+      - op: replace
         path: /data/cookie-domain
         value: ".controlvector.io"
+
+  # ── PDB: lower minimum for small cluster ───────────────
+  - target:
+      kind: PodDisruptionBudget
+      name: cv-hub-api-pdb
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 1
 
 images:
   - name: cv-hub/api

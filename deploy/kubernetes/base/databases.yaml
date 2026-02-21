@@ -61,10 +61,9 @@ spec:
         name: postgres-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: fast-ssd
         resources:
           requests:
-            storage: 100Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service
@@ -128,7 +127,6 @@ spec:
         name: redis-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: fast-ssd
         resources:
           requests:
             storage: 10Gi
@@ -189,10 +187,9 @@ spec:
         name: falkordb-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: fast-ssd
         resources:
           requests:
-            storage: 50Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service
@@ -259,10 +256,9 @@ spec:
         name: qdrant-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: fast-ssd
         resources:
           requests:
-            storage: 100Gi
+            storage: 20Gi
 ---
 apiVersion: v1
 kind: Service

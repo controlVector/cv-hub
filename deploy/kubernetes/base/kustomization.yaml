@@ -7,10 +7,13 @@ resources:
   - namespace.yaml
   - config.yaml
   - storage.yaml
+  - nfs-server.yaml
   - databases.yaml
   - api-deployment.yaml
   - worker-deployment.yaml
   - ingress.yaml
+  - backup-cronjobs.yaml
+  - monitoring.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize

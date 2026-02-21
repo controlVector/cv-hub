@@ -7,8 +7,50 @@ metadata:
 data:
   api-url: "https://api.cv-hub.io"
   app-url: "https://cv-hub.io"
+  cookie-domain: ".cv-hub.io"
   embedding-model: "openai/text-embedding-3-small"
   graph-sync-concurrency: "3"
+---
+# Secrets template (use external-secrets-operator or sealed-secrets in production)
+# This is a template - DO NOT commit real secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cv-hub-secrets
+  namespace: cv-hub
+type: Opaque
+stringData:
+  # Database
+  postgres-user: "cvhub"
+  postgres-password: "CHANGE_ME_IN_PRODUCTION"
+  database-url: "postgresql://cvhub:CHANGE_ME_IN_PRODUCTION@postgres:5432/cvhub"
+
+  # Redis / Graph / Vector
+  redis-url: "redis://redis:6379"
+  falkordb-url: "redis://falkordb:6379"
+  qdrant-url: "http://qdrant:6333"
+
+  # Auth secrets (generate with: openssl rand -base64 32)
+  session-secret: "GENERATE_ME"
+  jwt-secret: "GENERATE_ME"
+  jwt-access-secret: "GENERATE_ME"
+  jwt-refresh-secret: "GENERATE_ME"
+  csrf-secret: "GENERATE_ME"
+  mfa-encryption-key: "GENERATE_ME"
+
+  # External services
+  openrouter-api-key: "YOUR_OPENROUTER_API_KEY"
+
+  # OAuth (optional)
+  github-client-id: ""
+  github-client-secret: ""
+
+  # S3-compatible object storage (DO Spaces)
+  s3-endpoint: ""
+  s3-bucket: ""
+  s3-access-key: ""
+  s3-secret-key: ""
+  s3-region: ""
 ---
 # Network Policy - restrict database access
 apiVersion: networking.k8s.io/v1

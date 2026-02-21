@@ -1,10 +1,10 @@
 # Storage configuration for CV-Hub
 #
-# Git repository storage uses DO block storage with ReadWriteOnce access.
-# Only the worker pod mounts this volume for git operations.
+# Git repository storage is now provided by NFS (see nfs-server.yaml)
+# for ReadWriteMany access across multiple API pods.
 
 ---
-# StorageClass for fast SSD (DigitalOcean)
+# StorageClass for XFS volumes (DigitalOcean)
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -15,20 +15,3 @@ parameters:
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
-
----
-# Git repository storage (ReadWriteOnce - only worker mounts this)
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: git-repos-pvc
-  namespace: cv-hub
-  labels:
-    app: cv-hub
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: do-block-storage
-  resources:
-    requests:
-      storage: 100Gi

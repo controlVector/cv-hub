@@ -4,7 +4,9 @@
 # Architecture:
 #   NFS Server Pod (RWO block storage) --> NFS Service --> API/Worker Pods (RWX NFS mount)
 #
-# Note: For production HA, consider using Longhorn or a managed NFS service
+# Uses NFS Ganesha (userspace NFS) — no kernel NFS module required.
+# This is necessary on managed Kubernetes (DOKS, GKE, EKS) where nodes
+# may not have the nfs kernel module loaded.
 
 ---
 # Backing PVC using DigitalOcean block storage (RWO)
@@ -24,7 +26,47 @@ spec:
       storage: 100Gi
 
 ---
-# NFS Server Deployment
+# NFS Ganesha configuration stored in a ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ganesha-config
+  namespace: cv-hub
+  labels:
+    app: nfs-server
+data:
+  ganesha.conf: |
+    NFS_CORE_PARAM {
+        NFS_Port = 2049;
+        NFS_Protocols = 3, 4;
+        Clustered = FALSE;
+        Manage_Gids = TRUE;
+    }
+    NFSV4 {
+        Grace_Period = 90;
+        Lease_Lifetime = 60;
+    }
+    EXPORT_DEFAULTS {
+        Access_Type = RW;
+        Squash = No_Root_Squash;
+        SecType = sys;
+        Protocols = 3, 4;
+        Transports = TCP;
+    }
+    LOG {
+        Default_Log_Level = WARN;
+    }
+    EXPORT {
+        Export_Id = 1;
+        Path = /exports;
+        Pseudo = /exports;
+        FSAL {
+            Name = VFS;
+        }
+    }
+
+---
+# NFS Server Deployment (NFS Ganesha - userspace)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,25 +88,41 @@ spec:
     spec:
       containers:
         - name: nfs-server
-          image: erichough/nfs-server:latest
+          image: ubuntu:22.04
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              # Install NFS Ganesha and rpcbind
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nfs-ganesha nfs-ganesha-vfs rpcbind > /dev/null 2>&1
+
+              # Create /etc/mtab symlink (required for VFS FSAL to resolve filesystems)
+              ln -sf /proc/mounts /etc/mtab
+
+              # Use our config
+              cp /config/ganesha.conf /etc/ganesha/ganesha.conf
+
+              # Ensure export directory exists and is writable
+              mkdir -p /exports
+              chmod 777 /exports
+
+              # Start rpcbind (required for NFS RPC registration)
+              rpcbind -w || true
+
+              echo "Starting NFS Ganesha (userspace NFS server)..."
+              # Run ganesha in foreground, logging to stdout
+              exec ganesha.nfsd -F -L /dev/stdout -f /etc/ganesha/ganesha.conf
           securityContext:
             privileged: true
-            capabilities:
-              add:
-                - SYS_ADMIN
           ports:
             - name: nfs
               containerPort: 2049
               protocol: TCP
-            - name: nfs-udp
-              containerPort: 2049
-              protocol: UDP
-          env:
-            - name: NFS_EXPORT_0
-              value: "/exports *(rw,sync,no_subtree_check,no_root_squash,insecure)"
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
               memory: "512Mi"
@@ -72,20 +130,26 @@ spec:
           volumeMounts:
             - name: nfs-storage
               mountPath: /exports
+            - name: ganesha-config
+              mountPath: /config
+              readOnly: true
           readinessProbe:
             tcpSocket:
               port: 2049
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             tcpSocket:
               port: 2049
-            initialDelaySeconds: 30
+            initialDelaySeconds: 45
             periodSeconds: 20
       volumes:
         - name: nfs-storage
           persistentVolumeClaim:
             claimName: nfs-backing-pvc
+        - name: ganesha-config
+          configMap:
+            name: ganesha-config
 
 ---
 # NFS Service (internal DNS: nfs-server.cv-hub.svc.cluster.local)
@@ -107,8 +171,9 @@ spec:
     app: nfs-server
 
 ---
-# PersistentVolume using NFS
-# This provides ReadWriteMany access to all pods in the cluster
+# PersistentVolume using NFS CSI driver
+# Uses csi-driver-nfs (kubernetes-csi/csi-driver-nfs) for reliable NFS mounting
+# Install CSI driver: helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs -n kube-system
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -122,13 +187,16 @@ spec:
   accessModes:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
-  nfs:
-    server: nfs-server.cv-hub.svc.cluster.local
-    path: /exports
   mountOptions:
-    - nfsvers=4
+    - nfsvers=4.1
     - noatime
     - nodiratime
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: cv-hub-git-repos
+    volumeAttributes:
+      server: nfs-server.cv-hub.svc.cluster.local
+      share: /exports
 
 ---
 # Git repos PVC (binds to NFS PV)
