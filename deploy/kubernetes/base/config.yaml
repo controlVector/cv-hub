@@ -72,6 +72,10 @@ spec:
         - podSelector:
             matchLabels:
               app: cv-hub-worker
+        - podSelector:
+            matchLabels:
+              app: cv-hub
+              component: backup
       ports:
         - protocol: TCP
           port: 5432
