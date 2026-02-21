@@ -226,10 +226,8 @@ export default function LandingPage() {
           <Typography variant="body1" sx={{ color: colors.textMuted, mb: 1 }}>
             The Context Manifold paper is available at{' '}
             <Link
-              href="https://controlvector.io/research"
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{ color: colors.orange }}
+              href="/research"
+              sx={{ color: colors.orange, cursor: 'pointer' }}
             >
               controlvector.io/research
             </Link>
@@ -257,11 +255,8 @@ export default function LandingPage() {
               <Button size="small" onClick={() => navigate('/blog')} sx={{ color: colors.textMuted }}>
                 Blog
               </Button>
-              <Button size="small" sx={{ color: colors.textMuted }}>
-                Privacy
-              </Button>
-              <Button size="small" sx={{ color: colors.textMuted }}>
-                Terms
+              <Button size="small" onClick={() => navigate('/research')} sx={{ color: colors.textMuted }}>
+                Research
               </Button>
             </Box>
           </Box>

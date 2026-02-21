@@ -51,6 +51,7 @@ import { ConfigDashboard, ConfigSetEditor, SchemaEditor } from './pages/config';
 import { FlagsDashboard, FlagEditor } from './pages/flags';
 import BlogList from './pages/blog/BlogList';
 import BlogPost from './pages/blog/BlogPost';
+import ResearchPage from './pages/ResearchPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -98,6 +99,9 @@ function App() {
               {/* Public blog pages */}
               <Route path="/blog" element={<BlogList />} />
               <Route path="/blog/:slug" element={<BlogPost />} />
+
+              {/* Public research page */}
+              <Route path="/research" element={<ResearchPage />} />
 
               {/* Protected routes */}
               <Route
