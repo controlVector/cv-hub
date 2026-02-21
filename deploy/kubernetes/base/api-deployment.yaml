@@ -18,6 +18,8 @@ spec:
         app: cv-hub-api
     spec:
       serviceAccountName: cv-hub-api
+      imagePullSecrets:
+        - name: registry-cv-hub-registry
       containers:
         - name: api
           image: cv-hub/api:latest
@@ -31,6 +33,7 @@ spec:
               value: "production"
             - name: PORT
               value: "3000"
+            # Database
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -41,6 +44,7 @@ spec:
                 secretKeyRef:
                   name: cv-hub-secrets
                   key: redis-url
+            # Auth secrets
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:
@@ -51,11 +55,72 @@ spec:
                 secretKeyRef:
                   name: cv-hub-secrets
                   key: jwt-secret
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: jwt-access-secret
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: jwt-refresh-secret
+            - name: CSRF_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: csrf-secret
+            - name: MFA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: mfa-encryption-key
+            # External services
             - name: OPENROUTER_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: cv-hub-secrets
                   key: openrouter-api-key
+            # OAuth (optional)
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: github-client-id
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: github-client-secret
+            # S3-compatible object storage
+            - name: STORAGE_TYPE
+              value: "s3"
+            - name: S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: s3-endpoint
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: s3-bucket
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: s3-access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: s3-secret-key
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: s3-region
+            # Service URLs
             - name: QDRANT_URL
               value: "http://qdrant:6333"
             - name: FALKORDB_URL
@@ -72,6 +137,11 @@ spec:
                 configMapKeyRef:
                   name: cv-hub-config
                   key: app-url
+            - name: COOKIE_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: cv-hub-config
+                  key: cookie-domain
           resources:
             requests:
               memory: "256Mi"
@@ -79,6 +149,9 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          volumeMounts:
+            - name: git-repos
+              mountPath: /data/git
           livenessProbe:
             httpGet:
               path: /health
@@ -91,6 +164,10 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+      volumes:
+        - name: git-repos
+          persistentVolumeClaim:
+            claimName: git-repos-pvc
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,108 @@
+# One-time job to migrate git data from RWO PVC to NFS
+# Usage:
+#   1. Scale down API and worker: kubectl -n cv-hub scale deploy cv-hub-api cv-hub-worker --replicas=0
+#   2. Apply this job: kubectl apply -f migrate-git-to-nfs.yaml
+#   3. Watch progress: kubectl -n cv-hub logs -f job/migrate-git-to-nfs
+#   4. After success, scale back up: kubectl -n cv-hub scale deploy cv-hub-api --replicas=2 cv-hub-worker --replicas=1
+#   5. Clean up: kubectl -n cv-hub delete job migrate-git-to-nfs
+#
+# IMPORTANT: The old git-repos-pvc (RWO) must exist alongside the new NFS volume.
+#   The NFS server must be running before this job starts.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-git-to-nfs
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: migration
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400  # Auto-cleanup after 24h
+  template:
+    metadata:
+      labels:
+        app: cv-hub
+        component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: alpine:3.19
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "=== Git Data Migration: RWO -> NFS ==="
+              echo "Source: /old-git (RWO PVC)"
+              echo "Destination: /new-git (NFS)"
+              echo ""
+
+              apk add --no-cache git rsync
+
+              # Check source has data
+              OLD_COUNT=$(find /old-git -name "*.git" -type d 2>/dev/null | wc -l)
+              echo "Found ${OLD_COUNT} git repositories in source"
+
+              if [ "$OLD_COUNT" -eq 0 ]; then
+                echo "WARNING: No git repos found in source. Checking if source has any files..."
+                ls -la /old-git/
+                echo "If source is empty, migration is not needed."
+                exit 0
+              fi
+
+              # Copy data preserving permissions and ownership
+              echo ""
+              echo "Starting rsync..."
+              rsync -avh --progress /old-git/ /new-git/
+
+              # Verify integrity - check a few repos
+              echo ""
+              echo "Verifying data integrity..."
+              ERRORS=0
+              for repo in $(find /new-git -name "*.git" -type d | head -5); do
+                echo "  Checking: ${repo}"
+                if git --git-dir="${repo}" log --oneline -1 > /dev/null 2>&1; then
+                  echo "    OK"
+                else
+                  echo "    FAILED - repo may be corrupted"
+                  ERRORS=$((ERRORS + 1))
+                fi
+              done
+
+              NEW_COUNT=$(find /new-git -name "*.git" -type d 2>/dev/null | wc -l)
+              echo ""
+              echo "=== Migration Summary ==="
+              echo "Source repos: ${OLD_COUNT}"
+              echo "Destination repos: ${NEW_COUNT}"
+              echo "Verification errors: ${ERRORS}"
+
+              if [ "$ERRORS" -gt 0 ]; then
+                echo "WARNING: Some repos failed verification. Check manually before switching."
+                exit 1
+              fi
+
+              echo ""
+              echo "Migration complete. You can now:"
+              echo "  1. Update deployments to use the NFS PVC"
+              echo "  2. Scale API and worker back up"
+              echo "  3. Test git operations (push/clone)"
+              echo "  4. Once verified, delete the old RWO PVC"
+          volumeMounts:
+            - name: old-git
+              mountPath: /old-git
+              readOnly: true
+            - name: new-git
+              mountPath: /new-git
+      volumes:
+        # The original RWO PVC (still named git-repos-pvc until we swap)
+        - name: old-git
+          persistentVolumeClaim:
+            claimName: git-repos-pvc
+        # The new NFS-backed volume (NFSv4 uses pseudo-path /exports)
+        - name: new-git
+          nfs:
+            server: nfs-server.cv-hub.svc.cluster.local
+            path: /exports

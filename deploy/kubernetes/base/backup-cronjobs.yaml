@@ -1,0 +1,642 @@
+# Backup CronJobs for CV-Hub
+# All backups upload to DigitalOcean Spaces (S3-compatible)
+# Requires: backup-spaces-credentials secret with access-key, secret-key, endpoint, bucket
+
+---
+# Secret template for backup credentials (DO NOT commit real values)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-spaces-credentials
+  namespace: cv-hub
+type: Opaque
+stringData:
+  access-key: "DO_SPACES_KEY"
+  secret-key: "DO_SPACES_SECRET"
+  endpoint: "https://nyc3.digitaloceanspaces.com"
+  bucket: "cv-hub-backups"
+
+---
+# 3a. PostgreSQL Daily Backup
+# Schedule: 3 AM UTC daily
+# Retention: 7 daily + 4 weekly + 3 monthly
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-postgres
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: backup
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800  # 30 min max
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache postgresql16-client aws-cli
+
+                  DATE=$(date +%Y-%m-%d)
+                  DOW=$(date +%u)   # 1=Monday, 7=Sunday
+                  DOM=$(date +%d)   # Day of month
+                  FILENAME="cvhub-${DATE}.sql.gz"
+
+                  echo "=== PostgreSQL Backup: ${DATE} ==="
+
+                  # Dump and compress
+                  PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
+                    -h postgres -U "${POSTGRES_USER}" -d cvhub \
+                    --no-owner --no-acl \
+                    | gzip > "/tmp/${FILENAME}"
+
+                  SIZE=$(du -h "/tmp/${FILENAME}" | cut -f1)
+                  echo "Dump size: ${SIZE}"
+
+                  # Configure S3
+                  export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
+                  export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
+                  S3_BASE="s3://${SPACES_BUCKET}/postgres"
+
+                  # Upload daily
+                  aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/daily/${FILENAME}" \
+                    --endpoint-url "${SPACES_ENDPOINT}"
+
+                  # Weekly backup on Sunday
+                  if [ "$DOW" = "7" ]; then
+                    aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/weekly/cvhub-week-$(date +%Y-W%V).sql.gz" \
+                      --endpoint-url "${SPACES_ENDPOINT}"
+                  fi
+
+                  # Monthly backup on 1st
+                  if [ "$DOM" = "01" ]; then
+                    aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/monthly/cvhub-$(date +%Y-%m).sql.gz" \
+                      --endpoint-url "${SPACES_ENDPOINT}"
+                  fi
+
+                  # Retention: remove old backups
+                  # Daily: keep 7 days
+                  CUTOFF_DAILY=$(date -d "-7 days" +%Y-%m-%d 2>/dev/null || date -v-7d +%Y-%m-%d)
+                  echo "Pruning daily backups older than ${CUTOFF_DAILY}..."
+                  aws s3 ls "${S3_BASE}/daily/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP 'cvhub-\K\d{4}-\d{2}-\d{2}' || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_DAILY" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting: ${FILE}"
+                      aws s3 rm "${S3_BASE}/daily/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  # Weekly: keep 4 weeks
+                  CUTOFF_WEEKLY=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  aws s3 ls "${S3_BASE}/weekly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_WEEKLY" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting weekly: ${FILE}"
+                      aws s3 rm "${S3_BASE}/weekly/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  # Monthly: keep 3 months
+                  CUTOFF_MONTHLY=$(date -d "-90 days" +%Y-%m-%d 2>/dev/null || date -v-90d +%Y-%m-%d)
+                  aws s3 ls "${S3_BASE}/monthly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_MONTHLY" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting monthly: ${FILE}"
+                      aws s3 rm "${S3_BASE}/monthly/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  echo "=== PostgreSQL backup complete ==="
+              env:
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: cv-hub-secrets
+                      key: postgres-user
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cv-hub-secrets
+                      key: postgres-password
+                - name: SPACES_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: access-key
+                - name: SPACES_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: secret-key
+                - name: SPACES_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: endpoint
+                - name: SPACES_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: bucket
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+
+---
+# 3b. Git Repository Daily Backup
+# Schedule: 4 AM UTC daily
+# Retention: 7 daily + 4 weekly
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-git-repos
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: backup
+spec:
+  schedule: "0 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600  # 1 hour max
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache tar gzip aws-cli
+
+                  DATE=$(date +%Y-%m-%d)
+                  DOW=$(date +%u)
+                  FILENAME="git-repos-${DATE}.tar.gz"
+
+                  echo "=== Git Repository Backup: ${DATE} ==="
+
+                  # Count repos
+                  REPO_COUNT=$(find /data/git -name "*.git" -type d 2>/dev/null | wc -l)
+                  echo "Found ${REPO_COUNT} repositories"
+
+                  if [ "$REPO_COUNT" -eq 0 ]; then
+                    echo "No repositories to back up. Exiting."
+                    exit 0
+                  fi
+
+                  # Create tarball
+                  echo "Creating archive..."
+                  tar czf "/tmp/${FILENAME}" -C /data/git .
+
+                  SIZE=$(du -h "/tmp/${FILENAME}" | cut -f1)
+                  echo "Archive size: ${SIZE}"
+
+                  # Configure S3
+                  export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
+                  export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
+                  S3_BASE="s3://${SPACES_BUCKET}/git-repos"
+
+                  # Upload daily
+                  aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/daily/${FILENAME}" \
+                    --endpoint-url "${SPACES_ENDPOINT}"
+
+                  # Weekly on Sunday
+                  if [ "$DOW" = "7" ]; then
+                    aws s3 cp "/tmp/${FILENAME}" "${S3_BASE}/weekly/git-repos-week-$(date +%Y-W%V).tar.gz" \
+                      --endpoint-url "${SPACES_ENDPOINT}"
+                  fi
+
+                  # Prune daily older than 7 days
+                  CUTOFF=$(date -d "-7 days" +%Y-%m-%d 2>/dev/null || date -v-7d +%Y-%m-%d)
+                  echo "Pruning daily backups older than ${CUTOFF}..."
+                  aws s3 ls "${S3_BASE}/daily/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP 'git-repos-\K\d{4}-\d{2}-\d{2}' || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting: ${FILE}"
+                      aws s3 rm "${S3_BASE}/daily/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  # Prune weekly older than 4 weeks
+                  CUTOFF_W=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  aws s3 ls "${S3_BASE}/weekly/" --endpoint-url "${SPACES_ENDPOINT}" 2>/dev/null | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF_W" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting weekly: ${FILE}"
+                      aws s3 rm "${S3_BASE}/weekly/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  echo "=== Git backup complete ==="
+              env:
+                - name: SPACES_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: access-key
+                - name: SPACES_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: secret-key
+                - name: SPACES_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: endpoint
+                - name: SPACES_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: bucket
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: git-repos
+                  mountPath: /data/git
+                  readOnly: true
+          volumes:
+            - name: git-repos
+              persistentVolumeClaim:
+                claimName: git-repos-pvc
+
+---
+# 3c. FalkorDB Weekly Backup
+# Schedule: Sunday 2 AM UTC
+# FalkorDB uses Redis protocol — BGSAVE + copy RDB dump
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-falkordb
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: backup
+spec:
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache redis aws-cli
+
+                  DATE=$(date +%Y-%m-%d)
+                  FILENAME="falkordb-${DATE}.rdb.gz"
+
+                  echo "=== FalkorDB Backup: ${DATE} ==="
+
+                  # Trigger BGSAVE
+                  echo "Triggering BGSAVE..."
+                  redis-cli -h falkordb -p 6379 BGSAVE
+
+                  # Wait for save to complete
+                  echo "Waiting for background save..."
+                  for i in $(seq 1 60); do
+                    LAST_SAVE=$(redis-cli -h falkordb -p 6379 LASTSAVE)
+                    BG_STATUS=$(redis-cli -h falkordb -p 6379 INFO persistence | grep rdb_bgsave_in_progress | tr -d '\r' | cut -d: -f2)
+                    if [ "$BG_STATUS" = "0" ]; then
+                      echo "BGSAVE complete (LASTSAVE: ${LAST_SAVE})"
+                      break
+                    fi
+                    echo "  Still saving... (attempt ${i}/60)"
+                    sleep 5
+                  done
+
+                  # Copy RDB from FalkorDB data volume via redis-cli DEBUG SLEEP workaround
+                  # Since we can't directly access the volume, use redis-cli to get the dump
+                  # FalkorDB stores dump.rdb in /data/
+                  echo "Downloading RDB via redis protocol..."
+                  redis-cli -h falkordb -p 6379 --rdb /tmp/dump.rdb
+
+                  gzip /tmp/dump.rdb
+                  mv /tmp/dump.rdb.gz "/tmp/${FILENAME}"
+
+                  SIZE=$(du -h "/tmp/${FILENAME}" | cut -f1)
+                  echo "Dump size: ${SIZE}"
+
+                  # Upload to Spaces
+                  export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
+                  export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
+
+                  aws s3 cp "/tmp/${FILENAME}" "s3://${SPACES_BUCKET}/falkordb/${FILENAME}" \
+                    --endpoint-url "${SPACES_ENDPOINT}"
+
+                  # Keep last 4 weekly backups
+                  CUTOFF=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  aws s3 ls "s3://${SPACES_BUCKET}/falkordb/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP 'falkordb-\K\d{4}-\d{2}-\d{2}' || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting: ${FILE}"
+                      aws s3 rm "s3://${SPACES_BUCKET}/falkordb/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  echo "=== FalkorDB backup complete ==="
+              env:
+                - name: SPACES_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: access-key
+                - name: SPACES_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: secret-key
+                - name: SPACES_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: endpoint
+                - name: SPACES_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: bucket
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+
+---
+# 3d. Qdrant Weekly Backup
+# Schedule: Saturday 2 AM UTC
+# Uses Qdrant's built-in snapshot API
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-qdrant
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: backup
+spec:
+  schedule: "0 2 * * 6"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.19
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache curl jq aws-cli
+
+                  DATE=$(date +%Y-%m-%d)
+                  QDRANT_URL="http://qdrant:6333"
+
+                  echo "=== Qdrant Backup: ${DATE} ==="
+
+                  # List all collections
+                  COLLECTIONS=$(curl -sf "${QDRANT_URL}/collections" | jq -r '.result.collections[].name')
+
+                  if [ -z "$COLLECTIONS" ]; then
+                    echo "No collections found. Nothing to back up."
+                    exit 0
+                  fi
+
+                  echo "Collections: ${COLLECTIONS}"
+
+                  export AWS_ACCESS_KEY_ID="${SPACES_ACCESS_KEY}"
+                  export AWS_SECRET_ACCESS_KEY="${SPACES_SECRET_KEY}"
+
+                  for COLLECTION in $COLLECTIONS; do
+                    echo ""
+                    echo "Backing up collection: ${COLLECTION}"
+
+                    # Create snapshot
+                    SNAPSHOT_RESULT=$(curl -sf -X POST "${QDRANT_URL}/collections/${COLLECTION}/snapshots")
+                    SNAPSHOT_NAME=$(echo "$SNAPSHOT_RESULT" | jq -r '.result.name')
+
+                    if [ -z "$SNAPSHOT_NAME" ] || [ "$SNAPSHOT_NAME" = "null" ]; then
+                      echo "  ERROR: Failed to create snapshot for ${COLLECTION}"
+                      echo "  Response: ${SNAPSHOT_RESULT}"
+                      continue
+                    fi
+
+                    echo "  Snapshot created: ${SNAPSHOT_NAME}"
+
+                    # Download snapshot
+                    curl -sf "${QDRANT_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}" \
+                      -o "/tmp/${COLLECTION}-${DATE}.snapshot"
+
+                    SIZE=$(du -h "/tmp/${COLLECTION}-${DATE}.snapshot" | cut -f1)
+                    echo "  Snapshot size: ${SIZE}"
+
+                    # Upload to Spaces
+                    aws s3 cp "/tmp/${COLLECTION}-${DATE}.snapshot" \
+                      "s3://${SPACES_BUCKET}/qdrant/${COLLECTION}-${DATE}.snapshot" \
+                      --endpoint-url "${SPACES_ENDPOINT}"
+
+                    # Clean up local file
+                    rm -f "/tmp/${COLLECTION}-${DATE}.snapshot"
+
+                    # Delete snapshot from Qdrant to free space
+                    curl -sf -X DELETE "${QDRANT_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}" > /dev/null
+
+                    echo "  Done: ${COLLECTION}"
+                  done
+
+                  # Retention: keep 4 weekly snapshots per collection
+                  CUTOFF=$(date -d "-28 days" +%Y-%m-%d 2>/dev/null || date -v-28d +%Y-%m-%d)
+                  echo ""
+                  echo "Pruning snapshots older than ${CUTOFF}..."
+                  aws s3 ls "s3://${SPACES_BUCKET}/qdrant/" --endpoint-url "${SPACES_ENDPOINT}" | while read -r line; do
+                    FILE_DATE=$(echo "$line" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1 || true)
+                    if [ -n "$FILE_DATE" ] && [ "$FILE_DATE" \< "$CUTOFF" ]; then
+                      FILE=$(echo "$line" | awk '{print $4}')
+                      echo "  Deleting: ${FILE}"
+                      aws s3 rm "s3://${SPACES_BUCKET}/qdrant/${FILE}" --endpoint-url "${SPACES_ENDPOINT}"
+                    fi
+                  done
+
+                  echo "=== Qdrant backup complete ==="
+              env:
+                - name: SPACES_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: access-key
+                - name: SPACES_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: secret-key
+                - name: SPACES_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: endpoint
+                - name: SPACES_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-spaces-credentials
+                      key: bucket
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+
+---
+# Phase 5: Git Garbage Collection CronJob
+# Schedule: Sunday 2 AM UTC
+# Iterates all bare repos and runs git gc
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: git-gc
+  namespace: cv-hub
+  labels:
+    app: cv-hub
+    component: maintenance
+spec:
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600  # 1 hour max
+      template:
+        metadata:
+          labels:
+            app: cv-hub
+            component: maintenance
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: git-gc
+              image: alpine/git:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+
+                  echo "=== Git Garbage Collection: $(date +%Y-%m-%d) ==="
+
+                  REPO_COUNT=0
+                  ERROR_COUNT=0
+
+                  # Find all bare git repos (they end in .git and contain HEAD)
+                  for repo in $(find /data/git -name "HEAD" -path "*/*.git/HEAD" -exec dirname {} \;); do
+                    REPO_COUNT=$((REPO_COUNT + 1))
+                    echo "Processing: ${repo}"
+
+                    # Get size before
+                    SIZE_BEFORE=$(du -sh "${repo}" | cut -f1)
+
+                    if git --git-dir="${repo}" gc --auto 2>&1; then
+                      SIZE_AFTER=$(du -sh "${repo}" | cut -f1)
+                      echo "  ${SIZE_BEFORE} -> ${SIZE_AFTER}"
+                    else
+                      echo "  ERROR: gc failed for ${repo}"
+                      ERROR_COUNT=$((ERROR_COUNT + 1))
+                    fi
+                  done
+
+                  echo ""
+                  echo "=== Summary ==="
+                  echo "Repos processed: ${REPO_COUNT}"
+                  echo "Errors: ${ERROR_COUNT}"
+
+                  # Show overall disk usage
+                  echo ""
+                  echo "Git storage usage:"
+                  du -sh /data/git/
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+              volumeMounts:
+                - name: git-repos
+                  mountPath: /data/git
+          volumes:
+            - name: git-repos
+              persistentVolumeClaim:
+                claimName: git-repos-pvc
