@@ -188,14 +188,17 @@ oauth.get('/authorize', optionalAuth, zValidator('query', authorizeQuerySchema),
 });
 
 // POST /oauth/authorize - Handle consent submission
+const nullToUndef = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === null ? undefined : v), schema);
+
 const authorizePostSchema = z.object({
   client_id: z.string().min(1),
   redirect_uri: z.string().url(),
   scope: z.string(),
-  state: z.string().optional(),
-  code_challenge: z.string().optional(),
-  code_challenge_method: z.enum(['S256', 'plain']).optional(),
-  nonce: z.string().optional(),
+  state: nullToUndef(z.string().optional()),
+  code_challenge: nullToUndef(z.string().optional()),
+  code_challenge_method: nullToUndef(z.enum(['S256', 'plain']).optional()),
+  nonce: nullToUndef(z.string().optional()),
   consent: z.enum(['allow', 'deny']),
   remember: z.boolean().default(true),  // Remember consent for future requests
 });
