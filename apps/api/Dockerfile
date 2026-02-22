@@ -33,8 +33,10 @@ RUN cd packages/shared && npx tsc --outDir dist --rootDir src --module CommonJS 
 RUN cd packages/shared && \
     node -e "const p=JSON.parse(require('fs').readFileSync('package.json','utf8')); delete p.type; p.main='./dist/index.js'; p.exports={'.':'./dist/index.js','./schemas':'./dist/schemas/index.js','./types':'./dist/types/index.js'}; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
 
-# Build API
-RUN pnpm --filter @cv-hub/api build
+# Build API using esbuild bundle mode (tsc OOMs in Docker)
+# --bundle resolves all local imports, --packages=external leaves node_modules as runtime require()
+RUN cd apps/api && npx esbuild src/index.ts --bundle --platform=node --format=cjs --target=es2022 \
+    --outfile=dist/index.js --packages=external
 
 # Production stage
 FROM node:20-alpine AS runner
