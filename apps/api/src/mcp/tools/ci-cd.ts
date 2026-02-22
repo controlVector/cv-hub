@@ -3,6 +3,7 @@
  * Exposes CI/CD functionality to AI agents via Model Context Protocol
  */
 
+import { z } from 'zod';
 import { db } from '../../db';
 import { pipelines, pipelineRuns, pipelineJobs } from '../../db/schema/ci-cd';
 import { repositories } from '../../db/schema/repositories';
@@ -600,4 +601,51 @@ export async function processNaturalLanguageCommand(
  */
 export function getAvailableTools(): MCPTool[] {
   return cicdTools;
+}
+
+/**
+ * Register CI/CD tools on an MCP Server instance
+ * Wraps each existing CI/CD tool as an MCP-protocol tool
+ */
+export function registerCICDToolsOnMcp(
+  server: import('@modelcontextprotocol/sdk/server/mcp.js').McpServer,
+  userId: string,
+) {
+
+  for (const tool of cicdTools) {
+    // Build Zod schema from JSON Schema properties
+    const shape: Record<string, any> = {};
+    const required = new Set(tool.inputSchema.required ?? []);
+
+    for (const [key, prop] of Object.entries(tool.inputSchema.properties)) {
+      let field: any;
+      if (prop.type === 'number') {
+        field = z.number().describe(prop.description);
+      } else {
+        field = z.string().describe(prop.description);
+      }
+      if (!required.has(key)) {
+        field = field.optional();
+      }
+      shape[key] = field;
+    }
+
+    server.tool(
+      tool.name,
+      tool.description,
+      shape,
+      async (args: Record<string, any>) => {
+        const result = await executeCICDTool(tool.name, args, { userId });
+        if (result.success) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(result.data, null, 2) }],
+          };
+        }
+        return {
+          content: [{ type: 'text' as const, text: result.error ?? 'Unknown error' }],
+          isError: true,
+        };
+      },
+    );
+  }
 }
