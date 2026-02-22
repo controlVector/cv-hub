@@ -24,3 +24,6 @@ export type { MCPTool as MCPToolDef, MCPToolResult as MCPToolCallResult } from '
 // Handler & session
 export { registerTool, getRegisteredTools, handleMCPRequest } from './handler';
 export { createMCPSession, getMCPSession, closeMCPSession, markSessionInitialized } from './session';
+
+// SDK-based MCP server factory (for mcpGateway route)
+export { createMcpServer } from './server';

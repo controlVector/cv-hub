@@ -44,6 +44,7 @@ import { cliApiRoutes } from './routes/cli-api';
 import { mcpOAuthRoutes } from './routes/mcp-oauth';
 import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
+import { mcpGateway } from './routes/mcp-gateway';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -64,14 +65,15 @@ app.use('*', secureHeaders());
 const allowedOrigins = [
   env.APP_URL,
   env.API_URL,
+  'https://claude.ai',
   ...(env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []),
 ];
 app.use('*', cors({
   origin: allowedOrigins,
   credentials: true,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-  exposeHeaders: ['X-CSRF-Token', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'Mcp-Session-Id'],
+  exposeHeaders: ['X-CSRF-Token', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Mcp-Session-Id'],
 }));
 
 // Serve static files (test OAuth client)
@@ -187,43 +189,66 @@ app.route('/oauth', mcpOAuthRoutes);
 // MCP Streamable HTTP Transport (Remote MCP Server for Claude.ai)
 app.route('/mcp', mcpRoutes);
 
+// MCP SDK Gateway (Model Context Protocol — SDK-based tools for cloud Claude.ai)
+app.route('/mcp/sdk', mcpGateway);
+
 // Executor API (Claude Code agents register, poll, submit results)
 app.route('/api/v1/executors', executorRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
-app.get('/.well-known/openid-configuration', (c) => {
-  const issuer = env.API_URL;
+const oidcConfig = {
+  authorization_endpoint: `${env.API_URL}/oauth/authorize`,
+  token_endpoint: `${env.API_URL}/oauth/token`,
+  device_authorization_endpoint: `${env.API_URL}/oauth/device/authorize`,
+  userinfo_endpoint: `${env.API_URL}/oauth/userinfo`,
+  revocation_endpoint: `${env.API_URL}/oauth/revoke`,
+  introspection_endpoint: `${env.API_URL}/oauth/introspect`,
+  registration_endpoint: `${env.API_URL}/api/oauth/clients`,
+  scopes_supported: [
+    'openid', 'profile', 'email', 'offline_access',
+    'repo:read', 'repo:write', 'repo:admin',
+    'mcp:tools', 'mcp:tasks', 'mcp:threads', 'mcp:execute',
+  ],
+  response_types_supported: ['code'],
+  response_modes_supported: ['query'],
+  grant_types_supported: [
+    'authorization_code',
+    'refresh_token',
+    'urn:ietf:params:oauth:grant-type:device_code',
+  ],
+  subject_types_supported: ['public'],
+  id_token_signing_alg_values_supported: ['HS256'],
+  token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+  introspection_endpoint_auth_methods_supported: ['client_secret_basic'],
+  claims_supported: [
+    'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
+    'name', 'preferred_username', 'picture', 'email', 'email_verified', 'updated_at',
+  ],
+  code_challenge_methods_supported: ['S256'],
+};
 
+app.get('/.well-known/openid-configuration', (c) => {
   return c.json({
-    issuer,
-    authorization_endpoint: `${issuer}/oauth/authorize`,
-    token_endpoint: `${issuer}/oauth/token`,
-    registration_endpoint: `${issuer}/oauth/register`,
-    device_authorization_endpoint: `${issuer}/oauth/device/authorize`,
-    userinfo_endpoint: `${issuer}/oauth/userinfo`,
-    revocation_endpoint: `${issuer}/oauth/revoke`,
-    introspection_endpoint: `${issuer}/oauth/introspect`,
-    scopes_supported: [
-      'openid', 'profile', 'email', 'offline_access',
-      'repo:read', 'repo:write', 'repo:admin',
-      'mcp:tools', 'mcp:tasks', 'mcp:threads', 'mcp:execute',
-    ],
-    response_types_supported: ['code'],
-    response_modes_supported: ['query'],
-    grant_types_supported: [
-      'authorization_code',
-      'refresh_token',
-      'urn:ietf:params:oauth:grant-type:device_code',
-    ],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['HS256'],
-    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
-    introspection_endpoint_auth_methods_supported: ['client_secret_basic'],
-    claims_supported: [
-      'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
-      'name', 'preferred_username', 'picture', 'email', 'email_verified', 'updated_at',
-    ],
-    code_challenge_methods_supported: ['S256'],
+    issuer: env.API_URL,
+    ...oidcConfig,
+  });
+});
+
+// OAuth Authorization Server Metadata (RFC 8414) — Claude.ai checks this path
+app.get('/.well-known/oauth-authorization-server', (c) => {
+  return c.json({
+    issuer: env.API_URL,
+    ...oidcConfig,
+  });
+});
+
+// OAuth Protected Resource Metadata (RFC 9728) — tells Claude.ai where auth server is
+app.get('/.well-known/oauth-protected-resource', (c) => {
+  return c.json({
+    resource: `${env.API_URL}/mcp`,
+    authorization_servers: [env.API_URL],
+    scopes_supported: ['openid', 'profile', 'email', 'offline_access', 'repo:read', 'repo:write', 'repo:admin'],
+    bearer_methods_supported: ['header'],
   });
 });
 
