@@ -97,6 +97,10 @@ const envSchema = z.object({
   // Stripe Price IDs (configured in Stripe dashboard)
   STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
   STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_CVSAFE_PRO_ANNUAL: z.string().optional(),
+
+  // Stripe Billing Portal
+  STRIPE_PORTAL_CONFIG_ID: z.string().optional(),
 
   // Sentry
   SENTRY_DSN: z.string().url().optional(),

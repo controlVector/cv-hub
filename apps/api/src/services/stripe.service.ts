@@ -151,10 +151,16 @@ export async function createPortalSession(
     throw new Error('Organization has no Stripe customer');
   }
 
-  const session = await getStripe().billingPortal.sessions.create({
+  const portalParams: Stripe.BillingPortal.SessionCreateParams = {
     customer: org.stripeCustomerId,
     return_url: returnUrl,
-  });
+  };
+
+  if (env.STRIPE_PORTAL_CONFIG_ID) {
+    portalParams.configuration = env.STRIPE_PORTAL_CONFIG_ID;
+  }
+
+  const session = await getStripe().billingPortal.sessions.create(portalParams);
 
   return session.url;
 }
@@ -461,7 +467,16 @@ export async function processWebhookEvent(event: Stripe.Event): Promise<void> {
 /**
  * Get Stripe price ID for a tier
  */
-export function getStripePriceId(tier: string, interval: 'monthly' | 'annual'): string | null {
+export function getStripePriceId(tier: string, interval: 'monthly' | 'annual', product?: string): string | null {
+  // CV-Safe pricing
+  if (product === 'cv-safe') {
+    if (tier === 'pro' && interval === 'annual') {
+      return env.STRIPE_PRICE_CVSAFE_PRO_ANNUAL || null;
+    }
+    return null;
+  }
+
+  // CV-Hub pricing (default)
   if (tier === 'pro') {
     return interval === 'monthly'
       ? env.STRIPE_PRICE_PRO_MONTHLY || null

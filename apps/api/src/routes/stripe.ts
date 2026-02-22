@@ -49,19 +49,26 @@ stripeRoutes.post('/webhook', async (c) => {
     return c.json({ error: 'Missing stripe-signature header' }, 400);
   }
 
+  let event;
   try {
     // Get raw body for signature verification
     const body = await c.req.text();
-    const event = verifyWebhookSignature(body, signature);
-
-    await processWebhookEvent(event);
-
-    return c.json({ received: true });
+    event = verifyWebhookSignature(body, signature);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Webhook error';
-    console.error('Stripe webhook error:', message);
+    const message = err instanceof Error ? err.message : 'Webhook signature verification failed';
+    console.error('Stripe webhook signature error:', message);
     return c.json({ error: message }, 400);
   }
+
+  try {
+    await processWebhookEvent(event);
+  } catch (err) {
+    // Always return 200 to Stripe so it doesn't retry endlessly.
+    // The error is already persisted via markEventProcessed().
+    console.error('Stripe webhook processing error:', err instanceof Error ? err.message : err);
+  }
+
+  return c.json({ received: true });
 });
 
 // ============================================================================
@@ -75,6 +82,7 @@ stripeRoutes.post('/webhook', async (c) => {
 const checkoutSchema = z.object({
   organizationId: z.string().uuid(),
   tier: z.enum(['pro', 'enterprise']),
+  product: z.enum(['cv-hub', 'cv-safe']).default('cv-hub'),
   billingInterval: z.enum(['monthly', 'annual']).default('monthly'),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
@@ -107,7 +115,7 @@ stripeRoutes.post(
     }
 
     // Get Stripe price ID
-    const priceId = getStripePriceId(input.tier, input.billingInterval);
+    const priceId = getStripePriceId(input.tier, input.billingInterval, input.product);
     if (!priceId) {
       return c.json({
         error: {
