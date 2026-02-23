@@ -287,7 +287,7 @@ export default function Dashboard() {
                   Recent Repositories
                 </Typography>
                 <Box
-                  onClick={() => navigate('/repositories')}
+                  onClick={() => navigate('/dashboard/repositories')}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -317,7 +317,7 @@ export default function Dashboard() {
               ) : recentRepos.map((repo) => (
                 <Box
                   key={repo.id}
-                  onClick={() => navigate(`/repositories/${repo.fullName}`)}
+                  onClick={() => navigate(`/dashboard/repositories/${repo.fullName}`)}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -544,9 +544,9 @@ export default function Dashboard() {
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {[
-                  { label: 'New Repository', icon: <RepoIcon />, action: '/repositories/new' },
-                  { label: 'AI Code Review', icon: <AIIcon />, action: '/ai-assistant?mode=review' },
-                  { label: 'Search Code', icon: <Code />, action: '/search' },
+                  { label: 'New Repository', icon: <RepoIcon />, action: '/dashboard/repositories/new' },
+                  { label: 'AI Code Review', icon: <AIIcon />, action: '/dashboard/ai-assistant?mode=review' },
+                  { label: 'Search Code', icon: <Code />, action: '/dashboard/search' },
                 ].map((action) => (
                   <Box
                     key={action.label}
