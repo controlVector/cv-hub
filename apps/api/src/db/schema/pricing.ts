@@ -56,6 +56,7 @@ export const pricingTiers = pgTable('pricing_tiers', {
     configManagement: boolean;        // Config management feature
     configExternalStores: boolean;    // External config stores (AWS SSM, Vault, etc.)
     configExports: boolean;           // Config export functionality
+    mcpGateway: boolean;              // MCP Gateway access (bolt-on for Starter, included in Pro/Enterprise)
   }>().notNull(),
 
   // Display configuration

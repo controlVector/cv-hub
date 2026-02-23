@@ -182,13 +182,18 @@ export interface Subscription {
 export interface SubscriptionResponse {
   subscription: Subscription | null;
   tier: string;
+  tierDisplayName?: string;
   status: string;
+  addons?: {
+    mcpGateway: { status: string; cancelAtPeriodEnd: boolean } | null;
+  };
 }
 
 // Checkout input
 export interface CreateCheckoutInput {
   organizationId: string;
-  tier: 'pro' | 'enterprise';
+  tier?: 'pro' | 'enterprise';
+  product?: 'cv-hub' | 'cv-safe' | 'mcp-gateway';
   billingInterval: BillingInterval;
   successUrl: string;
   cancelUrl: string;

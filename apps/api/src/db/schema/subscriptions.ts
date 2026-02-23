@@ -1,5 +1,5 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp, index, pgEnum, integer, jsonb } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, boolean, timestamp, index, pgEnum, integer, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { organizations } from './organizations';
 import { users } from './users';
 import { pricingTiers } from './pricing';
@@ -174,6 +174,40 @@ export const stripeEvents = pgTable('stripe_events', {
   index('stripe_events_processed_idx').on(table.processed),
 ]);
 
+// Organization add-ons table (bolt-on subscriptions separate from main plan)
+export const organizationAddons = pgTable('organization_addons', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  addonType: varchar('addon_type', { length: 32 }).notNull(), // e.g. 'mcp_gateway'
+  stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
+  stripePriceId: varchar('stripe_price_id', { length: 255 }),
+  status: subscriptionStatusEnum('status').default('incomplete').notNull(),
+  billingInterval: varchar('billing_interval', { length: 16 }),
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').default(false).notNull(),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  metadata: jsonb('metadata').$type<Record<string, string>>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('addons_org_id_idx').on(table.organizationId),
+  index('addons_type_idx').on(table.addonType),
+  index('addons_status_idx').on(table.status),
+  index('addons_stripe_sub_idx').on(table.stripeSubscriptionId),
+  uniqueIndex('addons_org_type_active_idx')
+    .on(table.organizationId, table.addonType)
+    .where(sql`status IN ('active', 'trialing', 'past_due')`),
+]);
+
+// Relations
+export const organizationAddonsRelations = relations(organizationAddons, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [organizationAddons.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
 // Relations
 export const subscriptionsRelations = relations(subscriptions, ({ one, many }) => ({
   organization: one(organizations, {
@@ -214,6 +248,8 @@ export type Invoice = typeof invoices.$inferSelect;
 export type NewInvoice = typeof invoices.$inferInsert;
 export type StripeEvent = typeof stripeEvents.$inferSelect;
 export type NewStripeEvent = typeof stripeEvents.$inferInsert;
+export type OrganizationAddon = typeof organizationAddons.$inferSelect;
+export type NewOrganizationAddon = typeof organizationAddons.$inferInsert;
 
 export type SubscriptionStatus = typeof subscriptionStatusEnum.enumValues[number];
 export type PaymentMethodType = typeof paymentMethodTypeEnum.enumValues[number];

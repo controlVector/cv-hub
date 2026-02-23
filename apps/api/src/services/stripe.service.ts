@@ -16,6 +16,7 @@ import {
 } from '../db/schema';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { syncAddonFromStripe, cancelRedundantAddons } from './addon.service';
 
 // Initialize Stripe client (use latest API version)
 const stripe = env.STRIPE_SECRET_KEY
@@ -87,6 +88,7 @@ export interface CreateCheckoutInput {
   successUrl: string;
   cancelUrl: string;
   billingInterval?: 'monthly' | 'annual';
+  addonType?: string;
 }
 
 /**
@@ -114,6 +116,7 @@ export async function createCheckoutSession(input: CreateCheckoutInput): Promise
       metadata: {
         organizationId: input.organizationId,
         billingInterval: input.billingInterval || 'monthly',
+        ...(input.addonType ? { addonType: input.addonType } : {}),
       },
     },
     metadata: {
@@ -430,9 +433,25 @@ export async function processWebhookEvent(event: Stripe.Event): Promise<void> {
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
-        await syncSubscriptionFromStripe(event.data.object as Stripe.Subscription);
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object as Stripe.Subscription;
+        if (sub.metadata?.addonType) {
+          // Route to add-on service
+          await syncAddonFromStripe(sub);
+        } else {
+          // Standard plan subscription
+          await syncSubscriptionFromStripe(sub);
+
+          // If plan is now pro/enterprise, cancel redundant MCP Gateway add-on
+          const orgId = sub.metadata?.organizationId;
+          if (orgId && (sub.status === 'active' || sub.status === 'trialing')) {
+            const priceId = sub.items?.data?.[0]?.price?.id;
+            const tierName = priceId?.includes('pro') ? 'pro' : 'enterprise';
+            await cancelRedundantAddons(orgId, tierName);
+          }
+        }
         break;
+      }
 
       case 'invoice.created':
       case 'invoice.updated':
@@ -468,6 +487,14 @@ export async function processWebhookEvent(event: Stripe.Event): Promise<void> {
  * Get Stripe price ID for a tier
  */
 export function getStripePriceId(tier: string, interval: 'monthly' | 'annual', product?: string): string | null {
+  // MCP Gateway add-on pricing
+  if (product === 'mcp-gateway') {
+    if (interval === 'monthly') {
+      return env.STRIPE_PRICE_MCP_GATEWAY_MONTHLY || null;
+    }
+    return null;
+  }
+
   // CV-Safe pricing
   if (product === 'cv-safe') {
     if (tier === 'pro' && interval === 'annual') {

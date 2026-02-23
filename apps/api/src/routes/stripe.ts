@@ -16,6 +16,8 @@ import {
 } from '../services/stripe.service';
 import { getOrganizationById, isOrgAdmin } from '../services/organization.service';
 import { getUserById } from '../services/user.service';
+import { getPricingTierById } from '../services/pricing.service';
+import { getOrgAddon } from '../services/addon.service';
 
 const stripeRoutes = new Hono<AppEnv>();
 
@@ -81,8 +83,8 @@ stripeRoutes.post('/webhook', async (c) => {
  */
 const checkoutSchema = z.object({
   organizationId: z.string().uuid(),
-  tier: z.enum(['pro', 'enterprise']),
-  product: z.enum(['cv-hub', 'cv-safe']).default('cv-hub'),
+  tier: z.enum(['pro', 'enterprise']).optional(),
+  product: z.enum(['cv-hub', 'cv-safe', 'mcp-gateway']).default('cv-hub'),
   billingInterval: z.enum(['monthly', 'annual']).default('monthly'),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
@@ -114,20 +116,28 @@ stripeRoutes.post(
       throw new NotFoundError('User');
     }
 
+    // Add-on products don't require a tier
+    const isAddon = input.product === 'mcp-gateway';
+    if (!isAddon && !input.tier) {
+      return c.json({
+        error: { code: 'MISSING_TIER', message: 'Tier is required for plan subscriptions.' },
+      }, 400);
+    }
+
     // Get Stripe price ID
-    const priceId = getStripePriceId(input.tier, input.billingInterval, input.product);
+    const priceId = getStripePriceId(input.tier || '', input.billingInterval, input.product);
     if (!priceId) {
       return c.json({
         error: {
           code: 'NO_PRICE',
           message: input.tier === 'enterprise'
             ? 'Enterprise plans require a custom quote. Please contact sales.'
-            : 'Pricing not configured for this tier.',
+            : 'Pricing not configured for this product.',
         },
       }, 400);
     }
 
-    // Create checkout session
+    // Create checkout session (add addonType metadata for add-on products)
     const checkoutUrl = await createCheckoutSession({
       organizationId: input.organizationId,
       priceId,
@@ -136,6 +146,7 @@ stripeRoutes.post(
       successUrl: input.successUrl,
       cancelUrl: input.cancelUrl,
       billingInterval: input.billingInterval,
+      ...(isAddon ? { addonType: 'mcp_gateway' } : {}),
     });
 
     return c.json({ url: checkoutUrl });
@@ -198,12 +209,32 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
   const subscription = await getOrgSubscription(orgId);
 
   if (!subscription) {
+    const mcpAddon = await getOrgAddon(orgId, 'mcp_gateway');
     return c.json({
       subscription: null,
       tier: 'starter',
       status: 'free',
+      addons: {
+        mcpGateway: mcpAddon
+          ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }
+          : null,
+      },
     });
   }
+
+  // Resolve actual tier name from DB
+  let tierName = 'starter';
+  let tierDisplayName = 'Starter';
+  if (subscription.pricingTierId) {
+    const tier = await getPricingTierById(subscription.pricingTierId);
+    if (tier) {
+      tierName = tier.name;
+      tierDisplayName = tier.displayName;
+    }
+  }
+
+  // Fetch MCP Gateway add-on status
+  const mcpAddon = await getOrgAddon(orgId, 'mcp_gateway');
 
   return c.json({
     subscription: {
@@ -214,8 +245,14 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
       currentPeriodEnd: subscription.currentPeriodEnd,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     },
-    tier: subscription.pricingTierId ? 'pro' : 'starter',
+    tier: tierName,
+    tierDisplayName,
     status: subscription.status,
+    addons: {
+      mcpGateway: mcpAddon
+        ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }
+        : null,
+    },
   });
 });
 

@@ -20,6 +20,11 @@ import { createMcpServer } from '../mcp/server';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { isStripeConfigured } from '../services/stripe.service';
+import { hasOrgMcpGatewayAccess } from '../services/addon.service';
+import { db } from '../db';
+import { organizationMembers } from '../db/schema';
+import { eq } from 'drizzle-orm';
 
 // Services for auth
 import * as patService from '../services/pat.service';
@@ -108,6 +113,40 @@ async function mcpAuth(c: any, next: () => Promise<void>) {
   return c.json({ error: 'Invalid or expired token' }, 401);
 }
 
+// ── Billing gate middleware ────────────────────────────────────────────
+
+async function requireMcpGatewayBilling(c: any, next: () => Promise<void>) {
+  // Skip billing gate in dev mode (Stripe not configured)
+  if (!isStripeConfigured()) {
+    return next();
+  }
+
+  const userId = c.get('userId');
+
+  // Get org IDs for this user (lightweight query)
+  const memberships = await db
+    .select({ organizationId: organizationMembers.organizationId })
+    .from(organizationMembers)
+    .where(eq(organizationMembers.userId, userId));
+
+  // Check if any org has MCP Gateway access
+  for (const { organizationId } of memberships) {
+    if (await hasOrgMcpGatewayAccess(organizationId)) {
+      return next();
+    }
+  }
+
+  // No access — return JSON-RPC error
+  return c.json({
+    jsonrpc: '2.0',
+    error: {
+      code: -32001,
+      message: 'MCP Gateway requires an active subscription. Upgrade to Pro or add the MCP Gateway add-on ($5/mo) in your organization settings.',
+    },
+    id: null,
+  }, 403);
+}
+
 // ── Route ─────────────────────────────────────────────────────────────
 
 export const mcpGateway = new Hono<McpEnv>();
@@ -117,6 +156,9 @@ mcpGateway.use('*', mcpRateLimiter as any);
 
 // Auth on all methods
 mcpGateway.use('*', mcpAuth as any);
+
+// Billing gate
+mcpGateway.use('*', requireMcpGatewayBilling as any);
 
 // ── POST /mcp ─────────────────────────────────────────────────────────
 mcpGateway.post('/', async (c) => {
