@@ -24,7 +24,8 @@ import {
 } from '../services/organization.service';
 import { listApps } from '../services/app-store.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
-import { NotFoundError, ForbiddenError } from '../utils/errors';
+import { NotFoundError, ForbiddenError, TierLimitError } from '../utils/errors';
+import { checkOrgMemberLimit } from '../services/tier-limits.service';
 import type { AppEnv } from '../app';
 
 const orgRoutes = new Hono<AppEnv>();
@@ -290,6 +291,12 @@ orgRoutes.post('/:slug/members', requireAuth, zValidator('json', addMemberSchema
   }
 
   await requireOrgAdmin(c, org.id);
+
+  // Enforce tier limits
+  const memberCheck = await checkOrgMemberLimit(org.id);
+  if (!memberCheck.allowed) {
+    throw new TierLimitError('members', memberCheck.current, memberCheck.limit, memberCheck.tierName);
+  }
 
   // Cannot add as owner (ownership transfer is different)
   if (input.role === 'owner') {

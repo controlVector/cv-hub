@@ -12,7 +12,6 @@ import {
   Toolbar,
 } from '@mui/material';
 import {
-  GitHub as GitHubIcon,
   AutoStories as ReadIcon,
   Login as LoginIcon,
   PersonAdd as RegisterIcon,
@@ -77,6 +76,12 @@ export default function LandingPage() {
               sx={{ color: colors.orange, fontWeight: 600 }}
             >
               Blog
+            </Button>
+            <Button
+              onClick={() => navigate('/pricing')}
+              sx={{ color: colors.orange, fontWeight: 600 }}
+            >
+              Pricing
             </Button>
             <Button
               variant="outlined"
@@ -162,11 +167,7 @@ export default function LandingPage() {
             <Button
               variant="outlined"
               size="large"
-              startIcon={<GitHubIcon />}
-              component="a"
-              href="https://github.com/controlVector/cv-git"
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={() => navigate('/pricing')}
               sx={{
                 borderColor: extendedColors.border,
                 color: extendedColors.text,
@@ -179,7 +180,25 @@ export default function LandingPage() {
                 },
               }}
             >
-              View on GitHub
+              View Pricing
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => navigate('/apps/cv-git')}
+              sx={{
+                borderColor: extendedColors.border,
+                color: extendedColors.text,
+                px: 4,
+                py: 1.5,
+                fontSize: '1rem',
+                '&:hover': {
+                  borderColor: colors.orange,
+                  backgroundColor: 'rgba(245, 166, 35, 0.1)',
+                },
+              }}
+            >
+              Get cv-git
             </Button>
           </Box>
         </Box>
@@ -254,6 +273,9 @@ export default function LandingPage() {
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button size="small" onClick={() => navigate('/blog')} sx={{ color: colors.textMuted }}>
                 Blog
+              </Button>
+              <Button size="small" onClick={() => navigate('/pricing')} sx={{ color: colors.textMuted }}>
+                Pricing
               </Button>
               <Button size="small" onClick={() => navigate('/research')} sx={{ color: colors.textMuted }}>
                 Research

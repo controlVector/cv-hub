@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import {
   subscriptions,
@@ -179,7 +179,7 @@ export async function getOrgSubscription(organizationId: string): Promise<Subscr
   const subscription = await db.query.subscriptions.findFirst({
     where: and(
       eq(subscriptions.organizationId, organizationId),
-      eq(subscriptions.status, 'active')
+      inArray(subscriptions.status, ['active', 'trialing'])
     ),
   });
 
@@ -203,11 +203,13 @@ export async function syncSubscriptionFromStripe(
   let pricingTierId: string | undefined;
 
   if (priceId) {
-    // Match price to tier (you'd set up this mapping in your pricing tiers)
-    const tier = await db.query.pricingTiers.findFirst({
-      where: eq(pricingTiers.name, priceId.includes('pro') ? 'pro' : 'enterprise'),
-    });
-    pricingTierId = tier?.id;
+    const tierName = getTierNameFromPriceId(priceId);
+    if (tierName) {
+      const tier = await db.query.pricingTiers.findFirst({
+        where: eq(pricingTiers.name, tierName),
+      });
+      pricingTierId = tier?.id;
+    }
   }
 
   // Cast to any to handle Stripe API version differences
@@ -446,7 +448,7 @@ export async function processWebhookEvent(event: Stripe.Event): Promise<void> {
           const orgId = sub.metadata?.organizationId;
           if (orgId && (sub.status === 'active' || sub.status === 'trialing')) {
             const priceId = sub.items?.data?.[0]?.price?.id;
-            const tierName = priceId?.includes('pro') ? 'pro' : 'enterprise';
+            const tierName = priceId ? getTierNameFromPriceId(priceId) ?? 'pro' : 'pro';
             await cancelRedundantAddons(orgId, tierName);
           }
         }
@@ -512,6 +514,19 @@ export function getStripePriceId(tier: string, interval: 'monthly' | 'annual', p
 
   // Enterprise is custom pricing - no Stripe price
   return null;
+}
+
+/**
+ * Reverse-lookup: given a Stripe price ID, return the tier name ('pro' | 'enterprise') or null.
+ */
+export function getTierNameFromPriceId(priceId: string): string | null {
+  const map: Record<string, string> = {};
+
+  if (env.STRIPE_PRICE_PRO_MONTHLY) map[env.STRIPE_PRICE_PRO_MONTHLY] = 'pro';
+  if (env.STRIPE_PRICE_PRO_ANNUAL) map[env.STRIPE_PRICE_PRO_ANNUAL] = 'pro';
+  if (env.STRIPE_PRICE_CVSAFE_PRO_ANNUAL) map[env.STRIPE_PRICE_CVSAFE_PRO_ANNUAL] = 'pro';
+
+  return map[priceId] ?? null;
 }
 
 /**

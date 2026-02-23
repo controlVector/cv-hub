@@ -12,6 +12,7 @@ import { registerGraphTools } from './tools/graph';
 import { registerSearchTools } from './tools/search';
 import { registerSyncTools } from './tools/sync';
 import { registerCICDToolsOnMcp } from './tools/ci-cd';
+import { registerExecutorRelayTools } from './tools/executor-relay';
 
 /**
  * Create a fully-configured MCP server for a specific user session.
@@ -35,6 +36,9 @@ export function createMcpServer(userId: string, scopes: string[]): McpServer {
   registerSearchTools(server, userId, scopes);
   registerSyncTools(server, userId, scopes);
   registerCICDToolsOnMcp(server, userId);
+
+  // Phase 3: Executor relay (planner ↔ executor loop)
+  registerExecutorRelayTools(server, userId, scopes);
 
   return server;
 }

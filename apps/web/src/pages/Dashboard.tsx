@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Typography,
@@ -24,11 +25,32 @@ import {
   ArrowForward,
   CheckCircle,
   Schedule,
+  RocketLaunch as UpgradeIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
 import { api } from '../lib/api';
 import type { AIInsight, ActivityItem } from '../types';
+
+interface BillingInfo {
+  orgId: string;
+  orgSlug: string;
+  orgName: string;
+  tierName: string;
+  tierDisplayName: string;
+  isFreeTier: boolean;
+  usage: {
+    repos: number;
+    members: number;
+  };
+  limits: {
+    repositories: number | null;
+    teamMembers: number | null;
+    storageGb: number | null;
+    environments: number | null;
+    buildMinutes: number | null;
+  };
+}
 
 interface DashboardStats {
   stats: {
@@ -49,6 +71,7 @@ interface DashboardStats {
     graphSyncStatus: string;
     updatedAt: string;
   }[];
+  billing: BillingInfo | null;
 }
 
 // Placeholder data for AI insights (will be populated from graph analysis)
@@ -201,6 +224,58 @@ export default function Dashboard() {
           </Grid>
         ))}
       </Grid>
+
+      {/* Upgrade CTA for free-tier users */}
+      {dashboardData?.billing?.isFreeTier && (
+        <Card
+          sx={{
+            mb: 4,
+            background: `linear-gradient(135deg, ${colors.violet}18 0%, ${colors.cyan}18 100%)`,
+            border: `1px solid ${colors.violet}40`,
+          }}
+        >
+          <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 2, '&:last-child': { pb: 2 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box
+                sx={{
+                  p: 1,
+                  borderRadius: 2,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                  color: colors.textLight,
+                  display: 'flex',
+                }}
+              >
+                <UpgradeIcon />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 600 }}>
+                  {dashboardData.billing.tierDisplayName} Plan
+                </Typography>
+                <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                  {dashboardData.billing.usage.repos}/{dashboardData.billing.limits.repositories ?? '\u221E'} repositories
+                  {' \u00B7 '}
+                  {dashboardData.billing.usage.members}/{dashboardData.billing.limits.teamMembers ?? '\u221E'} members
+                </Typography>
+              </Box>
+            </Box>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => navigate(`/dashboard/orgs/${dashboardData.billing!.orgSlug}/settings`)}
+              sx={{
+                background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                textTransform: 'none',
+                fontWeight: 600,
+                '&:hover': {
+                  background: `linear-gradient(135deg, ${colors.violet} 20%, ${colors.cyan} 120%)`,
+                },
+              }}
+            >
+              Upgrade to Pro
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Grid container spacing={3}>
         {/* Recent Repositories */}

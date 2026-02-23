@@ -52,6 +52,7 @@ import { FlagsDashboard, FlagEditor } from './pages/flags';
 import BlogList from './pages/blog/BlogList';
 import BlogPost from './pages/blog/BlogPost';
 import ResearchPage from './pages/ResearchPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -103,6 +104,9 @@ function App() {
               {/* Public research page */}
               <Route path="/research" element={<ResearchPage />} />
 
+              {/* Top-level 404 catch-all */}
+              <Route path="*" element={<NotFoundPage />} />
+
               {/* Protected routes */}
               <Route
                 path="/dashboard"
@@ -149,6 +153,7 @@ function App() {
                 <Route path="orgs" element={<OrganizationList />} />
                 <Route path="orgs/new" element={<CreateOrganization />} />
                 <Route path="orgs/:slug/settings" element={<OrganizationSettings />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
           </AuthProvider>

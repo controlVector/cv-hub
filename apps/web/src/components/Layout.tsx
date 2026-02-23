@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -44,6 +45,7 @@ import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
 import { brand } from '../config/brand';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../lib/api';
 
 const drawerWidth = 260;
 
@@ -71,6 +73,25 @@ export default function Layout() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch billing/usage data (shares cache with Dashboard page)
+  const { data: dashboardData } = useQuery<{
+    billing?: {
+      tierName: string;
+      tierDisplayName: string;
+      isFreeTier: boolean;
+      usage: { repos: number; members: number };
+      limits: { repositories: number | null; teamMembers: number | null };
+    } | null;
+  }>({
+    queryKey: ['dashboard-stats'],
+    queryFn: async () => {
+      const response = await api.get('/v1/dashboard/stats');
+      return response.data;
+    },
+    staleTime: 60000,
+    enabled: !!user,
+  });
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -191,10 +212,10 @@ export default function Layout() {
 
       <Divider sx={{ borderColor: colors.slateLighter }} />
 
-      {/* AI Usage Stats */}
+      {/* Plan & Usage Stats */}
       <Box sx={{ p: 2 }}>
         <Typography variant="caption" sx={{ color: colors.textMuted }}>
-          AI Operations
+          {dashboardData?.billing ? dashboardData.billing.tierDisplayName + ' Plan' : 'Plan Usage'}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
           <Box
@@ -208,15 +229,19 @@ export default function Layout() {
           >
             <Box
               sx={{
-                width: '35%',
+                width: dashboardData?.billing?.limits.repositories
+                  ? `${Math.min(100, (dashboardData.billing.usage.repos / dashboardData.billing.limits.repositories) * 100)}%`
+                  : '10%',
                 height: '100%',
                 background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
                 borderRadius: 3,
               }}
             />
           </Box>
-          <Typography variant="caption" sx={{ color: colors.textMuted }}>
-            3.5K/10K
+          <Typography variant="caption" sx={{ color: colors.textMuted, whiteSpace: 'nowrap' }}>
+            {dashboardData?.billing
+              ? `${dashboardData.billing.usage.repos}/${dashboardData.billing.limits.repositories ?? '\u221E'} repos`
+              : '\u2014'}
           </Typography>
         </Box>
       </Box>

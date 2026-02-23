@@ -116,8 +116,18 @@ stripeRoutes.post(
       throw new NotFoundError('User');
     }
 
-    // Add-on products don't require a tier
+    // Block duplicate plan subscriptions (add-ons are allowed alongside a plan)
     const isAddon = input.product === 'mcp-gateway';
+    if (!isAddon) {
+      const existingSub = await getOrgSubscription(input.organizationId);
+      if (existingSub) {
+        return c.json({
+          error: { code: 'ALREADY_SUBSCRIBED', message: 'Organization already has an active subscription.' },
+        }, 400);
+      }
+    }
+
+    // Add-on products don't require a tier
     if (!isAddon && !input.tier) {
       return c.json({
         error: { code: 'MISSING_TIER', message: 'Tier is required for plan subscriptions.' },

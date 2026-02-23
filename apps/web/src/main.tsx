@@ -31,7 +31,42 @@ if (dsn) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Sentry.ErrorBoundary fallback={<p>Something went wrong.</p>}>
+    <Sentry.ErrorBoundary fallback={
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: '#0f172a',
+        color: '#f8fafc',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        textAlign: 'center',
+        padding: '2rem',
+      }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+          Something went wrong
+        </h1>
+        <p style={{ color: 'rgba(248,250,252,0.7)', maxWidth: '420px', marginBottom: '1.5rem' }}>
+          An unexpected error occurred. Please try refreshing the page.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            background: '#7c3aed',
+            color: '#f8fafc',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '0.75rem 1.5rem',
+            fontSize: '1rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Refresh Page
+        </button>
+      </div>
+    }>
       <App />
     </Sentry.ErrorBoundary>
   </StrictMode>,

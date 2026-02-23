@@ -191,6 +191,26 @@ export default function PricingPage() {
               ))}
             </Grid>
 
+            {/* MCP Gateway add-on callout */}
+            <Box
+              sx={{
+                mb: 6,
+                p: 3,
+                borderRadius: 2,
+                border: `1px solid ${colors.slateLighter}`,
+                bgcolor: alpha(colors.violet, 0.05),
+                textAlign: 'center',
+              }}
+            >
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                Need just MCP Gateway access?
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Available as a <strong>$5/mo add-on</strong> for the Starter plan.
+                Pro and Enterprise plans include MCP Gateway at no extra cost.
+              </Typography>
+            </Box>
+
             {/* Tabs for comparison and calculator */}
             <Box sx={{ mb: 6 }}>
               <Tabs

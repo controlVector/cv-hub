@@ -30,7 +30,8 @@ import {
   transferRepository,
 } from '../services/repository.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
-import { NotFoundError, ForbiddenError } from '../utils/errors';
+import { NotFoundError, ForbiddenError, TierLimitError } from '../utils/errors';
+import { checkOrgRepoLimit, checkPersonalRepoLimit, getOrgUsageWithLimits } from '../services/tier-limits.service';
 import type { AppEnv } from '../app';
 
 const repoRoutes = new Hono<AppEnv>();
@@ -133,6 +134,25 @@ repoRoutes.get('/dashboard/stats', requireAuth, async (c) => {
       updatedAt: r.updatedAt,
     }));
 
+  // Fetch billing/usage info for primary org
+  let billing = null;
+  try {
+    const { getUserOrganizations } = await import('../services/organization.service');
+    const userOrgs = await getUserOrganizations(userId);
+    if (userOrgs.length > 0) {
+      const primaryOrg = userOrgs[0];
+      const usageWithLimits = await getOrgUsageWithLimits(primaryOrg.id);
+      billing = {
+        orgId: primaryOrg.id,
+        orgSlug: primaryOrg.slug,
+        orgName: primaryOrg.name,
+        ...usageWithLimits,
+      };
+    }
+  } catch (err) {
+    // Don't break dashboard if billing query fails
+  }
+
   return c.json({
     stats: {
       repositories: totalRepos,
@@ -140,6 +160,7 @@ repoRoutes.get('/dashboard/stats', requireAuth, async (c) => {
       openIssues: totalOpenIssues,
     },
     recentRepositories: recentRepos,
+    billing,
   });
 });
 
@@ -204,6 +225,19 @@ repoRoutes.post('/repos', requireAuth, zValidator('json', createRepoSchema), asy
     const { isOrgAdmin } = await import('../services/organization.service');
     if (!await isOrgAdmin(input.organizationId, userId)) {
       throw new ForbiddenError('You must be an admin to create repos in this organization');
+    }
+  }
+
+  // Enforce tier limits
+  if (input.organizationId) {
+    const check = await checkOrgRepoLimit(input.organizationId);
+    if (!check.allowed) {
+      throw new TierLimitError('repositories', check.current, check.limit, check.tierName);
+    }
+  } else {
+    const check = await checkPersonalRepoLimit(userId);
+    if (!check.allowed) {
+      throw new TierLimitError('repositories', check.current, check.limit, check.tierName);
     }
   }
 

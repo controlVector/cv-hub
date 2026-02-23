@@ -163,7 +163,7 @@ spec:
     spec:
       containers:
         - name: falkordb
-          image: falkordb/falkordb:latest
+          image: falkordb/falkordb:v4.2.1
           ports:
             - containerPort: 6379
               name: redis
@@ -223,7 +223,7 @@ spec:
     spec:
       containers:
         - name: qdrant
-          image: qdrant/qdrant:latest
+          image: qdrant/qdrant:v1.12.4
           ports:
             - containerPort: 6333
               name: http

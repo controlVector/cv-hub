@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/react';
-import axios, { AxiosError } from 'axios';
+import axios, { type AxiosError } from 'axios';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -92,3 +92,28 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// ============================================================================
+// Error helpers
+// ============================================================================
+
+export interface ApiError {
+  code: string;
+  message: string;
+  resource?: string;
+  current?: number;
+  limit?: number;
+  tierName?: string;
+}
+
+export function getApiError(error: unknown): ApiError | null {
+  if (axios.isAxiosError(error)) {
+    const data = (error as AxiosError<{ error?: ApiError }>).response?.data;
+    return data?.error ?? null;
+  }
+  return null;
+}
+
+export function isTierLimitError(error: unknown): boolean {
+  return getApiError(error)?.code === 'TIER_LIMIT_EXCEEDED';
+}

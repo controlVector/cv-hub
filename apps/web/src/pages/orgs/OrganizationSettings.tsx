@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -47,6 +47,8 @@ import {
 } from '../../services/organization';
 import type { UpdateOrganizationInput, OrgRole } from '../../types/organization';
 import { useAuth } from '../../contexts/AuthContext';
+import { BillingCard } from '../../components/billing';
+import TierLimitAlert from '../../components/TierLimitAlert';
 
 const ROLE_LABELS: Record<OrgRole, string> = {
   owner: 'Owner',
@@ -63,8 +65,11 @@ const ROLE_COLORS: Record<OrgRole, string> = {
 export default function OrganizationSettings() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  const checkoutStatus = searchParams.get('checkout') as 'success' | 'canceled' | null;
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
@@ -277,6 +282,9 @@ export default function OrganizationSettings() {
                 Members
               </Typography>
 
+              <TierLimitAlert error={removeMemberMutation.error} orgSlug={slug} />
+              <TierLimitAlert error={updateRoleMutation.error} orgSlug={slug} />
+
               {membersLoading ? (
                 <Box>
                   {[1, 2, 3].map((i) => (
@@ -344,6 +352,16 @@ export default function OrganizationSettings() {
               )}
             </CardContent>
           </Card>
+
+          {/* Billing */}
+          {isAdmin && org && (
+            <BillingCard
+              organizationId={org.id}
+              orgSlug={slug!}
+              isAdmin={isAdmin}
+              checkoutStatus={checkoutStatus}
+            />
+          )}
 
           {/* Danger Zone */}
           {isOwner && (

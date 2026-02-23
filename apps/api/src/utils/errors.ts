@@ -56,8 +56,36 @@ export class RateLimitError extends AppError {
   }
 }
 
+export class TierLimitError extends AppError {
+  constructor(
+    public resource: string,
+    public current: number,
+    public limit: number,
+    public tierName: string,
+  ) {
+    super(
+      403,
+      'TIER_LIMIT_EXCEEDED',
+      `Your ${tierName} plan allows up to ${limit} ${resource}. You currently have ${current}. Upgrade your plan to add more.`,
+    );
+  }
+}
+
 export function errorHandler(err: Error, c: Context) {
   logger.error('api', 'Request error', err);
+
+  if (err instanceof TierLimitError) {
+    return c.json({
+      error: {
+        code: err.code,
+        message: err.message,
+        resource: err.resource,
+        current: err.current,
+        limit: err.limit,
+        tierName: err.tierName,
+      },
+    }, 403);
+  }
 
   if (err instanceof AppError) {
     return c.json({

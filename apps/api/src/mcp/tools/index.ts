@@ -6,3 +6,4 @@ export { registerIssueTools } from './issues';
 export { registerGraphTools } from './graph';
 export { registerSearchTools } from './search';
 export { registerSyncTools } from './sync';
+export { registerExecutorRelayTools } from './executor-relay';
