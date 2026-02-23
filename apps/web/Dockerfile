@@ -6,38 +6,37 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Copy package files - lockfile is optional for standalone builds
-COPY package.json ./
-COPY pnpm-lock.yaml* ./
+# Copy monorepo root package files
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 
-# Install dependencies (use frozen-lockfile only if lockfile exists)
-RUN if [ -f pnpm-lock.yaml ]; then \
-      pnpm install --frozen-lockfile; \
-    else \
-      pnpm install; \
-    fi
+# Copy workspace package files
+COPY apps/web/package.json apps/web/
+COPY apps/api/package.json apps/api/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile || pnpm install
 
 # Copy source
 COPY . .
 
 # Build arguments for environment
-ARG VITE_API_URL=https://api.hub.controlfab.ai
-ARG VITE_APP_URL=https://hub.controlfab.ai
+ARG VITE_API_URL=https://api.hub.controlvector.io
+ARG VITE_APP_URL=https://hub.controlvector.io
 
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_URL=$VITE_APP_URL
 
-# Build
-RUN pnpm build
+# Build web only (skip API which OOMs tsc in Docker)
+RUN pnpm --filter @cv-hub/web build
 
 # Production stage with nginx
 FROM nginx:alpine AS runner
 
 # Copy nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY apps/web/nginx.conf /etc/nginx/nginx.conf
 
 # Copy built files
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s \
