@@ -100,6 +100,11 @@ const envSchema = z.object({
   STRIPE_PRICE_CVSAFE_PRO_ANNUAL: z.string().optional(),
   STRIPE_PRICE_MCP_GATEWAY_MONTHLY: z.string().optional(),
 
+  // Stripe Credit Pack Price IDs
+  STRIPE_PRICE_CREDITS_500: z.string().optional(),
+  STRIPE_PRICE_CREDITS_2000: z.string().optional(),
+  STRIPE_PRICE_CREDITS_5000: z.string().optional(),
+
   // Stripe Billing Portal
   STRIPE_PORTAL_CONFIG_ID: z.string().optional(),
 

@@ -273,9 +273,10 @@ export async function chat(
     commandType?: string;
     model?: string;
     maxTokens?: number;
+    organizationId?: string;
   } = {}
 ): Promise<AssistantResponse> {
-  const { commandType, model = DEFAULT_MODEL, maxTokens = 2000 } = options;
+  const { commandType, model = DEFAULT_MODEL, maxTokens = 2000, organizationId } = options;
 
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('Assistant service not configured. Set OPENROUTER_API_KEY.');
@@ -328,6 +329,16 @@ export async function chat(
   const data = await response.json();
   const assistantMessage = data.choices[0]?.message?.content || 'No response generated.';
 
+  // Deduct 1 credit for platform AI assistant usage
+  if (organizationId) {
+    try {
+      const { deductCredits } = await import('./credit.service');
+      await deductCredits(organizationId, 1, `AI assistant: ${repositoryId}`);
+    } catch (err) {
+      console.warn('[Assistant] Credit deduction failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
   return {
     message: assistantMessage,
     context,
@@ -349,6 +360,7 @@ export async function query(
   options: {
     commandType?: string;
     model?: string;
+    organizationId?: string;
   } = {}
 ): Promise<AssistantResponse> {
   return chat(repositoryId, [{ role: 'user', content: question }], options);

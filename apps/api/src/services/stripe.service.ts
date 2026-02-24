@@ -89,10 +89,12 @@ export interface CreateCheckoutInput {
   cancelUrl: string;
   billingInterval?: 'monthly' | 'annual';
   addonType?: string;
+  mode?: 'subscription' | 'payment';
+  sessionMetadata?: Record<string, string>;
 }
 
 /**
- * Create a Stripe checkout session for subscription
+ * Create a Stripe checkout session for subscription or one-time payment
  */
 export async function createCheckoutSession(input: CreateCheckoutInput): Promise<string> {
   const customerId = await getOrCreateStripeCustomer(
@@ -101,9 +103,11 @@ export async function createCheckoutSession(input: CreateCheckoutInput): Promise
     input.customerName
   );
 
-  const session = await getStripe().checkout.sessions.create({
+  const mode = input.mode || 'subscription';
+
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
     customer: customerId,
-    mode: 'subscription',
+    mode,
     line_items: [
       {
         price: input.priceId,
@@ -112,24 +116,32 @@ export async function createCheckoutSession(input: CreateCheckoutInput): Promise
     ],
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-    subscription_data: {
+    metadata: {
+      organizationId: input.organizationId,
+      ...input.sessionMetadata,
+    },
+    billing_address_collection: 'required',
+    tax_id_collection: { enabled: true },
+    allow_promotion_codes: true,
+  };
+
+  // Only add subscription_data for subscription mode
+  if (mode === 'subscription') {
+    sessionParams.subscription_data = {
       metadata: {
         organizationId: input.organizationId,
         billingInterval: input.billingInterval || 'monthly',
         ...(input.addonType ? { addonType: input.addonType } : {}),
       },
-    },
-    metadata: {
-      organizationId: input.organizationId,
-    },
-    billing_address_collection: 'required',
-    tax_id_collection: { enabled: true },
-    allow_promotion_codes: true,
-  });
+    };
+  }
+
+  const session = await getStripe().checkout.sessions.create(sessionParams);
 
   logger.info('general', 'Checkout session created', {
     orgId: input.organizationId,
     sessionId: session.id,
+    mode,
   });
 
   return session.url!;
@@ -457,17 +469,60 @@ export async function processWebhookEvent(event: Stripe.Event): Promise<void> {
 
       case 'invoice.created':
       case 'invoice.updated':
-      case 'invoice.paid':
       case 'invoice.payment_failed':
         await syncInvoiceFromStripe(event.data.object as Stripe.Invoice);
         break;
 
-      case 'checkout.session.completed':
-        // Checkout completed - subscription should be created via subscription webhook
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
+        await syncInvoiceFromStripe(invoice);
+
+        // Refresh monthly credits on plan subscription renewal
+        if (invoice.subscription) {
+          const inv = invoice as any;
+          const org = await db.query.organizations.findFirst({
+            where: eq(organizations.stripeCustomerId, inv.customer as string),
+          });
+          if (org) {
+            try {
+              const { refreshMonthlyCredits } = await import('./credit.service');
+              await refreshMonthlyCredits(org.id);
+            } catch (err) {
+              logger.info('general', 'Monthly credit refresh skipped', {
+                orgId: org.id,
+                reason: err instanceof Error ? err.message : 'unknown',
+              });
+            }
+          }
+        }
+        break;
+      }
+
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+
+        // Handle credit pack purchases
+        if (session.metadata?.creditPack) {
+          const credits = parseInt(session.metadata.credits, 10);
+          const orgId = session.metadata.organizationId;
+          if (orgId && credits > 0) {
+            const { addCredits } = await import('./credit.service');
+            await addCredits(
+              orgId,
+              credits,
+              'purchase',
+              `Purchased ${credits} credit pack`,
+              session.id
+            );
+          }
+        }
+
         logger.info('general', 'Checkout session completed', {
-          sessionId: (event.data.object as Stripe.Checkout.Session).id,
+          sessionId: session.id,
+          creditPack: session.metadata?.creditPack ?? null,
         });
         break;
+      }
 
       default:
         logger.info('general', 'Unhandled Stripe event', { type: event.type });

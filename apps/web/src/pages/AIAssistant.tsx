@@ -296,7 +296,7 @@ export default function AIAssistant() {
 
       {!assistantStatus?.available && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          AI Assistant requires OPENROUTER_API_KEY to be configured. Context retrieval from the knowledge graph is still available.
+          AI Assistant requires AI credits or a BYOK API key configured in your organization settings. Context retrieval from the knowledge graph is still available.
         </Alert>
       )}
 

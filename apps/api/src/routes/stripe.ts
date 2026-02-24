@@ -18,6 +18,7 @@ import { getOrganizationById, isOrgAdmin } from '../services/organization.servic
 import { getUserById } from '../services/user.service';
 import { getPricingTierById } from '../services/pricing.service';
 import { getOrgAddon } from '../services/addon.service';
+import { getOrgCreditBalance } from '../services/credit.service';
 
 const stripeRoutes = new Hono<AppEnv>();
 
@@ -76,6 +77,69 @@ stripeRoutes.post('/webhook', async (c) => {
 // ============================================================================
 // AUTHENTICATED ROUTES
 // ============================================================================
+
+/**
+ * POST /api/stripe/buy-credits
+ * Purchase a credit pack (one-time payment)
+ */
+const buyCreditsSchema = z.object({
+  organizationId: z.string().uuid(),
+  pack: z.enum(['500', '2000', '5000']),
+  successUrl: z.string().url(),
+  cancelUrl: z.string().url(),
+});
+
+const CREDIT_PACKS: Record<string, { credits: number; priceEnvKey: 'STRIPE_PRICE_CREDITS_500' | 'STRIPE_PRICE_CREDITS_2000' | 'STRIPE_PRICE_CREDITS_5000' }> = {
+  '500':  { credits: 500,  priceEnvKey: 'STRIPE_PRICE_CREDITS_500' },
+  '2000': { credits: 2000, priceEnvKey: 'STRIPE_PRICE_CREDITS_2000' },
+  '5000': { credits: 5000, priceEnvKey: 'STRIPE_PRICE_CREDITS_5000' },
+};
+
+stripeRoutes.post(
+  '/buy-credits',
+  requireAuth,
+  zValidator('json', buyCreditsSchema),
+  async (c) => {
+    const userId = c.get('userId')!;
+    const input = c.req.valid('json');
+
+    // Verify user is org admin
+    const isAdmin = await isOrgAdmin(input.organizationId, userId);
+    if (!isAdmin) {
+      throw new ForbiddenError('Only organization admins can purchase credits');
+    }
+
+    const org = await getOrganizationById(input.organizationId);
+    if (!org) throw new NotFoundError('Organization');
+
+    const user = await getUserById(userId);
+    if (!user) throw new NotFoundError('User');
+
+    const pack = CREDIT_PACKS[input.pack];
+    const priceId = env[pack.priceEnvKey];
+    if (!priceId) {
+      return c.json({
+        error: { code: 'NO_PRICE', message: 'Credit pack pricing not configured.' },
+      }, 400);
+    }
+
+    const checkoutUrl = await createCheckoutSession({
+      organizationId: input.organizationId,
+      priceId,
+      customerEmail: user.email,
+      customerName: org.name,
+      successUrl: input.successUrl,
+      cancelUrl: input.cancelUrl,
+      mode: 'payment',
+      sessionMetadata: {
+        creditPack: input.pack,
+        credits: String(pack.credits),
+      },
+    });
+
+    return c.json({ url: checkoutUrl });
+  }
+);
 
 /**
  * POST /api/stripe/checkout
@@ -218,12 +282,16 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
   // Get subscription
   const subscription = await getOrgSubscription(orgId);
 
+  // Fetch credits for org
+  const credits = await getOrgCreditBalance(orgId);
+
   if (!subscription) {
     const mcpAddon = await getOrgAddon(orgId, 'mcp_gateway');
     return c.json({
       subscription: null,
       tier: 'starter',
       status: 'free',
+      credits,
       addons: {
         mcpGateway: mcpAddon
           ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }
@@ -258,6 +326,7 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
     tier: tierName,
     tierDisplayName,
     status: subscription.status,
+    credits,
     addons: {
       mcpGateway: mcpAddon
         ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }

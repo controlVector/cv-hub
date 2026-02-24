@@ -10,7 +10,7 @@
  * Usage is tracked for billing/quota enforcement.
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID, createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { env } from '../config/env';
 import { brand } from '../config/brand';
 import { db } from '../db';
@@ -172,9 +172,24 @@ export async function resolveEmbeddingConfig(
     console.warn('[Embedding] Config tables not ready, using platform default');
   }
 
-  // 3. Fall back to platform default
+  // 3. Platform default — requires credits
   if (!PLATFORM_CONFIG.apiKey) {
     return null;
+  }
+
+  // Check credits for orgs using platform key
+  if (repo.organizationId) {
+    try {
+      const { getOrgCreditBalance } = await import('./credit.service');
+      const { balance } = await getOrgCreditBalance(repo.organizationId);
+      if (balance <= 0) {
+        console.warn('[Embedding] No credits remaining for org', repo.organizationId);
+        return null;
+      }
+    } catch (err) {
+      // Credit tables may not exist yet, allow fallthrough during migration
+      console.warn('[Embedding] Credit check skipped:', err instanceof Error ? err.message : err);
+    }
   }
 
   return {
@@ -183,7 +198,7 @@ export async function resolveEmbeddingConfig(
     provider: 'platform',
     billedTo: 'platform',
     enabled: true,
-    quotaRemaining: undefined, // No quota for now during development
+    quotaRemaining: undefined,
   };
 }
 
@@ -218,18 +233,37 @@ async function getQuotaRemaining(
 }
 
 // ============================================================================
-// Encryption (stub - use proper encryption in production)
+// Encryption (AES-256-GCM using MFA_ENCRYPTION_KEY)
 // ============================================================================
 
+function getEncryptionKey(): Buffer {
+  const keySource = env.MFA_ENCRYPTION_KEY;
+  // Derive a 32-byte key from the env var (SHA-256 hash)
+  const { createHash } = require('crypto');
+  return createHash('sha256').update(keySource).digest();
+}
+
 function decryptApiKey(encrypted: string): string {
-  // TODO: Implement proper encryption with env.MFA_ENCRYPTION_KEY
-  // For now, just return as-is (keys should be stored encrypted in prod)
-  return encrypted;
+  const key = getEncryptionKey();
+  const data = Buffer.from(encrypted, 'base64');
+  // Format: iv (12 bytes) + authTag (16 bytes) + ciphertext
+  const iv = data.subarray(0, 12);
+  const authTag = data.subarray(12, 28);
+  const ciphertext = data.subarray(28);
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString('utf8');
 }
 
 export function encryptApiKey(plaintext: string): string {
-  // TODO: Implement proper encryption
-  return plaintext;
+  const key = getEncryptionKey();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Format: iv (12 bytes) + authTag (16 bytes) + ciphertext
+  return Buffer.concat([iv, authTag, encrypted]).toString('base64');
 }
 
 // ============================================================================
@@ -586,6 +620,16 @@ export async function generateRepositoryEmbeddings(
     embeddingsGenerated: texts.length,
     config,
   });
+
+  // Deduct credits when using platform key
+  if (config.billedTo === 'platform' && organizationId) {
+    try {
+      const { deductCredits } = await import('./credit.service');
+      await deductCredits(organizationId, 1, `Embedding ${operation}: ${repositoryId}`);
+    } catch (err) {
+      console.warn('[Embedding] Credit deduction failed:', err instanceof Error ? err.message : err);
+    }
+  }
 
   return result;
 }

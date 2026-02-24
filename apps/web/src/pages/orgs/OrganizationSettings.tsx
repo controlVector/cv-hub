@@ -47,7 +47,8 @@ import {
 } from '../../services/organization';
 import type { UpdateOrganizationInput, OrgRole } from '../../types/organization';
 import { useAuth } from '../../contexts/AuthContext';
-import { BillingCard } from '../../components/billing';
+import { BillingCard, AISettingsCard } from '../../components/billing';
+import { fetchOrgSubscription } from '../../services/pricing';
 import TierLimitAlert from '../../components/TierLimitAlert';
 
 const ROLE_LABELS: Record<OrgRole, string> = {
@@ -84,6 +85,12 @@ export default function OrganizationSettings() {
     queryKey: ['organization-members', slug],
     queryFn: () => listMembers(slug!),
     enabled: !!slug,
+  });
+
+  const { data: subData } = useQuery({
+    queryKey: ['org-subscription', org?.id],
+    queryFn: () => fetchOrgSubscription(org!.id),
+    enabled: !!org?.id,
   });
 
   const [formData, setFormData] = useState<UpdateOrganizationInput>({});
@@ -360,6 +367,16 @@ export default function OrganizationSettings() {
               orgSlug={slug!}
               isAdmin={isAdmin}
               checkoutStatus={checkoutStatus}
+            />
+          )}
+
+          {/* AI & Embeddings */}
+          {isAdmin && org && (
+            <AISettingsCard
+              organizationId={org.id}
+              orgSlug={slug!}
+              isAdmin={isAdmin}
+              tier={subData?.tier || 'starter'}
             />
           )}
 

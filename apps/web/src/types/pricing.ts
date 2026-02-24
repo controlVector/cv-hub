@@ -184,6 +184,10 @@ export interface SubscriptionResponse {
   tier: string;
   tierDisplayName?: string;
   status: string;
+  credits?: {
+    balance: number;
+    monthlyAllowance: number;
+  };
   addons?: {
     mcpGateway: { status: string; cancelAtPeriodEnd: boolean } | null;
   };

@@ -189,6 +189,42 @@ export const embeddingTiers = pgTable('embedding_tiers', {
 });
 
 // ============================================================================
+// Credit System
+// ============================================================================
+
+/**
+ * Organization credit balance
+ * Credits are consumed when using platform AI (not BYOK)
+ */
+export const organizationCredits = pgTable('organization_credits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().unique(),
+  balance: integer('balance').notNull().default(0),
+  monthlyAllowance: integer('monthly_allowance').notNull().default(0),
+  lastRefreshedAt: timestamp('last_refreshed_at'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Credit transaction ledger
+ * Tracks all credit movements (purchases, usage, refills)
+ */
+export const creditTransactions = pgTable('credit_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull(),
+  amount: integer('amount').notNull(), // positive=add, negative=deduct
+  type: varchar('type', { length: 30 }).notNull(), // 'purchase' | 'monthly_refresh' | 'usage' | 'bonus' | 'refund'
+  description: text('description'),
+  stripeSessionId: varchar('stripe_session_id', { length: 255 }),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  orgIdx: index('credit_transactions_org_idx').on(table.organizationId),
+  typeIdx: index('credit_transactions_type_idx').on(table.type),
+  createdAtIdx: index('credit_transactions_created_at_idx').on(table.createdAt),
+}));
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -203,3 +239,6 @@ export type NewEmbeddingUsage = typeof embeddingUsage.$inferInsert;
 
 export type EmbeddingUsageSummary = typeof embeddingUsageSummary.$inferSelect;
 export type EmbeddingTier = typeof embeddingTiers.$inferSelect;
+
+export type OrganizationCredits = typeof organizationCredits.$inferSelect;
+export type CreditTransaction = typeof creditTransactions.$inferSelect;

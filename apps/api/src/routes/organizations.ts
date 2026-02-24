@@ -26,6 +26,11 @@ import { listApps } from '../services/app-store.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
 import { NotFoundError, ForbiddenError, TierLimitError } from '../utils/errors';
 import { checkOrgMemberLimit } from '../services/tier-limits.service';
+import { encryptApiKey } from '../services/embedding.service';
+import { getOrgCreditBalance } from '../services/credit.service';
+import { db } from '../db';
+import { organizationEmbeddingConfig } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import type { AppEnv } from '../app';
 
 const orgRoutes = new Hono<AppEnv>();
@@ -467,6 +472,130 @@ orgRoutes.post('/:slug/apps/:appId/transfer', requireAuth, async (c) => {
     resource: 'app',
     resourceId: appId,
     details: { organizationId: org.id, organizationSlug: slug },
+    status: 'success',
+    ...meta,
+  });
+
+  return c.json({ success: true });
+});
+
+// ============================================================================
+// Embedding Config APIs (admin only)
+// ============================================================================
+
+// GET /api/v1/orgs/:slug/embedding-config
+orgRoutes.get('/:slug/embedding-config', requireAuth, async (c) => {
+  const slug = c.req.param('slug');
+  const userId = c.get('userId')!;
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) throw new NotFoundError('Organization');
+
+  // Must be a member to view
+  const role = await getUserOrgRole(org.id, userId);
+  if (!role) throw new ForbiddenError('Member access required');
+
+  const config = await db.query.organizationEmbeddingConfig.findFirst({
+    where: eq(organizationEmbeddingConfig.organizationId, org.id),
+  });
+
+  const credits = await getOrgCreditBalance(org.id);
+
+  return c.json({
+    provider: config?.apiKeyProvider || null,
+    model: config?.embeddingModel || null,
+    hasKey: !!config?.apiKeyEncrypted,
+    enabled: config?.enabled ?? true,
+    semanticSearchEnabled: config?.semanticSearchEnabled ?? true,
+    aiAssistantEnabled: config?.aiAssistantEnabled ?? true,
+    credits,
+  });
+});
+
+// PUT /api/v1/orgs/:slug/embedding-config
+const updateEmbeddingConfigSchema = z.object({
+  apiKey: z.string().min(1).optional(),
+  provider: z.enum(['openrouter', 'openai', 'anthropic']).optional(),
+  model: z.string().max(100).optional(),
+  enabled: z.boolean().optional(),
+  semanticSearchEnabled: z.boolean().optional(),
+  aiAssistantEnabled: z.boolean().optional(),
+});
+
+orgRoutes.put(
+  '/:slug/embedding-config',
+  requireAuth,
+  zValidator('json', updateEmbeddingConfigSchema),
+  async (c) => {
+    const slug = c.req.param('slug');
+    const input = c.req.valid('json');
+    const meta = getRequestMeta(c);
+
+    const org = await getOrganizationBySlug(slug);
+    if (!org) throw new NotFoundError('Organization');
+
+    await requireOrgAdmin(c, org.id);
+
+    const existing = await db.query.organizationEmbeddingConfig.findFirst({
+      where: eq(organizationEmbeddingConfig.organizationId, org.id),
+    });
+
+    const updateData: Record<string, any> = {
+      updatedAt: new Date(),
+    };
+    if (input.apiKey) updateData.apiKeyEncrypted = encryptApiKey(input.apiKey);
+    if (input.provider !== undefined) updateData.apiKeyProvider = input.provider;
+    if (input.model !== undefined) updateData.embeddingModel = input.model;
+    if (input.enabled !== undefined) updateData.enabled = input.enabled;
+    if (input.semanticSearchEnabled !== undefined) updateData.semanticSearchEnabled = input.semanticSearchEnabled;
+    if (input.aiAssistantEnabled !== undefined) updateData.aiAssistantEnabled = input.aiAssistantEnabled;
+
+    if (existing) {
+      await db
+        .update(organizationEmbeddingConfig)
+        .set(updateData)
+        .where(eq(organizationEmbeddingConfig.id, existing.id));
+    } else {
+      await db.insert(organizationEmbeddingConfig).values({
+        organizationId: org.id,
+        ...updateData,
+      });
+    }
+
+    await logAuditEvent({
+      userId: c.get('userId'),
+      action: 'organization.updated' as AuditAction,
+      resource: 'organization',
+      resourceId: org.id,
+      details: { field: 'embedding_config', provider: input.provider },
+      status: 'success',
+      ...meta,
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+// DELETE /api/v1/orgs/:slug/embedding-config
+orgRoutes.delete('/:slug/embedding-config', requireAuth, async (c) => {
+  const slug = c.req.param('slug');
+  const meta = getRequestMeta(c);
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) throw new NotFoundError('Organization');
+
+  await requireOrgAdmin(c, org.id);
+
+  await db
+    .delete(organizationEmbeddingConfig)
+    .where(eq(organizationEmbeddingConfig.organizationId, org.id));
+
+  await logAuditEvent({
+    userId: c.get('userId'),
+    action: 'organization.updated' as AuditAction,
+    resource: 'organization',
+    resourceId: org.id,
+    details: { field: 'embedding_config', action: 'removed' },
     status: 'success',
     ...meta,
   });

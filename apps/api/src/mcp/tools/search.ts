@@ -48,11 +48,43 @@ export function registerSearchTools(
         return { content: [{ type: 'text', text: 'Repository not found or access denied' }], isError: true };
       }
       try {
+        // Check credits for platform AI usage
+        if (repoData.organizationId) {
+          const { getOrgCreditBalance } = await import('../../services/credit.service');
+          const { organizationEmbeddingConfig } = await import('../../db/schema');
+          const { eq } = await import('drizzle-orm');
+          const { db } = await import('../../db');
+
+          // Check if org has BYOK key
+          const orgConfig = await db.query.organizationEmbeddingConfig.findFirst({
+            where: eq(organizationEmbeddingConfig.organizationId, repoData.organizationId),
+          });
+          const hasBYOK = !!orgConfig?.apiKeyEncrypted;
+
+          if (!hasBYOK) {
+            const { balance } = await getOrgCreditBalance(repoData.organizationId);
+            if (balance <= 0) {
+              return { content: [{ type: 'text', text: 'No AI credits remaining. Purchase credits or configure a BYOK API key in organization settings.' }], isError: true };
+            }
+          }
+        }
+
         const embeddingResult = await generateEmbedding(query);
         const results = await searchVectors(repoData.id, embeddingResult.embedding, {
           limit: limit ?? 10,
           filter: language ? { language } : undefined,
         });
+
+        // Deduct credit for platform key usage
+        if (repoData.organizationId) {
+          try {
+            const { deductCredits } = await import('../../services/credit.service');
+            await deductCredits(repoData.organizationId, 1, `MCP search_code: ${owner}/${repo}`);
+          } catch {
+            // Don't fail the search if credit deduction fails
+          }
+        }
+
         const data = results.map((r) => ({
           score: r.score,
           file_path: r.payload.filePath,

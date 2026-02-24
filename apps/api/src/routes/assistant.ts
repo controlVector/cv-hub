@@ -94,6 +94,7 @@ assistantRoutes.post('/assistant/chat', optionalAuth, zValidator('json', chatSch
     const response = await chat(repositoryId, messages, {
       commandType,
       model,
+      organizationId: repo.organizationId ?? undefined,
     });
 
     return c.json({
@@ -164,7 +165,10 @@ assistantRoutes.post('/assistant/query', optionalAuth, zValidator('json', queryS
   }
 
   try {
-    const response = await query(repositoryId, question, { commandType });
+    const response = await query(repositoryId, question, {
+      commandType,
+      organizationId: repo.organizationId ?? undefined,
+    });
 
     return c.json({
       answer: response.message,

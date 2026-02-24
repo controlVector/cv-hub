@@ -28,6 +28,7 @@ import type { AppEnv } from '../app';
 import {
   isEmbeddingServiceAvailable,
   generateEmbedding,
+  resolveEmbeddingConfig,
 } from '../services/embedding.service';
 import {
   isVectorServiceAvailable,
@@ -493,6 +494,18 @@ searchRoutes.post('/search/semantic', optionalAuth, zValidator('json', semanticS
   }
 
   try {
+    // For credit deduction, check the first target repo's config
+    let creditOrgId: string | null = null;
+    if (targetRepoIds.length > 0) {
+      const firstConfig = await resolveEmbeddingConfig(targetRepoIds[0]);
+      if (firstConfig?.billedTo === 'platform') {
+        const firstRepo = await db.query.repositories.findFirst({
+          where: eq(repositories.id, targetRepoIds[0]),
+        });
+        creditOrgId = firstRepo?.organizationId ?? null;
+      }
+    }
+
     // Generate embedding for query
     const queryEmbedding = await generateEmbedding(query);
 
@@ -505,6 +518,16 @@ searchRoutes.post('/search/semantic', optionalAuth, zValidator('json', semanticS
         scoreThreshold: 0.3,
       }
     );
+
+    // Deduct 1 credit for semantic search using platform key
+    if (creditOrgId) {
+      try {
+        const { deductCredits } = await import('../services/credit.service');
+        await deductCredits(creditOrgId, 1, `Semantic search query`);
+      } catch (err) {
+        // Don't fail the search if credit deduction fails
+      }
+    }
 
     // Format results
     const formattedResults = results.map(result => ({

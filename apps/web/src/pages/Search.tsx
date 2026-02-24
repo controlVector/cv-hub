@@ -175,8 +175,13 @@ export default function Search() {
               : `Code in ${result.filePath}`,
           });
         }
-      } catch (error) {
-        console.warn('Semantic search failed, falling back to graph search:', error);
+      } catch (error: any) {
+        const reason = error?.response?.data?.reason || error?.message || '';
+        if (reason.includes('credit') || reason.includes('not configured')) {
+          console.warn('Semantic search unavailable:', reason);
+        } else {
+          console.warn('Semantic search failed, falling back to graph search:', error);
+        }
       }
     }
 
@@ -417,7 +422,7 @@ export default function Search() {
 
           {!searchStatus?.semanticSearch && (
             <Alert severity="info" sx={{ mt: 2 }}>
-              Semantic search requires OPENROUTER_API_KEY. Currently using graph-based symbol and file search.
+              Semantic search requires AI credits or a BYOK API key. Configure in your organization's AI settings. Currently using graph-based search.
             </Alert>
           )}
         </CardContent>
@@ -672,7 +677,7 @@ export default function Search() {
             <Typography variant="body2" sx={{ color: colors.textMuted, maxWidth: 500, mx: 'auto' }}>
               {searchStatus?.semanticSearch
                 ? "Search your codebase using natural language. Our AI understands the meaning of your code, not just keywords."
-                : "Search for symbols and files across your repositories. Enable OPENROUTER_API_KEY for semantic search."}
+                : "Search for symbols and files across your repositories. Add AI credits or a BYOK key in organization settings for semantic search."}
             </Typography>
           </CardContent>
         </Card>
