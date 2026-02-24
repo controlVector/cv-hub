@@ -114,6 +114,31 @@ function execGit(repoPath: string, args: string[]): Promise<string> {
   });
 }
 
+// Execute git command with stdin input and return stdout
+function execGitWithStdin(repoPath: string, args: string[], input: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('git', args, { cwd: repoPath });
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`Git command failed: ${stderr || stdout}`));
+      }
+    });
+
+    proc.on('error', reject);
+
+    proc.stdin.write(input);
+    proc.stdin.end();
+  });
+}
+
 /**
  * Check if ancestorSha is an ancestor of descendantSha (fast-forward check)
  * Returns true if it IS an ancestor (i.e., NOT a force push)
@@ -1047,4 +1072,141 @@ export async function getBranchSha(
   const repoPath = getRepoPath(ownerSlug, repoSlug);
   const sha = await execGit(repoPath, ['rev-parse', branchName]);
   return sha.trim();
+}
+
+// ============================================================================
+// Plumbing Operations (bare-repo safe, no worktree needed)
+// ============================================================================
+
+/**
+ * Create a blob object from content string
+ * Returns the blob SHA
+ */
+export async function hashObject(
+  ownerSlug: string,
+  repoSlug: string,
+  content: string
+): Promise<string> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  const sha = await execGitWithStdin(repoPath, ['hash-object', '-w', '--stdin'], content);
+  return sha.trim();
+}
+
+/**
+ * Commit a single file to a branch in a bare repo using git plumbing.
+ * No worktree needed — safe for concurrent access.
+ *
+ * Steps:
+ *  1. hash-object → blobHash
+ *  2. ls-tree <ref> → existing tree entries
+ *  3. Replace/add entry for filePath with new blobHash
+ *  4. mktree → treeHash
+ *  5. commit-tree treeHash -p <ref> -m message → commitHash
+ *  6. update-ref refs/heads/<branch> commitHash
+ *
+ * Returns the new commit SHA, or null if content is unchanged (idempotent).
+ */
+export async function commitFileToRef(
+  ownerSlug: string,
+  repoSlug: string,
+  ref: string,
+  filePath: string,
+  content: string,
+  message: string,
+  author: { name: string; email: string }
+): Promise<string | null> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  const branch = ref.replace(/^refs\/heads\//, '');
+
+  // 1. Create blob
+  const blobHash = await execGitWithStdin(
+    repoPath,
+    ['hash-object', '-w', '--stdin'],
+    content
+  );
+  const newBlobSha = blobHash.trim();
+
+  // 2. Get current tree at ref
+  let refSha: string;
+  try {
+    refSha = (await execGit(repoPath, ['rev-parse', `refs/heads/${branch}`])).trim();
+  } catch {
+    throw new Error(`Branch '${branch}' does not exist`);
+  }
+
+  const currentTree = await execGit(repoPath, ['ls-tree', refSha]);
+
+  // 3. Check if file already exists with same content (idempotent)
+  const existingEntry = currentTree.split('\n').find(line => {
+    const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
+    return match && match[4] === filePath;
+  });
+
+  if (existingEntry) {
+    const match = existingEntry.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
+    if (match && match[3] === newBlobSha) {
+      // Content unchanged — skip commit
+      return null;
+    }
+  }
+
+  // 4. Build new tree entries (replace or add the file)
+  const treeLines: string[] = [];
+  let replaced = false;
+
+  for (const line of currentTree.split('\n').filter(Boolean)) {
+    const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
+    if (match && match[4] === filePath) {
+      // Replace existing entry
+      treeLines.push(`100644 blob ${newBlobSha}\t${filePath}`);
+      replaced = true;
+    } else if (line.trim()) {
+      treeLines.push(line);
+    }
+  }
+
+  if (!replaced) {
+    treeLines.push(`100644 blob ${newBlobSha}\t${filePath}`);
+  }
+
+  // 5. Create new tree
+  const treeInput = treeLines.join('\n') + '\n';
+  const treeHash = (await execGitWithStdin(repoPath, ['mktree'], treeInput)).trim();
+
+  // 6. Create commit
+  const now = new Date();
+  const timestamp = Math.floor(now.getTime() / 1000);
+  const tz = '+0000';
+
+  const gitEnv = {
+    GIT_AUTHOR_NAME: author.name,
+    GIT_AUTHOR_EMAIL: author.email,
+    GIT_AUTHOR_DATE: `${timestamp} ${tz}`,
+    GIT_COMMITTER_NAME: author.name,
+    GIT_COMMITTER_EMAIL: author.email,
+    GIT_COMMITTER_DATE: `${timestamp} ${tz}`,
+  };
+
+  // Use commit-tree with environment variables for author/committer
+  const commitHash = await new Promise<string>((resolve, reject) => {
+    const proc = spawn(
+      'git',
+      ['commit-tree', treeHash, '-p', refSha, '-m', message],
+      { cwd: repoPath, env: { ...process.env, ...gitEnv } }
+    );
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`git commit-tree failed: ${stderr || stdout}`));
+    });
+    proc.on('error', reject);
+  });
+
+  // 7. Update branch ref
+  await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
+
+  return commitHash;
 }

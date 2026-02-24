@@ -39,7 +39,30 @@ export async function processPostReceive(
     return;
   }
 
+  // Filter out auto-generated commits (e.g. CLAUDE.md updates from graph sync)
+  // to prevent infinite sync loops
+  const filteredRefs: RefUpdate[] = [];
   for (const ref of refs) {
+    const isDeleted = ref.newSha === '0000000000000000000000000000000000000000';
+    if (!isDeleted) {
+      try {
+        const commit = await gitBackend.getCommit(ownerSlug, repo.slug, ref.newSha);
+        if (commit.author.email === 'noreply@controlvector.io') {
+          console.log(`[Sync] Skipping auto-generated commit on ${ref.refName}: ${commit.message.slice(0, 60)}`);
+          continue;
+        }
+      } catch {
+        // If we can't read the commit, proceed with sync anyway
+      }
+    }
+    filteredRefs.push(ref);
+  }
+
+  if (filteredRefs.length === 0) {
+    return; // All refs were auto-generated
+  }
+
+  for (const ref of filteredRefs) {
     if (ref.refName.startsWith('refs/heads/')) {
       await syncBranch(repositoryId, ownerSlug, repo.slug, ref);
     } else if (ref.refName.startsWith('refs/tags/')) {
@@ -50,8 +73,8 @@ export async function processPostReceive(
   // Update repository stats
   await updateRepoStats(repositoryId, ownerSlug, repo.slug);
 
-  // Trigger webhook events for push
-  for (const ref of refs) {
+  // Trigger webhook events for push (only for non-auto-generated refs)
+  for (const ref of filteredRefs) {
     const isDeleted = ref.newSha === '0000000000000000000000000000000000000000';
     const isCreated = ref.oldSha === '0000000000000000000000000000000000000000';
 

@@ -13,6 +13,7 @@ import { registerSearchTools } from './tools/search';
 import { registerSyncTools } from './tools/sync';
 import { registerCICDToolsOnMcp } from './tools/ci-cd';
 import { registerExecutorRelayTools } from './tools/executor-relay';
+import { registerContextTools } from './tools/context';
 
 /**
  * Create a fully-configured MCP server for a specific user session.
@@ -39,6 +40,9 @@ export function createMcpServer(userId: string, scopes: string[]): McpServer {
 
   // Phase 3: Executor relay (planner ↔ executor loop)
   registerExecutorRelayTools(server, userId, scopes);
+
+  // Phase 4: Context tools (CLAUDE.md / structured context)
+  registerContextTools(server, userId, scopes);
 
   return server;
 }
