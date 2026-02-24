@@ -40,6 +40,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { colors } from '../../theme';
 import { useAuth } from '../../contexts/AuthContext';
+import { api } from '../../lib/api';
 
 interface FlagRule {
   id: string;
@@ -104,32 +105,18 @@ const OPERATORS = [
 
 // API functions
 async function fetchFlag(orgId: string, key: string): Promise<{ flag: FeatureFlag }> {
-  const response = await fetch(`/api/v1/flags/${key}?organizationId=${orgId}`);
-  if (!response.ok) throw new Error('Failed to fetch flag');
-  return response.json();
+  const response = await api.get(`/v1/flags/${key}?organizationId=${orgId}`);
+  return response.data;
 }
 
 async function createFlag(orgId: string, data: Partial<FeatureFlag>): Promise<{ flag: FeatureFlag }> {
-  const response = await fetch('/api/v1/flags', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...data, organizationId: orgId }),
-  });
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to create flag');
-  }
-  return response.json();
+  const response = await api.post('/v1/flags', { ...data, organizationId: orgId });
+  return response.data;
 }
 
 async function updateFlag(orgId: string, key: string, data: Partial<FeatureFlag>): Promise<{ flag: FeatureFlag }> {
-  const response = await fetch(`/api/v1/flags/${key}?organizationId=${orgId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error('Failed to update flag');
-  return response.json();
+  const response = await api.put(`/v1/flags/${key}?organizationId=${orgId}`, data);
+  return response.data;
 }
 
 async function updateEnvironment(
@@ -138,34 +125,24 @@ async function updateEnvironment(
   env: string,
   data: Partial<FlagEnvironment>
 ): Promise<void> {
-  const response = await fetch(`/api/v1/flags/${key}/environments/${env}?organizationId=${orgId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error('Failed to update environment');
+  await api.put(`/v1/flags/${key}/environments/${env}?organizationId=${orgId}`, data);
 }
 
 async function addRule(orgId: string, key: string, env: string, rule: Partial<FlagRule>): Promise<void> {
-  const response = await fetch(`/api/v1/flags/${key}/environments/${env}/rules?organizationId=${orgId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(rule),
-  });
-  if (!response.ok) throw new Error('Failed to add rule');
+  await api.post(`/v1/flags/${key}/environments/${env}/rules?organizationId=${orgId}`, rule);
 }
 
 async function deleteRule(orgId: string, key: string, env: string, ruleId: string): Promise<void> {
-  const response = await fetch(`/api/v1/flags/${key}/environments/${env}/rules/${ruleId}?organizationId=${orgId}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) throw new Error('Failed to delete rule');
+  await api.delete(`/v1/flags/${key}/environments/${env}/rules/${ruleId}?organizationId=${orgId}`);
 }
 
 async function fetchSegments(orgId: string): Promise<{ segments: Segment[] }> {
-  const response = await fetch(`/api/v1/flags/segments?organizationId=${orgId}`);
-  if (!response.ok) return { segments: [] };
-  return response.json();
+  try {
+    const response = await api.get(`/v1/flags/segments?organizationId=${orgId}`);
+    return response.data;
+  } catch {
+    return { segments: [] };
+  }
 }
 
 export default function FlagEditor() {

@@ -41,6 +41,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { colors } from '../../theme';
 import { useAuth } from '../../contexts/AuthContext';
+import { api } from '../../lib/api';
 
 interface FeatureFlag {
   id: string;
@@ -83,39 +84,28 @@ interface ApiKey {
   usageCount: number;
 }
 
-// API functions
+// API functions (using authenticated api client)
 async function fetchFlags(orgId: string, includeArchived = false): Promise<{ flags: FeatureFlag[]; total: number }> {
-  const response = await fetch(`/api/v1/flags?organizationId=${orgId}&includeArchived=${includeArchived}`);
-  if (!response.ok) throw new Error('Failed to fetch flags');
-  return response.json();
+  const response = await api.get(`/v1/flags`, { params: { organizationId: orgId, includeArchived } });
+  return response.data;
 }
 
 async function fetchSegments(orgId: string): Promise<{ segments: Segment[] }> {
-  const response = await fetch(`/api/v1/flags/segments?organizationId=${orgId}`);
-  if (!response.ok) throw new Error('Failed to fetch segments');
-  return response.json();
+  const response = await api.get(`/v1/flags/segments`, { params: { organizationId: orgId } });
+  return response.data;
 }
 
 async function fetchApiKeys(orgId: string): Promise<{ apiKeys: ApiKey[] }> {
-  const response = await fetch(`/api/v1/flags/api-keys?organizationId=${orgId}`);
-  if (!response.ok) throw new Error('Failed to fetch API keys');
-  return response.json();
+  const response = await api.get(`/v1/flags/api-keys`, { params: { organizationId: orgId } });
+  return response.data;
 }
 
 async function toggleFlag(flagKey: string, orgId: string, env: string, enabled: boolean): Promise<void> {
-  const response = await fetch(`/api/v1/flags/${flagKey}/environments/${env}?organizationId=${orgId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ isEnabled: enabled }),
-  });
-  if (!response.ok) throw new Error('Failed to toggle flag');
+  await api.put(`/v1/flags/${flagKey}/environments/${env}`, { isEnabled: enabled }, { params: { organizationId: orgId } });
 }
 
 async function archiveFlag(flagKey: string, orgId: string): Promise<void> {
-  const response = await fetch(`/api/v1/flags/${flagKey}?organizationId=${orgId}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) throw new Error('Failed to archive flag');
+  await api.delete(`/v1/flags/${flagKey}`, { params: { organizationId: orgId } });
 }
 
 export default function FlagsDashboard() {

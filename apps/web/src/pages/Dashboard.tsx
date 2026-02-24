@@ -196,22 +196,24 @@ export default function Dashboard() {
                   >
                     {stat.icon}
                   </Box>
-                  <Chip
-                    label={stat.change}
-                    size="small"
-                    sx={{
-                      backgroundColor: stat.change.startsWith('+')
-                        ? `${colors.green}20`
-                        : stat.change.startsWith('-')
-                        ? `${colors.coral}20`
-                        : `${colors.blue}20`,
-                      color: stat.change.startsWith('+')
-                        ? colors.green
-                        : stat.change.startsWith('-')
-                        ? colors.coral
-                        : colors.blue,
-                    }}
-                  />
+                  {stat.change && (
+                    <Chip
+                      label={stat.change}
+                      size="small"
+                      sx={{
+                        backgroundColor: stat.change.startsWith('+')
+                          ? `${colors.green}20`
+                          : stat.change.startsWith('-')
+                          ? `${colors.coral}20`
+                          : `${colors.blue}20`,
+                        color: stat.change.startsWith('+')
+                          ? colors.green
+                          : stat.change.startsWith('-')
+                          ? colors.coral
+                          : colors.blue,
+                      }}
+                    />
+                  )}
                 </Box>
                 <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
                   {stat.value}
@@ -384,18 +386,26 @@ export default function Dashboard() {
                     AI Insights
                   </Typography>
                 </Box>
-                <Chip
-                  label="3 new"
-                  size="small"
-                  sx={{
-                    background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
-                    color: colors.navy,
-                    fontWeight: 600,
-                  }}
-                />
+                {aiInsights.length > 0 && (
+                  <Chip
+                    label={`${aiInsights.length} new`}
+                    size="small"
+                    sx={{
+                      background: `linear-gradient(135deg, ${colors.orange} 0%, ${colors.coral} 100%)`,
+                      color: colors.navy,
+                      fontWeight: 600,
+                    }}
+                  />
+                )}
               </Box>
 
-              {aiInsights.map((insight, index) => (
+              {aiInsights.length === 0 ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                    Sync a repository's knowledge graph to see AI-powered insights about code quality, complexity hotspots, and potential issues.
+                  </Typography>
+                </Box>
+              ) : aiInsights.map((insight, index) => (
                 <Box
                   key={index}
                   sx={{
@@ -471,6 +481,13 @@ export default function Dashboard() {
                 Recent Activity
               </Typography>
 
+              {recentActivity.length === 0 ? (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                    Your recent commits, pull requests, and actions will appear here.
+                  </Typography>
+                </Box>
+              ) : null}
               {recentActivity.map((activity) => (
                 <Box
                   key={activity.id}

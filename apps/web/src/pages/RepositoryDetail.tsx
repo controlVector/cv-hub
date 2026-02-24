@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Typography,
@@ -40,6 +41,85 @@ import {
   FileViewer,
 } from '../components/repository';
 import { PipelinesList } from '../components/ci-cd';
+import RepositoryIssues from './RepositoryIssues';
+import RepositorySettings from './RepositorySettings';
+import { triggerGraphSync } from '../services/repository';
+import { getRepositoryPullRequests, type PullRequest } from '../services/pullRequests';
+
+/**
+ * Inline PR list for the repository Pull Requests tab
+ */
+function RepoPullRequests({ owner, repo }: { owner: string; repo: string }) {
+  const [tabValue, setTabValue] = useState(0);
+  const stateFilter = tabValue === 0 ? 'open' : tabValue === 1 ? 'merged' : undefined;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['repoPRs', owner, repo, stateFilter],
+    queryFn: () => getRepositoryPullRequests(owner, repo, { state: stateFilter, limit: 50 }),
+  });
+
+  const prs: PullRequest[] = data?.pullRequests || [];
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <Tabs
+          value={tabValue}
+          onChange={(_, v) => setTabValue(v)}
+          sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0 } }}
+        >
+          <Tab label="Open" />
+          <Tab label="Merged" />
+          <Tab label="All" />
+        </Tabs>
+      </Box>
+      {isLoading ? (
+        <Box>
+          {[1, 2].map((i) => (
+            <Box key={i} sx={{ p: 2, mb: 1, borderRadius: 2, backgroundColor: colors.navyLight }}>
+              <Typography variant="body2" sx={{ color: colors.textMuted }}>Loading...</Typography>
+            </Box>
+          ))}
+        </Box>
+      ) : prs.length === 0 ? (
+        <Box sx={{ textAlign: 'center', py: 6 }}>
+          <PRIcon sx={{ fontSize: 40, color: colors.textMuted, mb: 1 }} />
+          <Typography variant="body1" sx={{ color: colors.textMuted }}>
+            No pull requests
+          </Typography>
+        </Box>
+      ) : (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {prs.map((pr) => (
+            <Box
+              key={pr.id}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                p: 2,
+                borderRadius: 2,
+                backgroundColor: colors.navyLight,
+                border: `1px solid ${colors.navyLighter}`,
+              }}
+            >
+              <PRIcon sx={{ color: pr.state === 'merged' ? colors.purple : colors.green, fontSize: 20 }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontWeight: 600, fontSize: '0.9rem' }}>{pr.title}</Typography>
+                <Typography variant="caption" sx={{ color: colors.textMuted }}>
+                  #{pr.number} by {pr.author?.displayName || pr.author?.username} — {pr.sourceBranch} → {pr.targetBranch}
+                </Typography>
+              </Box>
+              {pr.labels?.map((l) => (
+                <Chip key={l} label={l} size="small" sx={{ height: 20, fontSize: '0.65rem' }} />
+              ))}
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
 
 function RepositoryDetailContent() {
   const navigate = useNavigate();
@@ -104,8 +184,12 @@ function RepositoryDetailContent() {
   };
 
   const handleSyncGraph = async () => {
-    // TODO: Implement graph sync trigger
-    console.log('Triggering graph sync...');
+    try {
+      await triggerGraphSync(owner, repo);
+      loadGraphStats();
+    } catch (err) {
+      console.error('Failed to trigger graph sync:', err);
+    }
   };
 
   if (error) {
@@ -301,19 +385,11 @@ function RepositoryDetailContent() {
       )}
 
       {tabValue === 1 && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: colors.textMuted }}>
-            Pull Requests coming soon
-          </Typography>
-        </Box>
+        <RepoPullRequests owner={owner} repo={repo} />
       )}
 
       {tabValue === 2 && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: colors.textMuted }}>
-            Issues coming soon
-          </Typography>
-        </Box>
+        <RepositoryIssues owner={owner} repo={repo} />
       )}
 
       {tabValue === 3 && (
@@ -321,11 +397,18 @@ function RepositoryDetailContent() {
       )}
 
       {tabValue === 4 && (
-        <Box sx={{ py: 4, textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: colors.textMuted }}>
-            Settings coming soon
-          </Typography>
-        </Box>
+        <RepositorySettings
+          owner={owner}
+          repo={repo}
+          repository={repository ? {
+            id: repository.id,
+            name: repository.name,
+            slug: repository.slug,
+            description: repository.description,
+            visibility: repository.visibility,
+            defaultBranch: repository.defaultBranch,
+          } : null}
+        />
       )}
 
       {/* More Menu */}

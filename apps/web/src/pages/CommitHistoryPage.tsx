@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { colors } from '../theme';
-import { getCommits, type CommitInfo } from '../services/repository';
+import { getCommits, getRefs, type CommitInfo, type Branch, type Tag } from '../services/repository';
 import { CommitHistory, BranchSelector } from '../components/repository';
 
 export default function CommitHistoryPage() {
@@ -31,6 +31,18 @@ export default function CommitHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(1);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+
+  // Load branches and tags
+  useEffect(() => {
+    getRefs(owner, repo)
+      .then((refs) => {
+        setBranches(refs.branches);
+        setTags(refs.tags);
+      })
+      .catch(() => {});
+  }, [owner, repo]);
 
   const loadCommits = useCallback(async (ref: string, reset = false) => {
     setIsLoading(true);
@@ -61,7 +73,7 @@ export default function CommitHistoryPage() {
 
   const handleRefChange = (ref: string) => {
     setCurrentRef(ref);
-    navigate(`/repositories/${owner}/${repo}/commits/${ref}`);
+    navigate(`/dashboard/repositories/${owner}/${repo}/commits/${ref}`);
   };
 
   const handleLoadMore = () => {
@@ -70,7 +82,7 @@ export default function CommitHistoryPage() {
   };
 
   const handleBack = () => {
-    navigate(`/repositories/${owner}/${repo}`);
+    navigate(`/dashboard/repositories/${owner}/${repo}`);
   };
 
   return (
@@ -93,8 +105,8 @@ export default function CommitHistoryPage() {
 
         <BranchSelector
           currentRef={currentRef}
-          branches={[]} // TODO: Load branches
-          tags={[]}
+          branches={branches}
+          tags={tags}
           onSelect={handleRefChange}
         />
       </Box>
