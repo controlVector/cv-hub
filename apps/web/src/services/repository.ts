@@ -121,7 +121,66 @@ export interface SymbolUsage {
   calleeCount: number;
 }
 
+// List API types
+export interface RepositoryListItem {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  visibility: 'public' | 'internal' | 'private';
+  provider: 'local' | 'github' | 'gitlab';
+  defaultBranch: string;
+  starCount: number;
+  forkCount: number;
+  openIssueCount: number;
+  openPrCount: number;
+  graphSyncStatus: string;
+  createdAt: string;
+  updatedAt: string;
+  owner?: { id: string; slug: string; name: string };
+  language?: string;
+}
+
+export interface RepositoryListResponse {
+  repositories: RepositoryListItem[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
+export interface CreateRepositoryInput {
+  name: string;
+  description?: string;
+  visibility?: 'public' | 'internal' | 'private';
+  organizationId?: string;
+  defaultBranch?: string;
+}
+
 // API Functions
+
+/**
+ * List repositories (user's accessible repos if authenticated, public otherwise)
+ */
+export async function listRepositories(filters?: {
+  search?: string;
+  visibility?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<RepositoryListResponse> {
+  const params = new URLSearchParams();
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.visibility) params.set('visibility', filters.visibility);
+  if (filters?.limit) params.set('limit', filters.limit.toString());
+  if (filters?.offset) params.set('offset', filters.offset.toString());
+  const response = await api.get(`/v1/repos?${params.toString()}`);
+  return response.data;
+}
+
+/**
+ * Create a new repository
+ */
+export async function createRepository(input: CreateRepositoryInput): Promise<RepositoryListItem> {
+  const response = await api.post('/v1/repos', input);
+  return response.data.repository;
+}
 
 /**
  * Get repository clone info

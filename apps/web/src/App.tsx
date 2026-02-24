@@ -52,6 +52,7 @@ import { FlagsDashboard, FlagEditor } from './pages/flags';
 import BlogList from './pages/blog/BlogList';
 import BlogPost from './pages/blog/BlogPost';
 import ResearchPage from './pages/ResearchPage';
+import NewRepository from './pages/NewRepository';
 import NotFoundPage from './pages/NotFoundPage';
 
 const queryClient = new QueryClient({
@@ -118,6 +119,7 @@ function App() {
               >
                 <Route index element={<Dashboard />} />
                 <Route path="repositories" element={<Repositories />} />
+                <Route path="repositories/new" element={<NewRepository />} />
                 <Route path="repositories/:owner/:repo" element={<RepositoryDetail />} />
                 <Route path="repositories/:owner/:repo/commit/:sha" element={<CommitDetailPage />} />
                 <Route path="repositories/:owner/:repo/commits/*" element={<CommitHistoryPage />} />
