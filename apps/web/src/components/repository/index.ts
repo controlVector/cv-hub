@@ -12,3 +12,8 @@ export { CommitHistory } from './CommitHistory';
 export { CommitDetail } from './CommitDetail';
 export { DiffViewer } from './DiffViewer';
 export { BlameView } from './BlameView';
+export { ArchitectureTab } from './ArchitectureTab';
+export { GraphCanvas } from './GraphCanvas';
+export { NodeDetailPanel } from './NodeDetailPanel';
+export { TimelineView } from './TimelineView';
+export { ImpactAnalysis } from './ImpactAnalysis';

@@ -23,6 +23,9 @@ import type {
   GraphStats,
   CallPath,
   SymbolUsage,
+  VizNode,
+  VizEdge,
+  VizData,
 } from './types';
 import { GraphError } from './types';
 
@@ -262,12 +265,14 @@ export class GraphManager {
           f.gitHash = $gitHash,
           f.linesOfCode = $linesOfCode,
           f.complexity = $complexity,
+          f.summary = $summary,
           f.updatedAt = $updatedAt
       RETURN f
     `;
 
     await this.query(cypher, {
       ...file,
+      summary: file.summary || '',
       updatedAt: Date.now()
     });
   }
@@ -306,6 +311,7 @@ export class GraphManager {
           s.isStatic = $isStatic,
           s.complexity = $complexity,
           s.vectorId = $vectorId,
+          s.summary = $summary,
           s.updatedAt = $updatedAt
       RETURN s
     `;
@@ -316,6 +322,7 @@ export class GraphManager {
       docstring: symbol.docstring || '',
       returnType: symbol.returnType || '',
       vectorId: symbol.vectorId || '',
+      summary: symbol.summary || '',
       updatedAt: Date.now()
     });
   }
@@ -633,6 +640,388 @@ export class GraphManager {
     `, { threshold });
 
     return result.map(r => r.s as SymbolNode);
+  }
+
+  // ========== Visualization Queries ==========
+
+  /**
+   * Get file dependency graph (File -[IMPORTS]-> File)
+   */
+  async getFileDependencyGraph(limit = 300): Promise<VizData> {
+    const nodeResults = await this.query(`
+      MATCH (a:File)-[:IMPORTS]->(b:File)
+      WITH collect(DISTINCT a) + collect(DISTINCT b) AS allNodes
+      UNWIND allNodes AS f
+      WITH DISTINCT f
+      RETURN f.path AS path, f.language AS language, f.complexity AS complexity,
+             f.linesOfCode AS linesOfCode, f.summary AS summary
+      LIMIT $limit
+    `, { limit });
+
+    const edgeResults = await this.query(`
+      MATCH (a:File)-[r:IMPORTS]->(b:File)
+      RETURN a.path AS source, b.path AS target
+      LIMIT $limit
+    `, { limit: limit * 2 });
+
+    const nodes: VizNode[] = nodeResults.map((r: any) => ({
+      id: r.path,
+      label: r.path?.split('/').pop() || r.path,
+      type: 'file' as const,
+      path: r.path,
+      complexity: r.complexity || 0,
+      linesOfCode: r.linesOfCode || 0,
+      language: r.language,
+      summary: r.summary,
+    }));
+
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges: VizEdge[] = edgeResults
+      .filter((r: any) => nodeIds.has(r.source) && nodeIds.has(r.target))
+      .map((r: any) => ({
+        source: r.source,
+        target: r.target,
+        type: 'IMPORTS' as const,
+      }));
+
+    return {
+      nodes,
+      edges,
+      meta: {
+        viewType: 'dependencies',
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        truncated: nodeResults.length >= limit,
+      },
+    };
+  }
+
+  /**
+   * Get call graph (Symbol -[CALLS]-> Symbol)
+   */
+  async getCallGraph(symbol?: string, depth = 2): Promise<VizData> {
+    let nodeResults: GraphQueryResult[];
+    let edgeResults: GraphQueryResult[];
+
+    if (symbol) {
+      // Focused call graph from a specific symbol
+      nodeResults = await this.query(`
+        MATCH p=(s:Symbol)-[:CALLS*0..${Math.min(depth, 5)}]->(t:Symbol)
+        WHERE s.qualifiedName = $symbol OR s.name = $symbol
+        UNWIND nodes(p) AS n
+        WITH DISTINCT n
+        RETURN n.qualifiedName AS id, n.name AS name, n.kind AS kind,
+               n.file AS file, n.complexity AS complexity, n.summary AS summary
+        LIMIT 200
+      `, { symbol });
+
+      edgeResults = await this.query(`
+        MATCH p=(s:Symbol)-[:CALLS*1..${Math.min(depth, 5)}]->(t:Symbol)
+        WHERE s.qualifiedName = $symbol OR s.name = $symbol
+        UNWIND relationships(p) AS r
+        WITH DISTINCT startNode(r) AS a, endNode(r) AS b, r
+        RETURN a.qualifiedName AS source, b.qualifiedName AS target, r.callCount AS weight
+        LIMIT 500
+      `, { symbol });
+    } else {
+      // General call graph
+      nodeResults = await this.query(`
+        MATCH (s:Symbol)-[:CALLS]->(t:Symbol)
+        WITH collect(DISTINCT s) + collect(DISTINCT t) AS allNodes
+        UNWIND allNodes AS n
+        WITH DISTINCT n
+        RETURN n.qualifiedName AS id, n.name AS name, n.kind AS kind,
+               n.file AS file, n.complexity AS complexity, n.summary AS summary
+        LIMIT 200
+      `);
+
+      edgeResults = await this.query(`
+        MATCH (a:Symbol)-[r:CALLS]->(b:Symbol)
+        RETURN a.qualifiedName AS source, b.qualifiedName AS target, r.callCount AS weight
+        LIMIT 500
+      `);
+    }
+
+    const nodes: VizNode[] = nodeResults.map((r: any) => ({
+      id: r.id,
+      label: r.name || r.id?.split(':').pop() || 'unknown',
+      type: 'symbol' as const,
+      kind: r.kind,
+      path: r.file,
+      complexity: r.complexity || 0,
+      summary: r.summary,
+    }));
+
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges: VizEdge[] = edgeResults
+      .filter((r: any) => nodeIds.has(r.source) && nodeIds.has(r.target))
+      .map((r: any) => ({
+        source: r.source,
+        target: r.target,
+        type: 'CALLS' as const,
+        weight: r.weight || 1,
+      }));
+
+    return {
+      nodes,
+      edges,
+      meta: {
+        viewType: 'calls',
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        truncated: nodeResults.length >= 200,
+      },
+    };
+  }
+
+  /**
+   * Get module hierarchy (Module -[CONTAINS]-> File)
+   */
+  async getModuleHierarchy(): Promise<VizData> {
+    const moduleResults = await this.query(`
+      MATCH (m:Module)
+      RETURN m.path AS path, m.name AS name, m.fileCount AS fileCount,
+             m.symbolCount AS symbolCount, m.language AS language
+      LIMIT 200
+    `);
+
+    const fileResults = await this.query(`
+      MATCH (m:Module)-[:CONTAINS]->(f:File)
+      RETURN m.path AS modulePath, f.path AS filePath, f.language AS language,
+             f.complexity AS complexity, f.linesOfCode AS linesOfCode
+      LIMIT 500
+    `);
+
+    const nodes: VizNode[] = [];
+    const nodeIds = new Set<string>();
+
+    // Add module nodes
+    for (const r of moduleResults) {
+      const id = `module:${r.path}`;
+      nodes.push({
+        id,
+        label: r.name || r.path,
+        type: 'module',
+        path: r.path as string,
+        language: r.language as string,
+      });
+      nodeIds.add(id);
+    }
+
+    // Add file nodes from relationships
+    for (const r of fileResults) {
+      const id = `file:${r.filePath}`;
+      if (!nodeIds.has(id)) {
+        nodes.push({
+          id,
+          label: (r.filePath as string)?.split('/').pop() || r.filePath as string,
+          type: 'file',
+          path: r.filePath as string,
+          language: r.language as string,
+          complexity: (r.complexity as number) || 0,
+          linesOfCode: (r.linesOfCode as number) || 0,
+        });
+        nodeIds.add(id);
+      }
+    }
+
+    const edges: VizEdge[] = fileResults
+      .filter((r: any) => nodeIds.has(`module:${r.modulePath}`) && nodeIds.has(`file:${r.filePath}`))
+      .map((r: any) => ({
+        source: `module:${r.modulePath}`,
+        target: `file:${r.filePath}`,
+        type: 'CONTAINS' as const,
+      }));
+
+    return {
+      nodes,
+      edges,
+      meta: {
+        viewType: 'modules',
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        truncated: moduleResults.length >= 200,
+      },
+    };
+  }
+
+  /**
+   * Get complexity heatmap data
+   */
+  async getComplexityHeatmap(type: 'file' | 'symbol' = 'file', threshold = 0): Promise<VizData> {
+    let results: GraphQueryResult[];
+
+    if (type === 'file') {
+      results = await this.query(`
+        MATCH (f:File)
+        WHERE f.complexity >= $threshold
+        RETURN f.path AS path, f.language AS language, f.complexity AS complexity,
+               f.linesOfCode AS linesOfCode, f.summary AS summary,
+               f.lastModifiedCommit AS lastModifiedCommit,
+               f.lastModifiedTimestamp AS lastModifiedTimestamp,
+               f.modificationCount AS modificationCount
+        ORDER BY f.complexity DESC
+        LIMIT 200
+      `, { threshold });
+    } else {
+      results = await this.query(`
+        MATCH (s:Symbol)
+        WHERE s.complexity >= $threshold
+        RETURN s.qualifiedName AS id, s.name AS name, s.kind AS kind,
+               s.file AS path, s.complexity AS complexity, s.summary AS summary,
+               s.lastModifiedCommit AS lastModifiedCommit,
+               s.lastModifiedTimestamp AS lastModifiedTimestamp,
+               s.modificationCount AS modificationCount
+        ORDER BY s.complexity DESC
+        LIMIT 200
+      `, { threshold });
+    }
+
+    const nodes: VizNode[] = results.map((r: any) => ({
+      id: type === 'file' ? r.path : r.id,
+      label: type === 'file'
+        ? (r.path?.split('/').pop() || r.path)
+        : (r.name || r.id),
+      type: type === 'file' ? 'file' as const : 'symbol' as const,
+      kind: r.kind,
+      path: r.path,
+      complexity: r.complexity || 0,
+      linesOfCode: r.linesOfCode || 0,
+      language: r.language,
+      summary: r.summary,
+      lastModifiedCommit: r.lastModifiedCommit,
+      lastModifiedTimestamp: r.lastModifiedTimestamp,
+      modificationCount: r.modificationCount,
+    }));
+
+    return {
+      nodes,
+      edges: [],
+      meta: {
+        viewType: 'complexity',
+        nodeCount: nodes.length,
+        edgeCount: 0,
+        truncated: results.length >= 200,
+      },
+    };
+  }
+
+  /**
+   * Get heatmap data by metric (recency, frequency, churn)
+   */
+  async getHeatmapByMetric(metric: 'recency' | 'frequency' | 'churn'): Promise<VizData> {
+    let orderField: string;
+    switch (metric) {
+      case 'recency':
+        orderField = 'f.lastModifiedTimestamp DESC';
+        break;
+      case 'frequency':
+        orderField = 'f.modificationCount DESC';
+        break;
+      case 'churn':
+        orderField = 'f.modificationCount DESC';
+        break;
+      default:
+        throw new GraphError(`Unknown heatmap metric: ${metric}`);
+    }
+
+    const results = await this.query(`
+      MATCH (f:File)
+      WHERE f.modificationCount IS NOT NULL AND f.modificationCount > 0
+      RETURN f.path AS path, f.language AS language, f.complexity AS complexity,
+             f.linesOfCode AS linesOfCode,
+             f.lastModifiedCommit AS lastModifiedCommit,
+             f.lastModifiedTimestamp AS lastModifiedTimestamp,
+             f.modificationCount AS modificationCount
+      ORDER BY ${orderField}
+      LIMIT 200
+    `);
+
+    const nodes: VizNode[] = results.map((r: any) => ({
+      id: r.path,
+      label: r.path?.split('/').pop() || r.path,
+      type: 'file' as const,
+      path: r.path,
+      complexity: r.complexity || 0,
+      linesOfCode: r.linesOfCode || 0,
+      language: r.language,
+      lastModifiedCommit: r.lastModifiedCommit,
+      lastModifiedTimestamp: r.lastModifiedTimestamp,
+      modificationCount: r.modificationCount,
+    }));
+
+    return {
+      nodes,
+      edges: [],
+      meta: {
+        viewType: 'heatmap',
+        nodeCount: nodes.length,
+        edgeCount: 0,
+        truncated: results.length >= 200,
+      },
+    };
+  }
+
+  /**
+   * Get file timeline (commits that modified a file via MODIFIES edges)
+   */
+  async getFileTimeline(filePath: string, limit = 20): Promise<GraphQueryResult[]> {
+    return this.query(`
+      MATCH (c:Commit)-[r:MODIFIES]->(f:File {path: $filePath})
+      RETURN c.sha AS sha, c.message AS message, c.author AS author,
+             c.timestamp AS timestamp, r.changeType AS changeType,
+             r.insertions AS insertions, r.deletions AS deletions
+      ORDER BY c.timestamp DESC
+      LIMIT $limit
+    `, { filePath, limit });
+  }
+
+  /**
+   * Get symbol timeline (commits that touched a symbol via TOUCHES edges)
+   */
+  async getSymbolTimeline(qualifiedName: string, limit = 20): Promise<GraphQueryResult[]> {
+    return this.query(`
+      MATCH (c:Commit)-[r:TOUCHES]->(s:Symbol {qualifiedName: $qualifiedName})
+      RETURN c.sha AS sha, c.message AS message, c.author AS author,
+             c.timestamp AS timestamp, r.changeType AS changeType,
+             r.lineDelta AS lineDelta
+      ORDER BY c.timestamp DESC
+      LIMIT $limit
+    `, { qualifiedName, limit });
+  }
+
+  /**
+   * Get impact analysis for a symbol (callers + co-change history)
+   */
+  async getImpactAnalysis(qualifiedName: string, depth = 2): Promise<{
+    callers: GraphQueryResult[];
+    coChanged: GraphQueryResult[];
+  }> {
+    // Who calls this symbol
+    const callers = await this.query(`
+      MATCH p=(caller:Symbol)-[:CALLS*1..${Math.min(depth, 3)}]->(s:Symbol {qualifiedName: $qualifiedName})
+      UNWIND nodes(p) AS n
+      WITH DISTINCT n
+      WHERE n.qualifiedName <> $qualifiedName
+      RETURN n.qualifiedName AS qualifiedName, n.name AS name, n.kind AS kind,
+             n.file AS file, n.complexity AS complexity
+      LIMIT 50
+    `, { qualifiedName });
+
+    // What usually changes together (co-change via shared commits)
+    const coChanged = await this.query(`
+      MATCH (c:Commit)-[:TOUCHES]->(s:Symbol {qualifiedName: $qualifiedName})
+      MATCH (c)-[:TOUCHES]->(other:Symbol)
+      WHERE other.qualifiedName <> $qualifiedName
+      WITH other, count(c) AS coChangeCount
+      WHERE coChangeCount >= 2
+      RETURN other.qualifiedName AS qualifiedName, other.name AS name,
+             other.kind AS kind, other.file AS file, coChangeCount
+      ORDER BY coChangeCount DESC
+      LIMIT 20
+    `, { qualifiedName });
+
+    return { callers, coChanged };
   }
 
   // ========== Graph Management ==========

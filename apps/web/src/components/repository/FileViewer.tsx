@@ -12,6 +12,7 @@ import {
   Skeleton,
   Chip,
   Alert,
+  Collapse,
 } from '@mui/material';
 import {
   History,
@@ -19,12 +20,16 @@ import {
   Download,
   AutoAwesome as AIIcon,
   BarChart,
+  ExpandMore,
+  ExpandLess,
 } from '@mui/icons-material';
+import { useQuery } from '@tanstack/react-query';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { colors } from '../../theme';
 import BreadcrumbPath from './BreadcrumbPath';
 import type { BlobResponse, GraphStats } from '../../services/repository';
+import { executeGraphQuery } from '../../services/repository';
 
 // Map file extension to Prism language
 function getLanguage(filename: string): string {
@@ -92,6 +97,8 @@ function formatFileSize(bytes: number): string {
 
 interface FileViewerProps {
   repoName: string;
+  owner?: string;
+  repo?: string;
   file: BlobResponse | null;
   isLoading: boolean;
   graphStats?: GraphStats | null;
@@ -102,6 +109,8 @@ interface FileViewerProps {
 
 export function FileViewer({
   repoName,
+  owner,
+  repo,
   file,
   isLoading,
   graphStats,
@@ -110,6 +119,28 @@ export function FileViewer({
   onAIExplain,
 }: FileViewerProps) {
   const [showGraphSidebar, setShowGraphSidebar] = useState(false);
+  const [showAISummary, setShowAISummary] = useState(true);
+
+  // Fetch file summary from graph
+  const { data: fileSummaryData } = useQuery({
+    queryKey: ['fileSummary', owner, repo, file?.path],
+    queryFn: async () => {
+      if (!owner || !repo || !file?.path) return null;
+      try {
+        const result = await executeGraphQuery(owner, repo, {
+          type: 'custom',
+          cypher: 'MATCH (f:File {path: $path}) RETURN f.summary AS summary',
+          params: { path: file.path },
+        });
+        const summary = result?.data?.results?.[0]?.summary;
+        return summary || null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!owner && !!repo && !!file?.path,
+    staleTime: 120000,
+  });
 
   const handleCopyContent = () => {
     if (file?.content) {
@@ -307,6 +338,43 @@ export function FileViewer({
             )}
           </Box>
         </Box>
+
+        {/* AI Summary Section */}
+        {fileSummaryData && (
+          <Box
+            sx={{
+              borderBottom: `1px solid ${colors.navyLighter}`,
+              backgroundColor: 'rgba(139, 92, 246, 0.05)',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 2,
+                py: 1,
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowAISummary(!showAISummary)}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <AIIcon sx={{ fontSize: 14, color: colors.orange }} />
+                <Typography variant="caption" sx={{ fontWeight: 600, color: colors.textMuted }}>
+                  AI Summary
+                </Typography>
+              </Box>
+              {showAISummary ? <ExpandLess sx={{ fontSize: 16 }} /> : <ExpandMore sx={{ fontSize: 16 }} />}
+            </Box>
+            <Collapse in={showAISummary}>
+              <Box sx={{ px: 2, pb: 1.5 }}>
+                <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.6 }}>
+                  {fileSummaryData}
+                </Typography>
+              </Box>
+            </Collapse>
+          </Box>
+        )}
 
         {/* Code Content */}
         <Box

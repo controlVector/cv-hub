@@ -259,17 +259,53 @@ export async function processGraphSync(
     edgesCreated += relStats.edgesCreated;
 
     // Step 5: Generate vector embeddings (if service available)
-    await updateProgress('Generating embeddings', 60);
+    await updateProgress('Generating embeddings', 55);
     const vectorStats = await syncVectorEmbeddings(
       repositoryId,
       ownerSlug,
       repo.slug,
       repo.defaultBranch || 'main',
       async (step, progress) => {
-        await updateProgress(step, 60 + Math.floor(progress * 0.35));
+        await updateProgress(step, 55 + Math.floor(progress * 0.25));
       }
     );
     vectorsCreated = vectorStats.vectorsCreated;
+
+    // Step 5.5: Generate AI summaries
+    await updateProgress('Generating summaries', 80);
+    try {
+      const { syncSummaries } = await import('../summarization.service');
+      const orgId = repo.organizationId || undefined;
+      await syncSummaries(
+        repositoryId,
+        graph,
+        ownerSlug,
+        repo.slug,
+        repo.defaultBranch || 'main',
+        orgId,
+        job.id!,
+      );
+    } catch (error: any) {
+      // Summarization is optional — don't fail the sync
+      console.warn('[GraphSync] Summarization step failed:', error.message);
+    }
+
+    // Step 5.75: Populate MODIFIES/TOUCHES edges from commit diffs
+    await updateProgress('Linking commits to files', 88);
+    try {
+      const commitEdgeStats = await syncCommitDiffEdges(
+        graph,
+        repositoryId,
+        ownerSlug,
+        repo.slug,
+        async (step, progress) => {
+          await updateProgress(step, 88 + Math.floor(progress * 0.07));
+        }
+      );
+      edgesCreated += commitEdgeStats.edgesCreated;
+    } catch (error: any) {
+      console.warn('[GraphSync] Commit diff edge sync failed:', error.message);
+    }
 
     // Step 6: Finalize
     await updateProgress('Finalizing', 95);
@@ -531,11 +567,12 @@ async function syncSymbolNodes(
     }
 
     // Create IMPORTS edges (File -> File)
+    const knownFiles = new Set(allParseResults.map(r => r.path));
     for (const result of allParseResults) {
       for (const imp of result.imports) {
         if (!imp.isExternal) {
           // Resolve relative import to file path
-          const resolvedPath = resolveImportPath(result.path, imp.source);
+          const resolvedPath = resolveImportPath(result.path, imp.source, knownFiles);
           if (resolvedPath) {
             try {
               await graph.createImportsEdge(result.path, resolvedPath, {
@@ -563,8 +600,9 @@ async function syncSymbolNodes(
 
 /**
  * Resolve relative import path to actual file path
+ * Uses knownFiles set to find the correct extension/index file
  */
-function resolveImportPath(fromFile: string, importSource: string): string | null {
+function resolveImportPath(fromFile: string, importSource: string, knownFiles?: Set<string>): string | null {
   // Handle relative imports
   if (!importSource.startsWith('.')) {
     return null; // External package
@@ -584,28 +622,33 @@ function resolveImportPath(fromFile: string, importSource: string): string | nul
     }
   }
 
-  // Try common extensions
+  // If the path already has an extension, return it directly
   const extensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'];
   for (const ext of extensions) {
-    // Direct file
     if (currentPath.endsWith(ext)) {
       return currentPath;
     }
   }
 
-  // Try adding extensions
+  // Generate all candidates and check against known files
+  const candidates: string[] = [];
   for (const ext of extensions) {
-    const withExt = `${currentPath}${ext}`;
-    return withExt; // Assume it exists - graph will ignore if not found
+    candidates.push(`${currentPath}${ext}`);
+  }
+  for (const ext of extensions) {
+    candidates.push(`${currentPath}/index${ext}`);
   }
 
-  // Try index file
-  for (const ext of extensions) {
-    const indexPath = `${currentPath}/index${ext}`;
-    return indexPath;
+  if (knownFiles) {
+    for (const candidate of candidates) {
+      if (knownFiles.has(candidate)) {
+        return candidate;
+      }
+    }
   }
 
-  return currentPath;
+  // Fallback: return first candidate (graph will ignore if not found)
+  return candidates[0];
 }
 
 /**
@@ -665,6 +708,166 @@ async function syncCommitNodes(
   }
 
   return { nodesCreated, edgesCreated };
+}
+
+/**
+ * Populate MODIFIES and TOUCHES edges from commit diffs
+ * Links commits to the files they changed and symbols they touched
+ */
+async function syncCommitDiffEdges(
+  graph: GraphManager,
+  repositoryId: string,
+  ownerSlug: string,
+  repoSlug: string,
+  onProgress?: (step: string, progress: number) => Promise<void>
+): Promise<{ edgesCreated: number }> {
+  let edgesCreated = 0;
+
+  // Get commits from database (limit to 200 most recent)
+  const repoCommits = await db.query.commits.findMany({
+    where: eq(commits.repositoryId, repositoryId),
+    orderBy: desc(commits.authorDate),
+    limit: 200,
+  });
+
+  if (repoCommits.length === 0) {
+    return { edgesCreated: 0 };
+  }
+
+  console.log(`[GraphSync] Processing diffs for ${repoCommits.length} commits`);
+
+  // Process in batches
+  const batchSize = 50;
+  for (let i = 0; i < repoCommits.length; i += batchSize) {
+    const batch = repoCommits.slice(i, i + batchSize);
+
+    for (const commit of batch) {
+      if (!commit.parentShas || !Array.isArray(commit.parentShas) || commit.parentShas.length === 0) {
+        continue;
+      }
+
+      const parentSha = commit.parentShas[0] as string;
+
+      try {
+        // Get diff between parent and this commit
+        const diff = await gitBackend.getDiff(ownerSlug, repoSlug, parentSha, commit.sha);
+
+        let filesChanged = 0;
+        let totalInsertions = 0;
+        let totalDeletions = 0;
+
+        for (const file of diff.files) {
+          filesChanged++;
+          totalInsertions += file.additions;
+          totalDeletions += file.deletions;
+
+          // Determine change type
+          const changeType = file.status === 'added' ? 'added' :
+                           file.status === 'deleted' ? 'deleted' : 'modified';
+
+          // Create MODIFIES edge (Commit → File)
+          try {
+            await graph.createModifiesEdge(commit.sha, file.path, {
+              changeType: changeType as any,
+              insertions: file.additions,
+              deletions: file.deletions,
+            });
+            edgesCreated++;
+          } catch {
+            // File might not be in graph
+          }
+
+          // Try to create TOUCHES edges (Commit → Symbol)
+          // Cross-reference diff file paths with symbol line ranges
+          if (changeType !== 'deleted') {
+            try {
+              // Find symbols in the modified file
+              const symbolResults = await graph.query(`
+                MATCH (s:Symbol {file: $filePath})
+                RETURN s.qualifiedName AS qualifiedName, s.startLine AS startLine, s.endLine AS endLine
+              `, { filePath: file.path });
+
+              // For each symbol, create a TOUCHES edge
+              // (simplified: we mark all symbols in the file as touched)
+              for (const sym of symbolResults) {
+                try {
+                  await graph.createTouchesEdge(commit.sha, sym.qualifiedName as string, {
+                    changeType: changeType as any,
+                    lineDelta: file.additions - file.deletions,
+                  });
+                  edgesCreated++;
+                } catch {
+                  // Symbol might not exist
+                }
+              }
+            } catch {
+              // Query error - skip
+            }
+          }
+        }
+
+        // Update CommitNode with actual stats
+        if (filesChanged > 0) {
+          try {
+            await graph.query(
+              `MATCH (c:Commit {sha: $sha})
+               SET c.filesChanged = $filesChanged,
+                   c.insertions = $insertions,
+                   c.deletions = $deletions`,
+              {
+                sha: commit.sha,
+                filesChanged,
+                insertions: totalInsertions,
+                deletions: totalDeletions,
+              }
+            );
+          } catch {
+            // Ignore
+          }
+        }
+      } catch (error: any) {
+        // getDiff might fail for some commits (e.g., initial commit)
+        // Skip silently
+      }
+    }
+
+    if (onProgress) {
+      await onProgress(
+        `Processing commit diffs (${Math.min(i + batchSize, repoCommits.length)}/${repoCommits.length})`,
+        (i + batchSize) / repoCommits.length
+      );
+    }
+  }
+
+  // Aggregate modification metadata onto File and Symbol nodes
+  try {
+    // Update File nodes with modification stats
+    await graph.query(`
+      MATCH (c:Commit)-[:MODIFIES]->(f:File)
+      WITH f, c ORDER BY c.timestamp DESC
+      WITH f, collect(c)[0] AS latest, count(c) AS modCount
+      SET f.lastModifiedCommit = latest.sha,
+          f.lastModifiedTimestamp = latest.timestamp,
+          f.modificationCount = modCount
+    `);
+
+    // Update Symbol nodes with modification stats
+    await graph.query(`
+      MATCH (c:Commit)-[:TOUCHES]->(s:Symbol)
+      WITH s, c ORDER BY c.timestamp DESC
+      WITH s, collect(c)[0] AS latest, count(c) AS modCount
+      SET s.lastModifiedCommit = latest.sha,
+          s.lastModifiedTimestamp = latest.timestamp,
+          s.modificationCount = modCount
+    `);
+
+    console.log(`[GraphSync] Aggregated modification metadata`);
+  } catch (error: any) {
+    console.warn(`[GraphSync] Metadata aggregation failed: ${error.message}`);
+  }
+
+  console.log(`[GraphSync] Created ${edgesCreated} MODIFIES/TOUCHES edges`);
+  return { edgesCreated };
 }
 
 /**

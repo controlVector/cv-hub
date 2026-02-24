@@ -296,6 +296,19 @@ cvGitRoutes.get('/repos/:owner/:repo/tree/:ref/*', optionalAuth, async (c) => {
     ) {
       throw new NotFoundError('Path or ref');
     }
+    // Empty repo — no commits yet, so ref doesn't exist
+    if (
+      error.message.includes('ambiguous argument') ||
+      error.message.includes('unknown revision')
+    ) {
+      return c.json({
+        ref,
+        path: path || '/',
+        entries: [],
+        empty: true,
+        message: 'This repository is empty. Push your first commit to get started.',
+      });
+    }
     throw error;
   }
 });
@@ -354,6 +367,13 @@ cvGitRoutes.get('/repos/:owner/:repo/blob/:ref/*', optionalAuth, async (c) => {
       error.message.includes('does not exist')
     ) {
       throw new NotFoundError('File or ref');
+    }
+    // Empty repo — no commits yet
+    if (
+      error.message.includes('ambiguous argument') ||
+      error.message.includes('unknown revision')
+    ) {
+      throw new NotFoundError('File or ref (repository may be empty)');
     }
     throw error;
   }
@@ -432,7 +452,9 @@ cvGitRoutes.get('/repos/:owner/:repo/commits', optionalAuth, zValidator('query',
     if (
       error.message.includes('not found') ||
       error.message.includes('ENOENT') ||
-      error.message.includes('does not exist')
+      error.message.includes('does not exist') ||
+      error.message.includes('ambiguous argument') ||
+      error.message.includes('unknown revision')
     ) {
       return c.json({ ref, commits: [] });
     }

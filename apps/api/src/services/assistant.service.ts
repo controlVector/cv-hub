@@ -218,6 +218,7 @@ You have access to the following context from the repository's knowledge graph a
     for (const symbol of context.graphData.symbols.slice(0, 10)) {
       prompt += `- ${symbol.kind}: ${symbol.qualifiedName || symbol.name}`;
       if (symbol.file) prompt += ` (${symbol.file})`;
+      if (symbol.summary) prompt += ` — ${symbol.summary}`;
       prompt += '\n';
     }
 
@@ -226,6 +227,15 @@ You have access to the following context from the repository's knowledge graph a
       for (const rel of context.graphData.relationships.slice(0, 10)) {
         prompt += `- ${rel.from} --[${rel.type}]--> ${rel.to}\n`;
       }
+    }
+  }
+
+  // Add AI summaries section if available
+  const symbolsWithSummaries = context.graphData?.symbols?.filter((s: any) => s.summary) || [];
+  if (symbolsWithSummaries.length > 0) {
+    prompt += '\n## AI Summaries\n\n';
+    for (const symbol of symbolsWithSummaries.slice(0, 8)) {
+      prompt += `**${symbol.qualifiedName || symbol.name}**: ${symbol.summary}\n`;
     }
   }
 

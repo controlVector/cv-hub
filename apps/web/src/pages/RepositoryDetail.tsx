@@ -15,9 +15,9 @@ import {
   Menu,
   MenuItem,
   Button,
+  Tooltip,
 } from '@mui/material';
 import {
-  Star,
   StarBorder,
   ForkRight,
   Code,
@@ -31,6 +31,7 @@ import {
   Download,
   AutoAwesome as AIIcon,
   Refresh,
+  AccountTree,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
@@ -39,6 +40,7 @@ import {
   BranchSelector,
   CodeBrowser,
   FileViewer,
+  ArchitectureTab,
 } from '../components/repository';
 import { PipelinesList } from '../components/ci-cd';
 import RepositoryIssues from './RepositoryIssues';
@@ -145,7 +147,6 @@ function RepositoryDetailContent() {
   } = useRepository();
 
   const [tabValue, setTabValue] = useState(0);
-  const [starred, setStarred] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   // Load graph stats on mount
@@ -257,17 +258,25 @@ function RepositoryDetailContent() {
         {/* Action buttons */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={starred ? <Star sx={{ color: '#f7df1e' }} /> : <StarBorder />}
-              onClick={() => setStarred(!starred)}
-            >
-              {starred ? 'Starred' : 'Star'}
-            </Button>
-            <Button variant="outlined" size="small" startIcon={<ForkRight />}>
-              Fork
-            </Button>
+            <Tooltip title="Coming soon">
+              <span>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<StarBorder />}
+                  disabled
+                >
+                  Star
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="Coming soon">
+              <span>
+                <Button variant="outlined" size="small" startIcon={<ForkRight />} disabled>
+                  Fork
+                </Button>
+              </span>
+            </Tooltip>
             <Button
               variant="contained"
               size="small"
@@ -286,9 +295,13 @@ function RepositoryDetailContent() {
               tags={tags}
               onSelect={handleBranchChange}
             />
-            <Button variant="outlined" size="small" startIcon={<Download />}>
-              Clone
-            </Button>
+            <Tooltip title="Coming soon">
+              <span>
+                <Button variant="outlined" size="small" startIcon={<Download />} disabled>
+                  Clone
+                </Button>
+              </span>
+            </Tooltip>
             <IconButton
               size="small"
               onClick={(e) => setAnchorEl(e.currentTarget)}
@@ -304,27 +317,10 @@ function RepositoryDetailContent() {
       <Box sx={{ borderBottom: `1px solid ${colors.navyLighter}`, mb: 3 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
           <Tab icon={<Code sx={{ fontSize: 18 }} />} iconPosition="start" label="Code" />
-          <Tab
-            icon={<PRIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                Pull Requests
-                <Chip label="0" size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
-              </Box>
-            }
-          />
-          <Tab
-            icon={<IssueIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                Issues
-                <Chip label="0" size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
-              </Box>
-            }
-          />
+          <Tab icon={<PRIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Pull Requests" />
+          <Tab icon={<IssueIcon sx={{ fontSize: 18 }} />} iconPosition="start" label="Issues" />
           <Tab icon={<PlayArrow sx={{ fontSize: 18 }} />} iconPosition="start" label="Actions" />
+          <Tab icon={<AccountTree sx={{ fontSize: 18 }} />} iconPosition="start" label="Architecture" />
           <Tab icon={<Settings sx={{ fontSize: 18 }} />} iconPosition="start" label="Settings" />
         </Tabs>
       </Box>
@@ -374,6 +370,8 @@ function RepositoryDetailContent() {
           {/* File Viewer */}
           <FileViewer
             repoName={repo}
+            owner={owner}
+            repo={repo}
             file={currentFile}
             isLoading={isLoadingFile}
             graphStats={graphStats}
@@ -397,6 +395,10 @@ function RepositoryDetailContent() {
       )}
 
       {tabValue === 4 && (
+        <ArchitectureTab owner={owner} repo={repo} />
+      )}
+
+      {tabValue === 5 && (
         <RepositorySettings
           owner={owner}
           repo={repo}

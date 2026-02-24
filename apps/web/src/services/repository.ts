@@ -202,7 +202,7 @@ export async function getRefs(owner: string, repo: string): Promise<RefsResponse
  * Get directory tree
  */
 export async function getTree(owner: string, repo: string, ref: string, path: string = ''): Promise<TreeResponse> {
-  const encodedPath = path ? `/${encodeURIComponent(path)}` : '';
+  const encodedPath = path ? `/${path.split('/').map(encodeURIComponent).join('/')}` : '';
   const response = await api.get(`/v1/repos/${owner}/${repo}/tree/${encodeURIComponent(ref)}${encodedPath}`);
   return response.data;
 }
@@ -211,7 +211,8 @@ export async function getTree(owner: string, repo: string, ref: string, path: st
  * Get file content
  */
 export async function getBlob(owner: string, repo: string, ref: string, path: string): Promise<BlobResponse> {
-  const response = await api.get(`/v1/repos/${owner}/${repo}/blob/${encodeURIComponent(ref)}/${encodeURIComponent(path)}`);
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const response = await api.get(`/v1/repos/${owner}/${repo}/blob/${encodeURIComponent(ref)}/${encodedPath}`);
   return response.data;
 }
 
@@ -277,6 +278,7 @@ export async function executeGraphQuery(
     to?: string;
     maxDepth?: number;
     cypher?: string;
+    params?: Record<string, unknown>;
   }
 ): Promise<{ data: { query: any; results: any[]; count: number } }> {
   const response = await api.post(`/v1/repos/${owner}/${repo}/graph/query`, query);
@@ -355,6 +357,84 @@ export interface GraphVisualizationData {
   nodes: GraphNode[];
   edges: GraphEdge[];
   stats: GraphStats;
+}
+
+// Architecture visualization types
+export interface VizNode {
+  id: string;
+  label: string;
+  type: 'file' | 'symbol' | 'module' | 'commit';
+  path?: string;
+  complexity?: number;
+  linesOfCode?: number;
+  language?: string;
+  kind?: string;
+  summary?: string;
+  lastModifiedCommit?: string;
+  lastModifiedTimestamp?: number;
+  modificationCount?: number;
+}
+
+export interface VizEdge {
+  source: string;
+  target: string;
+  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES';
+  label?: string;
+  weight?: number;
+}
+
+export interface VizData {
+  nodes: VizNode[];
+  edges: VizEdge[];
+  meta: {
+    viewType: string;
+    nodeCount: number;
+    edgeCount: number;
+    truncated: boolean;
+  };
+}
+
+export interface RepositorySummary {
+  id: string;
+  repositoryId: string;
+  summary: string;
+  technologies: string[];
+  entryPoints: string[];
+  keyPatterns: string[];
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimelineEntry {
+  sha: string;
+  message: string;
+  author: string;
+  timestamp: number;
+  changeType: string;
+  insertions?: number;
+  deletions?: number;
+  lineDelta?: number;
+}
+
+export interface ImpactData {
+  qualifiedName: string;
+  callers: Array<{
+    qualifiedName: string;
+    name: string;
+    kind: string;
+    file: string;
+    complexity: number;
+  }>;
+  coChanged: Array<{
+    qualifiedName: string;
+    name: string;
+    kind: string;
+    file: string;
+    coChangeCount: number;
+  }>;
+  callerCount: number;
+  coChangedCount: number;
 }
 
 /**
@@ -437,4 +517,92 @@ export async function getGraphVisualization(owner: string, repo: string): Promis
   });
 
   return { nodes, edges, stats };
+}
+
+// ========== Architecture Visualization API ==========
+
+/**
+ * Get architecture visualization data
+ */
+export async function getArchitectureViz(
+  owner: string,
+  repo: string,
+  viewType: 'dependencies' | 'calls' | 'modules' | 'complexity',
+  params?: Record<string, string>
+): Promise<VizData> {
+  const queryParams = new URLSearchParams(params);
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/graph/viz/${viewType}?${queryParams.toString()}`
+  );
+  return response.data.data;
+}
+
+/**
+ * Get repository summary
+ */
+export async function getRepositorySummaryApi(
+  owner: string,
+  repo: string,
+): Promise<RepositorySummary | null> {
+  const response = await api.get(`/v1/repos/${owner}/${repo}/graph/summary`);
+  return response.data.data;
+}
+
+/**
+ * Get file timeline
+ */
+export async function getFileTimeline(
+  owner: string,
+  repo: string,
+  filePath: string,
+  limit = 20,
+): Promise<{ filePath: string; timeline: TimelineEntry[]; count: number }> {
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/graph/timeline/file/${encodeURIComponent(filePath)}?limit=${limit}`
+  );
+  return response.data.data;
+}
+
+/**
+ * Get symbol timeline
+ */
+export async function getSymbolTimeline(
+  owner: string,
+  repo: string,
+  qualifiedName: string,
+  limit = 20,
+): Promise<{ qualifiedName: string; timeline: TimelineEntry[]; count: number }> {
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/graph/timeline/symbol/${encodeURIComponent(qualifiedName)}?limit=${limit}`
+  );
+  return response.data.data;
+}
+
+/**
+ * Get impact analysis for a symbol
+ */
+export async function getImpactAnalysis(
+  owner: string,
+  repo: string,
+  qualifiedName: string,
+  depth = 2,
+): Promise<ImpactData> {
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/graph/impact/${encodeURIComponent(qualifiedName)}?depth=${depth}`
+  );
+  return response.data.data;
+}
+
+/**
+ * Get heatmap data by metric
+ */
+export async function getHeatmapViz(
+  owner: string,
+  repo: string,
+  metric: 'recency' | 'frequency' | 'churn',
+): Promise<VizData> {
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/graph/viz/heatmap?metric=${metric}`
+  );
+  return response.data.data;
 }

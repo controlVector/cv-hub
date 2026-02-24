@@ -116,6 +116,19 @@ graphRoutes.post(
       return c.json({ error: 'Repository not found' }, 404);
     }
 
+    // Custom Cypher queries require auth and are read-only
+    if (query.type === 'custom') {
+      if (!userId) {
+        return c.json({ error: 'Authentication required for custom queries' }, 401);
+      }
+      if (query.cypher) {
+        const lowerCypher = query.cypher.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!lowerCypher.startsWith('match ') && !lowerCypher.startsWith('return ') && !lowerCypher.startsWith('optional match ')) {
+          return c.json({ error: 'Only read queries (MATCH/RETURN) are allowed' }, 403);
+        }
+      }
+    }
+
     try {
       const graph = await getGraphManager(repository.id);
       const results = await graph.executeQuery(query);
@@ -172,6 +185,9 @@ graphRoutes.get('/:owner/:repo/graph/file/*', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
   const path = c.req.path.split('/graph/file/')[1] || '';
+  if (path.includes('..')) {
+    return c.json({ error: 'Invalid file path' }, 400);
+  }
 
   const repository = await getRepository(owner, repo, userId);
   if (!repository) {
@@ -241,7 +257,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/dead-code', optionalAuth, async (c
 graphRoutes.get('/:owner/:repo/graph/analysis/complexity', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
-  const threshold = parseInt(c.req.query('threshold') || '10');
+  const threshold = Math.max(0, Math.min(parseInt(c.req.query('threshold') || '10', 10) || 10, 100));
 
   const repository = await getRepository(owner, repo, userId);
   if (!repository) {
@@ -274,7 +290,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', optionalAuth, async (
   const userId = c.get('userId') ?? null;
   const from = c.req.query('from');
   const to = c.req.query('to');
-  const maxDepth = parseInt(c.req.query('maxDepth') || '10');
+  const maxDepth = Math.max(1, Math.min(parseInt(c.req.query('maxDepth') || '5', 10) || 5, 10));
 
   if (!from || !to) {
     return c.json({ error: 'Both "from" and "to" query parameters are required' }, 400);
@@ -421,7 +437,7 @@ graphRoutes.get('/:owner/:repo/graph/sync/job/:jobId', optionalAuth, async (c) =
 
 /**
  * POST /cypher
- * Execute a raw Cypher query (admin/advanced use)
+ * Execute a raw Cypher query (org admin only, read-only)
  */
 graphRoutes.post(
   '/:owner/:repo/graph/cypher',
@@ -432,7 +448,7 @@ graphRoutes.post(
   })),
   async (c) => {
     const { owner, repo } = c.req.param();
-    const userId = c.get('userId') ?? null;
+    const userId = c.get('userId')!;
     const { query, params } = c.req.valid('json');
 
     const repository = await getRepository(owner, repo, userId);
@@ -440,17 +456,20 @@ graphRoutes.post(
       return c.json({ error: 'Repository not found' }, 404);
     }
 
-    // Security: Only allow read queries for now
-    const lowerQuery = query.toLowerCase().trim();
-    if (
-      lowerQuery.includes('delete') ||
-      lowerQuery.includes('remove') ||
-      lowerQuery.includes('drop') ||
-      lowerQuery.includes('create') ||
-      lowerQuery.includes('merge') ||
-      lowerQuery.includes('set')
-    ) {
-      return c.json({ error: 'Write operations not allowed via this endpoint' }, 403);
+    // Require org admin for raw Cypher access
+    try {
+      const { isOrgAdmin } = await import('../services/organization.service');
+      if (!await isOrgAdmin(repository.organizationId, userId)) {
+        return c.json({ error: 'Only organization admins can execute raw Cypher queries' }, 403);
+      }
+    } catch {
+      return c.json({ error: 'Authorization check failed' }, 500);
+    }
+
+    // Security: Only allow queries starting with MATCH or RETURN (read-only)
+    const lowerQuery = query.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!lowerQuery.startsWith('match ') && !lowerQuery.startsWith('return ') && !lowerQuery.startsWith('optional match ')) {
+      return c.json({ error: 'Only read queries (MATCH/RETURN) are allowed via this endpoint' }, 403);
     }
 
     try {
@@ -469,5 +488,240 @@ graphRoutes.post(
     }
   }
 );
+
+// ========== Visualization Endpoints ==========
+
+/**
+ * GET /viz/dependencies
+ * Get file dependency graph
+ */
+graphRoutes.get('/:owner/:repo/graph/viz/dependencies', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '300', 10) || 300, 1000));
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const data = await graph.getFileDependencyGraph(limit);
+    return c.json({ success: true, data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /viz/calls
+ * Get call graph
+ */
+graphRoutes.get('/:owner/:repo/graph/viz/calls', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const symbol = c.req.query('symbol');
+  const depth = Math.max(1, Math.min(parseInt(c.req.query('depth') || '2', 10) || 2, 5));
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const data = await graph.getCallGraph(symbol, depth);
+    return c.json({ success: true, data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /viz/modules
+ * Get module hierarchy
+ */
+graphRoutes.get('/:owner/:repo/graph/viz/modules', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const data = await graph.getModuleHierarchy();
+    return c.json({ success: true, data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /viz/complexity
+ * Get complexity heatmap
+ */
+graphRoutes.get('/:owner/:repo/graph/viz/complexity', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const threshold = Math.max(0, Math.min(parseInt(c.req.query('threshold') || '0', 10) || 0, 100));
+  const rawType = c.req.query('type') || 'file';
+  const type: 'file' | 'symbol' = rawType === 'symbol' ? 'symbol' : 'file';
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const data = await graph.getComplexityHeatmap(type, threshold);
+    return c.json({ success: true, data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /viz/heatmap
+ * Get heatmap data by metric (recency, frequency, churn)
+ */
+graphRoutes.get('/:owner/:repo/graph/viz/heatmap', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const rawMetric = c.req.query('metric') || 'recency';
+  const metric: 'recency' | 'frequency' | 'churn' = ['recency', 'frequency', 'churn'].includes(rawMetric)
+    ? (rawMetric as 'recency' | 'frequency' | 'churn')
+    : 'recency';
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const data = await graph.getHeatmapByMetric(metric);
+    return c.json({ success: true, data });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== Summary Endpoint ==========
+
+/**
+ * GET /summary
+ * Get repository summary
+ */
+graphRoutes.get('/:owner/:repo/graph/summary', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    // Import inline to avoid circular deps
+    const { getRepositorySummary } = await import('../services/summarization.service');
+    const summary = await getRepositorySummary(repository.id);
+
+    return c.json({
+      success: true,
+      data: summary || null,
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ========== Timeline & Impact Endpoints ==========
+
+/**
+ * GET /timeline/file/:path
+ * Get commit history for a file via MODIFIES edges
+ */
+graphRoutes.get('/:owner/:repo/graph/timeline/file/*', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const filePath = c.req.path.split('/graph/timeline/file/')[1] || '';
+  if (filePath.includes('..')) {
+    return c.json({ error: 'Invalid file path' }, 400);
+  }
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const timeline = await graph.getFileTimeline(filePath, limit);
+    return c.json({ success: true, data: { filePath, timeline, count: timeline.length } });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /timeline/symbol/:qualifiedName
+ * Get commit history for a symbol via TOUCHES edges
+ */
+graphRoutes.get('/:owner/:repo/graph/timeline/symbol/:qualifiedName', optionalAuth, async (c) => {
+  const { owner, repo, qualifiedName } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const timeline = await graph.getSymbolTimeline(decodeURIComponent(qualifiedName), limit);
+    return c.json({ success: true, data: { qualifiedName, timeline, count: timeline.length } });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * GET /impact/:qualifiedName
+ * Get impact analysis for a symbol
+ */
+graphRoutes.get('/:owner/:repo/graph/impact/:qualifiedName', optionalAuth, async (c) => {
+  const { owner, repo, qualifiedName } = c.req.param();
+  const userId = c.get('userId') ?? null;
+  const depth = Math.max(1, Math.min(parseInt(c.req.query('depth') || '2', 10) || 2, 5));
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const graph = await getGraphManager(repository.id);
+    const impact = await graph.getImpactAnalysis(decodeURIComponent(qualifiedName), depth);
+    return c.json({
+      success: true,
+      data: {
+        qualifiedName,
+        callers: impact.callers,
+        coChanged: impact.coChanged,
+        callerCount: impact.callers.length,
+        coChangedCount: impact.coChanged.length,
+      },
+    });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
 
 export default graphRoutes;

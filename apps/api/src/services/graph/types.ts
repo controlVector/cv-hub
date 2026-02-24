@@ -13,6 +13,10 @@ export interface FileNode {
   gitHash: string;
   linesOfCode: number;
   complexity: number;
+  summary?: string;
+  lastModifiedCommit?: string;
+  lastModifiedTimestamp?: number;
+  modificationCount?: number;
 }
 
 export interface SymbolNode {
@@ -30,6 +34,10 @@ export interface SymbolNode {
   isStatic: boolean;
   complexity: number;
   vectorId?: string;
+  summary?: string;
+  lastModifiedCommit?: string;
+  lastModifiedTimestamp?: number;
+  modificationCount?: number;
 }
 
 export type SymbolKind =
@@ -139,6 +147,41 @@ export interface SymbolUsage {
   callees: SymbolNode[];
   callerCount: number;
   calleeCount: number;
+}
+
+// Visualization Types
+export interface VizNode {
+  id: string;
+  label: string;
+  type: 'file' | 'symbol' | 'module' | 'commit';
+  path?: string;
+  complexity?: number;
+  linesOfCode?: number;
+  language?: string;
+  kind?: string;
+  summary?: string;
+  lastModifiedCommit?: string;
+  lastModifiedTimestamp?: number;
+  modificationCount?: number;
+}
+
+export interface VizEdge {
+  source: string;
+  target: string;
+  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES';
+  label?: string;
+  weight?: number;
+}
+
+export interface VizData {
+  nodes: VizNode[];
+  edges: VizEdge[];
+  meta: {
+    viewType: 'dependencies' | 'calls' | 'modules' | 'complexity' | 'heatmap';
+    nodeCount: number;
+    edgeCount: number;
+    truncated: boolean;
+  };
 }
 
 // Error Types
