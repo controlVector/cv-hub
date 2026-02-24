@@ -25,7 +25,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { colors } from '../../theme';
-import type { VizNode } from '../../services/repository';
+import type { VizNode, TimelineEntry } from '../../services/repository';
 import { getSymbolUsage, getFileTimeline, getSymbolTimeline, getImpactAnalysis } from '../../services/repository';
 import TimelineView from './TimelineView';
 import ImpactAnalysis from './ImpactAnalysis';
@@ -56,15 +56,17 @@ export function NodeDetailPanel({
   });
 
   // Fetch timeline data
-  const { data: timelineData, isLoading: isLoadingTimeline } = useQuery({
+  const { data: timelineData, isLoading: isLoadingTimeline } = useQuery<{ timeline: TimelineEntry[]; count: number } | null>({
     queryKey: ['nodeTimeline', owner, repo, node?.id, node?.type],
-    queryFn: () => {
+    queryFn: async () => {
       if (!node) return null;
       if (node.type === 'file' && node.path) {
-        return getFileTimeline(owner, repo, node.path);
+        const result = await getFileTimeline(owner, repo, node.path);
+        return { timeline: result.timeline, count: result.count };
       }
       if (node.type === 'symbol') {
-        return getSymbolTimeline(owner, repo, node.id);
+        const result = await getSymbolTimeline(owner, repo, node.id);
+        return { timeline: result.timeline, count: result.count };
       }
       return null;
     },

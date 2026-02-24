@@ -101,7 +101,7 @@ function computeNodeColors(
 
 export function GraphCanvas({
   data,
-  layout = 'force',
+  layout: _layout = 'force',
   colorMode = 'default',
   isLoading = false,
   onNodeSelect,

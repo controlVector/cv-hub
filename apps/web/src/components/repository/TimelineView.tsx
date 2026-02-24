@@ -3,7 +3,7 @@
  * Vertical timeline showing commits that modified a file/symbol
  */
 
-import { Box, Typography, Chip } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { Commit as CommitIcon } from '@mui/icons-material';
 import { colors } from '../../theme';
 import type { TimelineEntry } from '../../services/repository';
