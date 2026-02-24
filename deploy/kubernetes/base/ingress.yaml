@@ -14,9 +14,6 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    # For git operations
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
     # TLS with cert-manager
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
@@ -24,7 +21,6 @@ spec:
     - hosts:
         - hub.controlvector.io
         - api.hub.controlvector.io
-        - git.hub.controlvector.io
       secretName: hub-controlvector-tls
   rules:
     # Main web app
@@ -49,12 +45,36 @@ spec:
                 name: cv-hub-api
                 port:
                   number: 3000
-    # Git HTTP (for clone/push)
+---
+# Separate ingress for git HTTP — rewrites paths so clone URLs are clean:
+#   git clone https://git.hub.controlvector.io/owner/repo.git
+# becomes /git/owner/repo.git on the API server
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cv-hub-git-ingress
+  namespace: cv-hub
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/rewrite-target: /git/$1
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - git.hub.controlvector.io
+      secretName: hub-git-controlvector-tls
+  rules:
     - host: git.hub.controlvector.io
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          - path: /(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: cv-hub-api

@@ -16,6 +16,9 @@ import {
   MenuItem,
   Button,
   Tooltip,
+  Popover,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   StarBorder,
@@ -29,6 +32,8 @@ import {
   Public,
   MoreVert,
   Download,
+  ContentCopy,
+  Check as CheckIcon,
   AutoAwesome as AIIcon,
   Refresh,
   AccountTree,
@@ -152,6 +157,10 @@ function RepositoryDetailContent() {
 
   const [tabValue, setTabValue] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [cloneAnchor, setCloneAnchor] = useState<null | HTMLElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const cloneUrl = `${window.location.origin.replace('://hub.', '://git.hub.')}/${owner}/${repo}.git`;
 
   // Load graph stats on mount
   useEffect(() => {
@@ -299,13 +308,52 @@ function RepositoryDetailContent() {
               tags={tags}
               onSelect={handleBranchChange}
             />
-            <Tooltip title="Coming soon">
-              <span>
-                <Button variant="outlined" size="small" startIcon={<Download />} disabled>
-                  Clone
-                </Button>
-              </span>
-            </Tooltip>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Download />}
+              onClick={(e) => setCloneAnchor(e.currentTarget)}
+            >
+              Clone
+            </Button>
+            <Popover
+              open={!!cloneAnchor}
+              anchorEl={cloneAnchor}
+              onClose={() => { setCloneAnchor(null); setCopied(false); }}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              slotProps={{ paper: { sx: { p: 2, width: 380, backgroundColor: colors.navyLight, border: `1px solid ${colors.navyLighter}` } } }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                Clone with HTTPS
+              </Typography>
+              <TextField
+                value={cloneUrl}
+                fullWidth
+                size="small"
+                InputProps={{
+                  readOnly: true,
+                  sx: { fontFamily: 'monospace', fontSize: '0.8rem' },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          navigator.clipboard.writeText(cloneUrl);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                      >
+                        {copied ? <CheckIcon sx={{ fontSize: 16, color: colors.green }} /> : <ContentCopy sx={{ fontSize: 16 }} />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Typography variant="caption" sx={{ color: colors.textMuted, mt: 1, display: 'block' }}>
+                Use a personal access token as password when prompted.
+              </Typography>
+            </Popover>
             <IconButton
               size="small"
               onClick={(e) => setAnchorEl(e.currentTarget)}

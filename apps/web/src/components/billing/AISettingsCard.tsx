@@ -126,7 +126,7 @@ export default function AISettingsCard({
     setBuyMenuAnchor(null);
     setBuyLoading(true);
     try {
-      const res = await api.post('/api/stripe/buy-credits', {
+      const res = await api.post('/stripe/buy-credits', {
         organizationId,
         pack,
         successUrl: `${window.location.origin}/orgs/${orgSlug}/settings?checkout=success`,
