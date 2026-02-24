@@ -11,7 +11,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { db } from '../db';
 import { repositories } from '../db/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   getGraphManager,
   enqueueGraphSync,
@@ -19,8 +19,11 @@ import {
   getRepoSyncJobs,
 } from '../services/graph';
 import type { GraphQuery } from '../services/graph';
+import { optionalAuth, requireAuth } from '../middleware/auth';
+import { canUserAccessRepo } from '../services/repository.service';
+import type { AppEnv } from '../app';
 
-const graphRoutes = new Hono();
+const graphRoutes = new Hono<AppEnv>();
 
 // Query schema (cv-git compatible)
 const graphQuerySchema = z.object({
@@ -34,10 +37,9 @@ const graphQuerySchema = z.object({
 });
 
 /**
- * Helper to get repository by owner/slug
+ * Helper to get repository by owner/slug with access control
  */
-async function getRepository(owner: string, repo: string) {
-  // Try to find by organization slug first, then by user
+async function getRepository(owner: string, repo: string, userId: string | null) {
   const repository = await db.query.repositories.findFirst({
     where: eq(repositories.slug, repo),
     with: {
@@ -56,6 +58,12 @@ async function getRepository(owner: string, repo: string) {
     return null;
   }
 
+  // Enforce access control — same rules as code browsing
+  const canAccess = await canUserAccessRepo(repository.id, userId);
+  if (!canAccess) {
+    return null;
+  }
+
   return repository;
 }
 
@@ -63,10 +71,11 @@ async function getRepository(owner: string, repo: string) {
  * GET /stats
  * Get graph statistics
  */
-graphRoutes.get('/:owner/:repo/graph/stats', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/stats', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -95,12 +104,14 @@ graphRoutes.get('/:owner/:repo/graph/stats', async (c) => {
  */
 graphRoutes.post(
   '/:owner/:repo/graph/query',
+  optionalAuth,
   zValidator('json', graphQuerySchema),
   async (c) => {
     const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
     const query = c.req.valid('json') as GraphQuery;
 
-    const repository = await getRepository(owner, repo);
+    const repository = await getRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -127,10 +138,11 @@ graphRoutes.post(
  * GET /symbol/:name
  * Get symbol details and usage
  */
-graphRoutes.get('/:owner/:repo/graph/symbol/:name', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/symbol/:name', optionalAuth, async (c) => {
   const { owner, repo, name } = c.req.param();
+  const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -156,11 +168,12 @@ graphRoutes.get('/:owner/:repo/graph/symbol/:name', async (c) => {
  * GET /file/:path
  * Get file details and symbols
  */
-graphRoutes.get('/:owner/:repo/graph/file/*', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/file/*', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
   const path = c.req.path.split('/graph/file/')[1] || '';
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -196,10 +209,11 @@ graphRoutes.get('/:owner/:repo/graph/file/*', async (c) => {
  * GET /analysis/dead-code
  * Find potential dead code (uncalled functions)
  */
-graphRoutes.get('/:owner/:repo/graph/analysis/dead-code', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/analysis/dead-code', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -224,11 +238,12 @@ graphRoutes.get('/:owner/:repo/graph/analysis/dead-code', async (c) => {
  * GET /analysis/complexity
  * Find complexity hotspots
  */
-graphRoutes.get('/:owner/:repo/graph/analysis/complexity', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/analysis/complexity', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
   const threshold = parseInt(c.req.query('threshold') || '10');
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -254,8 +269,9 @@ graphRoutes.get('/:owner/:repo/graph/analysis/complexity', async (c) => {
  * GET /analysis/call-paths
  * Find call paths between two symbols
  */
-graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
   const from = c.req.query('from');
   const to = c.req.query('to');
   const maxDepth = parseInt(c.req.query('maxDepth') || '10');
@@ -264,7 +280,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', async (c) => {
     return c.json({ error: 'Both "from" and "to" query parameters are required' }, 400);
   }
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -292,12 +308,13 @@ graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', async (c) => {
  * POST /sync
  * Trigger a graph sync job
  */
-graphRoutes.post('/:owner/:repo/graph/sync', async (c) => {
+graphRoutes.post('/:owner/:repo/graph/sync', requireAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
   const body = await c.req.json().catch(() => ({}));
   const jobType = body.jobType || 'full';
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -331,10 +348,11 @@ graphRoutes.post('/:owner/:repo/graph/sync', async (c) => {
  * GET /sync/status
  * Get the current sync status
  */
-graphRoutes.get('/:owner/:repo/graph/sync/status', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/sync/status', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -371,10 +389,11 @@ graphRoutes.get('/:owner/:repo/graph/sync/status', async (c) => {
  * GET /sync/job/:jobId
  * Get status of a specific sync job
  */
-graphRoutes.get('/:owner/:repo/graph/sync/job/:jobId', async (c) => {
+graphRoutes.get('/:owner/:repo/graph/sync/job/:jobId', optionalAuth, async (c) => {
   const { owner, repo, jobId } = c.req.param();
+  const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await getRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -406,15 +425,17 @@ graphRoutes.get('/:owner/:repo/graph/sync/job/:jobId', async (c) => {
  */
 graphRoutes.post(
   '/:owner/:repo/graph/cypher',
+  requireAuth,
   zValidator('json', z.object({
     query: z.string(),
     params: z.record(z.any()).optional(),
   })),
   async (c) => {
     const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
     const { query, params } = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await getRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
