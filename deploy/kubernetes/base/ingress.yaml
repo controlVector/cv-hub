@@ -22,13 +22,13 @@ metadata:
 spec:
   tls:
     - hosts:
-        - cv-hub.io
-        - api.cv-hub.io
-        - git.cv-hub.io
-      secretName: cv-hub-tls
+        - hub.controlvector.io
+        - api.hub.controlvector.io
+        - git.hub.controlvector.io
+      secretName: hub-controlvector-tls
   rules:
     # Main web app
-    - host: cv-hub.io
+    - host: hub.controlvector.io
       http:
         paths:
           - path: /
@@ -39,7 +39,7 @@ spec:
                 port:
                   number: 80
     # API
-    - host: api.cv-hub.io
+    - host: api.hub.controlvector.io
       http:
         paths:
           - path: /
@@ -50,7 +50,7 @@ spec:
                 port:
                   number: 3000
     # Git HTTP (for clone/push)
-    - host: git.cv-hub.io
+    - host: git.hub.controlvector.io
       http:
         paths:
           - path: /
@@ -81,7 +81,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: cv-hub/web:latest
+          image: registry.digitalocean.com/cv-hub-registry/web:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

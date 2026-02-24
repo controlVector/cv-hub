@@ -22,7 +22,7 @@ spec:
         - name: registry-cv-hub-registry
       containers:
         - name: api
-          image: cv-hub/api:latest
+          image: registry.digitalocean.com/cv-hub-registry/api:latest
           imagePullPolicy: Always
           ports:
             - name: http

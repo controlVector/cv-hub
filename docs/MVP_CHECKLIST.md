@@ -124,24 +124,23 @@
 - [x] **Hardcoded notification badge** — hidden until real notification count is wired
   - File: `apps/web/src/components/Layout.tsx:352`
 
-- [ ] **Dashboard AI Insights / Activity Feed always empty** — arrays initialized as `[]` with no API call
-  - Need an endpoint or remove the panels until wired
-  - File: `apps/web/src/pages/Dashboard.tsx:78,80`
+- [x] **Dashboard AI Insights / Activity Feed empty state** — improved with icons, guidance text, and CTA button
+  - File: `apps/web/src/pages/Dashboard.tsx`
 
-- [ ] **Org nav link uses repo owner** — may not match org slug
+- [x] **Org nav link uses repo owner** — fixed to navigate to `/dashboard/orgs/{owner}/settings`
   - File: `apps/web/src/pages/RepositoryDetail.tsx:228`
 
-- [ ] **Pin Postgres/Redis to patch versions** — currently `postgres:16-alpine`, `redis:7-alpine`
-  - Recommend: `postgres:16.6-alpine`, `redis:7.4-alpine`
+- [x] **Pin Postgres/Redis to patch versions** — `postgres:16.6-alpine`, `redis:7.4-alpine`
   - File: `deploy/kubernetes/base/databases.yaml`
 
-- [ ] **Add HSTS to MCP ingress** — main ingress has it, MCP ingress doesn't
-  - File: MCP ingress annotations
+- [x] **Add HSTS to MCP ingress** — confirmed with `strict-transport-security: max-age=31536000; includeSubDomains`
+  - File: `deploy/kubernetes/overlays/digitalocean/mcp-ingress.yaml`
 
-- [ ] **Update base ingress.yaml domains** — still references `cv-hub.io` instead of `hub.controlvector.io`
+- [x] **Update base ingress.yaml domains** — updated from `cv-hub.io` to `hub.controlvector.io`
   - File: `deploy/kubernetes/base/ingress.yaml`
 
-- [ ] **Pin app Docker images to SHA/semver tags** — currently `:latest`, unreliable for rollbacks
+- [x] **Pin app Docker images to registry-qualified names** — base manifests now reference `registry.digitalocean.com/cv-hub-registry/api:latest` and `web:latest`
+  - Files: `deploy/kubernetes/base/api-deployment.yaml`, `worker-deployment.yaml`, `ingress.yaml`
 
 ### P3 — Tech Debt (not user-facing, do post-launch)
 

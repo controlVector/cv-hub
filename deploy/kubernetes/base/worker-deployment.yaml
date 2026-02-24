@@ -31,7 +31,7 @@ spec:
             runAsUser: 0
       containers:
         - name: worker
-          image: cv-hub/api:latest
+          image: registry.digitalocean.com/cv-hub-registry/api:latest
           imagePullPolicy: Always
           command: ["node", "dist/workers/graph-sync.worker.js"]
           env:

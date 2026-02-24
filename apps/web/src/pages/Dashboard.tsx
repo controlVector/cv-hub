@@ -401,9 +401,17 @@ export default function Dashboard() {
 
               {aiInsights.length === 0 ? (
                 <Box sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                  <AIIcon sx={{ fontSize: 40, color: colors.textMuted, opacity: 0.4, mb: 1 }} />
+                  <Typography variant="body2" sx={{ color: colors.textMuted, mb: 2 }}>
                     Sync a repository's knowledge graph to see AI-powered insights about code quality, complexity hotspots, and potential issues.
                   </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => navigate('/dashboard/repositories')}
+                  >
+                    View Repositories
+                  </Button>
                 </Box>
               ) : aiInsights.map((insight, index) => (
                 <Box
@@ -483,8 +491,9 @@ export default function Dashboard() {
 
               {recentActivity.length === 0 ? (
                 <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Schedule sx={{ fontSize: 40, color: colors.textMuted, opacity: 0.4, mb: 1 }} />
                   <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                    Your recent commits, pull requests, and actions will appear here.
+                    Your recent commits, pull requests, and actions will appear here as you work.
                   </Typography>
                 </Box>
               ) : null}

@@ -225,7 +225,7 @@ function RepositoryDetailContent() {
           <Typography
             variant="body2"
             sx={{ color: colors.orange, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-            onClick={() => navigate(`/orgs/${owner}`)}
+            onClick={() => navigate(`/dashboard/orgs/${owner}/settings`)}
           >
             {owner}
           </Typography>
