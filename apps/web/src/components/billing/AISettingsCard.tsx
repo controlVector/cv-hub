@@ -79,7 +79,7 @@ export default function AISettingsCard({
   const { data: config } = useQuery<EmbeddingConfig>({
     queryKey: ['embedding-config', orgSlug],
     queryFn: async () => {
-      const res = await api.get(`/api/v1/orgs/${orgSlug}/embedding-config`);
+      const res = await api.get(`/v1/orgs/${orgSlug}/embedding-config`);
       return res.data;
     },
     enabled: !!orgSlug,
@@ -104,7 +104,7 @@ export default function AISettingsCard({
       };
       if (apiKey) body.apiKey = apiKey;
       if (model) body.model = model;
-      await api.put(`/api/v1/orgs/${orgSlug}/embedding-config`, body);
+      await api.put(`/v1/orgs/${orgSlug}/embedding-config`, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['embedding-config', orgSlug] });
@@ -115,7 +115,7 @@ export default function AISettingsCard({
   });
 
   const removeMutation = useMutation({
-    mutationFn: () => api.delete(`/api/v1/orgs/${orgSlug}/embedding-config`),
+    mutationFn: () => api.delete(`/v1/orgs/${orgSlug}/embedding-config`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['embedding-config', orgSlug] });
       setApiKey('');
