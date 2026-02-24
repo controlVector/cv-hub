@@ -136,8 +136,8 @@ export async function registerMCPClient(
 // ==================== MCP OAuth Token Validation ====================
 
 /**
- * Validate an OAuth access token and return the user + scopes.
- * Used by MCP endpoints to authenticate requests.
+ * Validate a Bearer token for MCP endpoints.
+ * Supports PATs (cv_pat_*), JWTs, and OAuth access tokens — same as the stateless gateway.
  */
 export async function validateMCPAccessToken(token: string): Promise<{
   valid: boolean;
@@ -145,7 +145,30 @@ export async function validateMCPAccessToken(token: string): Promise<{
   clientId?: string;
   scopes?: string[];
 }> {
-  // Re-use the existing validateAccessToken logic
+  // 1. PAT (cv_pat_*)
+  if (token.startsWith('cv_pat_')) {
+    const { validateToken } = await import('./pat.service');
+    const result = await validateToken(token);
+    if (result.valid && result.userId) {
+      return { valid: true, userId: result.userId, scopes: result.scopes as string[] ?? [] };
+    }
+    return { valid: false };
+  }
+
+  // 2. JWT session token
+  try {
+    const { verifyAccessToken } = await import('./token.service');
+    const payload = await verifyAccessToken(token);
+    return {
+      valid: true,
+      userId: payload.sub,
+      scopes: ['repo:read', 'repo:write', 'repo:admin', 'user:read', 'user:write', 'org:read', 'org:write'],
+    };
+  } catch {
+    // Not a valid JWT — fall through to OAuth
+  }
+
+  // 3. OAuth access token
   const { validateAccessToken } = await import('./oauth.service');
   return validateAccessToken(token);
 }

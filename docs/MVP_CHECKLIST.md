@@ -97,6 +97,28 @@
 - [x] **Repo pagination returns wrong total** — fixed to compute from result count + offset
 - [x] **cv-git getCommit() has wrong WHERE clause** — fixed to use `commits.repositoryId` and `commits.sha`
 
+### MCP Gateway & cv-git Integration
+
+- [x] **OAuth clients registered** — `cv-git-cli`, `claude-code-cli`, `mcp-gateway-prod` all in database
+  - `cv-git-cli`: device_code grant for CLI auth
+  - `claude-code-cli`: device_code grant for Claude Code auth
+  - `mcp-gateway-prod`: authorization_code + device_code + refresh_token for Claude.ai
+
+- [x] **Device authorization page** — `/device` page for approving CLI logins
+  - User enters code from terminal, sees scopes, approves/denies
+  - File: `apps/web/src/pages/DeviceAuthPage.tsx`
+
+- [x] **MCP auth supports PATs + JWTs** — `validateMCPAccessToken` now handles all 3 token types
+  - Previously only validated OAuth tokens, now matches the gateway's auth logic
+  - File: `apps/api/src/services/mcp-oauth.service.ts`
+
+- [x] **Route ordering fix** — `/mcp/sdk` registered before `/mcp` to avoid middleware conflicts
+  - File: `apps/api/src/app.ts`
+
+- [x] **MCP gateway verified end-to-end** — PAT auth → billing gate → initialize → tools/list → tools/call all working
+  - 44 tools exposed (repos, PRs, issues, graph, search, CI/CD, executor relay)
+  - Tested: `initialize`, `tools/list`, `list_repos` all return correct data
+
 ### P2 — Polish (visible to customers, not blocking)
 
 - [x] **Hardcoded notification badge** — hidden until real notification count is wired
@@ -153,13 +175,16 @@ Quick routes to verify in the browser at `https://hub.controlvector.io`:
 | Pull Requests | `/dashboard/pull-requests` | Real PRs or empty state (not mock) |
 | Feature Flags | `/dashboard/flags` | List loads (not 401), toggle works |
 | Flag editor | `/dashboard/flags/new?organizationId=...` | Create form works |
-| Org settings | `/dashboard/orgs/{slug}/settings` | Form populates (currently broken!) |
+| Org settings | `/dashboard/orgs/{slug}/settings` | Form populates with org data |
 | Profile | `/dashboard/profile` | User info, SSH keys, tokens |
 | Knowledge Graph | `/dashboard/graph` | Visualization loads |
 | Search | `/dashboard/search?q=test` | Results appear |
 | Pricing | `/pricing` | Cards render, checkout buttons work |
 | 404 | `/dashboard/nonexistent` | Styled 404 page (not blank) |
+| Device auth | `/device` | Code entry form, approve/deny flow |
 | API health | `https://api.hub.controlvector.io/health` | `{"status":"ok"}` |
+| MCP discover | `https://mcp.controlvector.io/.well-known/openid-configuration` | Full OIDC config |
+| MCP resource | `https://mcp.controlvector.io/.well-known/oauth-protected-resource` | Bearer auth metadata |
 
 ---
 

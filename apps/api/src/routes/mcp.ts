@@ -17,7 +17,7 @@ const MCP_SESSION_HEADER = 'mcp-session-id';
 
 const mcp = new Hono<AppEnv>();
 
-// All MCP endpoints require OAuth Bearer token auth
+// All MCP endpoints require Bearer token auth (PAT, JWT, or OAuth)
 mcp.use('*', requireMCPAuth);
 
 // ============================================================================

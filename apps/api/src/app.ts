@@ -186,11 +186,12 @@ app.route('/v1', cliApiRoutes);
 // MCP OAuth (dynamic client registration, protected resource metadata)
 app.route('/oauth', mcpOAuthRoutes);
 
-// MCP Streamable HTTP Transport (Remote MCP Server for Claude.ai)
-app.route('/mcp', mcpRoutes);
-
-// MCP SDK Gateway (Model Context Protocol — SDK-based tools for cloud Claude.ai)
+// MCP SDK Gateway (Model Context Protocol — SDK-based stateless tools for cloud Claude.ai)
+// Must be registered before /mcp so Hono matches the more specific path first.
 app.route('/mcp/sdk', mcpGateway);
+
+// MCP Streamable HTTP Transport (Remote MCP Server — stateful sessions)
+app.route('/mcp', mcpRoutes);
 
 // Executor API (Claude Code agents register, poll, submit results)
 app.route('/api/v1/executors', executorRoutes);

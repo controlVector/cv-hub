@@ -54,6 +54,7 @@ import BlogPost from './pages/blog/BlogPost';
 import ResearchPage from './pages/ResearchPage';
 import NewRepository from './pages/NewRepository';
 import NotFoundPage from './pages/NotFoundPage';
+import DeviceAuthPage from './pages/DeviceAuthPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -94,6 +95,9 @@ function App() {
               <Route path="/apps" element={<AppStore />} />
               <Route path="/apps/:appId" element={<AppDetail />} />
               <Route path="/orgs/:slug" element={<OrganizationStorefront />} />
+
+              {/* Device authorization (CLI auth) */}
+              <Route path="/device" element={<DeviceAuthPage />} />
 
               {/* Public pricing page */}
               <Route path="/pricing" element={<PricingPage />} />
