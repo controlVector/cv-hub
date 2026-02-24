@@ -24,10 +24,14 @@ COPY apps/api ./apps/api
 # Build shared package first (to CommonJS)
 RUN cd packages/shared && pnpm tsc --module CommonJS --moduleResolution Node --outDir dist --declaration false --declarationMap false --verbatimModuleSyntax false --skipLibCheck
 
-# Build API using esbuild bundle mode (tsc OOMs in Docker)
+# Build API + workers using esbuild bundle mode (tsc OOMs in Docker)
 # --bundle resolves all local imports, --packages=external leaves node_modules as runtime require()
 RUN cd apps/api && npx esbuild src/index.ts --bundle --platform=node --format=cjs --target=es2022 \
-    --outfile=dist/index.js --packages=external
+    --outfile=dist/index.js --packages=external && \
+    npx esbuild src/workers/graph-sync.worker.ts --bundle --platform=node --format=cjs --target=es2022 \
+    --outfile=dist/workers/graph-sync.worker.js --packages=external && \
+    npx esbuild src/workers/ci-cd.worker.ts --bundle --platform=node --format=cjs --target=es2022 \
+    --outfile=dist/workers/ci-cd.worker.js --packages=external
 
 # Create production package.json without workspace refs and type:module
 RUN node -e "const pkg=require('./apps/api/package.json'); delete pkg.dependencies['@cv-hub/shared']; delete pkg.type; require('fs').writeFileSync('./apps/api/package.prod.json', JSON.stringify(pkg, null, 2));"
