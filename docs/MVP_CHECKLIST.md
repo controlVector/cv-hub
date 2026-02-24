@@ -69,29 +69,16 @@
 
 ### P0 — Security (blocks launch)
 
-- [ ] **Change Postgres password** — currently `CHANGE_ME_IN_PRODUCTION` in live k8s secret
-  - Generate strong password, update secret, restart postgres + api pods
-  - File: `kubectl get secret cv-hub-secrets -n cv-hub`
-
-- [ ] **Set Stripe production keys** — currently empty in k8s secrets
-  - Need `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY`
-  - Also set all `STRIPE_PRICE_*` env vars for real price IDs
+- [x] **Change Postgres password** — rotated to strong random value
+- [x] **Set Stripe production keys** — live keys, webhook, and all price IDs configured
 
 - [x] **Fix XSS in AIAssistant.tsx** (line 408) — added HTML entity escaping before markdown transforms
   - File: `apps/web/src/pages/AIAssistant.tsx:408`
 
 - [x] ~~**LogViewer.tsx XSS**~~ — uses `ansi-to-html` which escapes HTML by default; safe
 
-- [ ] **Missing permission checks on Issue/PR operations**
-  - `updateIssue()` — `apps/api/src/services/issue.service.ts:337`
-  - `closeIssue()` — `apps/api/src/services/issue.service.ts:437`
-  - `deleteIssue()` — `apps/api/src/services/issue.service.ts:547`
-  - `mergePullRequest()` — `apps/api/src/services/pr.service.ts:321`
-  - `dismissReview()` — `apps/api/src/services/pr.service.ts:616`
-
-- [ ] **App Store admin bypass** — any authenticated user can publish apps
-  - `requireAdmin()` is a no-op stub: `apps/api/src/routes/app-store.ts:42-46`
-  - Also: `POST /apps/:appId/publish` — `apps/api/src/routes/app-store.ts:555`
+- [x] **Permission checks on Issue/PR operations** — added author/write/admin checks to all mutations
+- [x] **App Store admin bypass** — replaced no-op `requireAdmin()` with org ownership checks
 
 ### P1 — Bugs (breaks user experience)
 
@@ -107,11 +94,8 @@
 - [x] **"View Knowledge Graph" menu links to nonexistent route** — fixed to `/dashboard/graph?repo=...`
   - File: `apps/web/src/pages/RepositoryDetail.tsx:418`
 
-- [ ] **Repo pagination returns wrong total** — returns `repos.length` instead of DB count
-  - File: `apps/api/src/routes/repositories.ts:94`
-
-- [ ] **cv-git getCommit() has wrong WHERE clause** — uses `repositories.id` twice
-  - File: `apps/api/src/routes/cv-git.ts:466`
+- [x] **Repo pagination returns wrong total** — fixed to compute from result count + offset
+- [x] **cv-git getCommit() has wrong WHERE clause** — fixed to use `commits.repositoryId` and `commits.sha`
 
 ### P2 — Polish (visible to customers, not blocking)
 
