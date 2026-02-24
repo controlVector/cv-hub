@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -89,7 +89,7 @@ export default function OrganizationSettings() {
   const [formData, setFormData] = useState<UpdateOrganizationInput>({});
 
   // Initialize form when org loads
-  useState(() => {
+  useEffect(() => {
     if (org) {
       setFormData({
         name: org.name,
@@ -99,7 +99,7 @@ export default function OrganizationSettings() {
         isPublic: org.isPublic,
       });
     }
-  });
+  }, [org]);
 
   const updateMutation = useMutation({
     mutationFn: (data: UpdateOrganizationInput) => updateOrganization(slug!, data),

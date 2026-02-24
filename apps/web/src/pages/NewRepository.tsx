@@ -23,6 +23,7 @@ import { colors } from '../theme';
 import { createRepository } from '../services/repository';
 import { getMyOrganizations } from '../services/organization';
 import TierLimitAlert from '../components/TierLimitAlert';
+import { isTierLimitError } from '../lib/api';
 
 export default function NewRepository() {
   const navigate = useNavigate();
@@ -168,7 +169,7 @@ export default function NewRepository() {
           />
 
           {/* Generic error */}
-          {createMutation.error && !createMutation.error && (
+          {createMutation.error && !isTierLimitError(createMutation.error) && (
             <Alert severity="error" sx={{ mb: 2 }}>
               Failed to create repository. Please try again.
             </Alert>

@@ -349,7 +349,7 @@ export default function Layout() {
             {/* Notifications */}
             <Tooltip title="Notifications">
               <IconButton color="inherit" onClick={(e) => setNotificationAnchorEl(e.currentTarget)}>
-                <Badge badgeContent={3} color="secondary">
+                <Badge badgeContent={0} color="secondary" invisible>
                   <NotificationsIcon />
                 </Badge>
               </IconButton>

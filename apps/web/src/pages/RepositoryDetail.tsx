@@ -180,7 +180,7 @@ function RepositoryDetailContent() {
 
   const handleAIExplain = () => {
     // Navigate to AI assistant with file context
-    navigate(`/ai-assistant?file=${selectedPath}&repo=${owner}/${repo}`);
+    navigate(`/dashboard/ai-assistant?file=${selectedPath}&repo=${owner}/${repo}`);
   };
 
   const handleSyncGraph = async () => {
@@ -415,7 +415,7 @@ function RepositoryDetailContent() {
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
         <MenuItem onClick={() => {
           setAnchorEl(null);
-          navigate(`/dashboard/repositories/${owner}/${repo}/graph`);
+          navigate(`/dashboard/graph?repo=${owner}/${repo}`);
         }}>
           View Knowledge Graph
         </MenuItem>

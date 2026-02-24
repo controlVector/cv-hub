@@ -407,6 +407,10 @@ export default function AIAssistant() {
                   }}
                   dangerouslySetInnerHTML={{
                     __html: message.content
+                      .replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;')
                       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                       .replace(/`([^`]+)`/g, '<code>$1</code>')
                       .replace(/\n/g, '<br />'),
