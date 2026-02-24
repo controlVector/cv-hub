@@ -18,6 +18,7 @@ import { eq, and, desc, sql, count, or, ilike, inArray } from 'drizzle-orm';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors';
 import { triggerEvent } from './webhook.service';
 import { notifyIssueAssigned } from './notification.service';
+import { canUserWriteToRepo, isRepoAdmin } from './repository.service';
 import { logger } from '../utils/logger';
 
 // ============================================================================
@@ -333,11 +334,13 @@ export async function updateIssue(
     throw new NotFoundError('Issue not found');
   }
 
-  // Check authorization (author or repo admin)
-  // TODO: Add proper permission check
-  // if (issue.authorId !== userId) {
-  //   throw new ForbiddenError('Not authorized to update this issue');
-  // }
+  // Check authorization (author or anyone with write access)
+  if (issue.authorId !== userId) {
+    const canWrite = await canUserWriteToRepo(issue.repositoryId, userId);
+    if (!canWrite) {
+      throw new ForbiddenError('Not authorized to update this issue');
+    }
+  }
 
   const updateData: Partial<Issue> = {
     updatedAt: new Date(),
@@ -434,7 +437,11 @@ export async function deleteIssue(id: string, userId: string): Promise<void> {
     throw new NotFoundError('Issue not found');
   }
 
-  // TODO: Check if user has admin permissions
+  // Only repo admins can delete issues
+  const isAdmin = await isRepoAdmin(issue.repositoryId, userId);
+  if (!isAdmin) {
+    throw new ForbiddenError('Only repository admins can delete issues');
+  }
 
   // Delete the issue (comments will cascade)
   await db.delete(issues).where(eq(issues.id, id));
@@ -544,8 +551,14 @@ export async function deleteComment(commentId: string, userId: string): Promise<
   }
 
   if (comment.authorId !== userId) {
-    // TODO: Check if user is repo admin
-    throw new ForbiddenError('Not authorized to delete this comment');
+    // Allow repo admins to delete any comment
+    const issue = await db.query.issues.findFirst({
+      where: eq(issues.id, comment.issueId!),
+    });
+    const isAdmin = issue ? await isRepoAdmin(issue.repositoryId, userId) : false;
+    if (!isAdmin) {
+      throw new ForbiddenError('Not authorized to delete this comment');
+    }
   }
 
   await db.delete(comments).where(eq(comments.id, commentId));

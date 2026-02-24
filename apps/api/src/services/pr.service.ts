@@ -23,6 +23,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors'
 import * as gitBackend from './git/git-backend.service';
 import { triggerEvent } from './webhook.service';
 import { notifyPRReview, notifyPRMerged } from './notification.service';
+import { canUserWriteToRepo, isRepoAdmin } from './repository.service';
 import { logger } from '../utils/logger';
 
 // ============================================================================
@@ -316,10 +317,12 @@ export async function updatePullRequest(
     throw new NotFoundError('Pull request not found');
   }
 
-  // Check authorization (author or repo admin)
+  // Check authorization (author or anyone with write access)
   if (pr.authorId !== userId) {
-    // TODO: Check if user is repo admin
-    throw new ForbiddenError('Not authorized to update this pull request');
+    const canWrite = await canUserWriteToRepo(pr.repositoryId, userId);
+    if (!canWrite) {
+      throw new ForbiddenError('Not authorized to update this pull request');
+    }
   }
 
   const updateData: Partial<PullRequest> = {
@@ -401,6 +404,12 @@ export async function mergePullRequest(
 
   if (pr.state !== 'open') {
     throw new ValidationError(`Cannot merge a ${pr.state} pull request`);
+  }
+
+  // Check authorization — merge requires write access
+  const canWrite = await canUserWriteToRepo(pr.repositoryId, userId);
+  if (!canWrite) {
+    throw new ForbiddenError('Not authorized to merge this pull request');
   }
 
   // Check for required reviews (basic check)
@@ -613,7 +622,21 @@ export async function dismissReview(
   reviewId: string,
   userId: string
 ): Promise<PullRequestReview> {
-  // TODO: Check if user has permission to dismiss (repo admin or PR author)
+  // Check permission: must be repo admin or PR author
+  const review = await db.query.pullRequestReviews.findFirst({
+    where: eq(pullRequestReviews.id, reviewId),
+    with: { pullRequest: true },
+  });
+
+  if (!review) {
+    throw new NotFoundError('Review not found');
+  }
+
+  const isPRAuthor = review.pullRequest.authorId === userId;
+  const isAdmin = await isRepoAdmin(review.pullRequest.repositoryId, userId);
+  if (!isPRAuthor && !isAdmin) {
+    throw new ForbiddenError('Only the PR author or repo admins can dismiss reviews');
+  }
 
   const [updated] = await db.update(pullRequestReviews)
     .set({

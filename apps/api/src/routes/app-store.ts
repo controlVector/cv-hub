@@ -29,6 +29,10 @@ import { logAuditEvent, type AuditAction } from '../services/audit.service';
 import { getStorage, generateAssetKey } from '../services/storage.service';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
 import { env } from '../config/env';
+import { isOrgAdmin } from '../services/organization.service';
+import { db } from '../db';
+import { releases, releaseAssets, users } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import type { AppEnv } from '../app';
 
 const appStore = new Hono<AppEnv>();
@@ -37,12 +41,48 @@ const appStore = new Hono<AppEnv>();
 const categories = ['developer-tools', 'productivity', 'ai-ml', 'utilities', 'communication', 'other'] as const;
 const platforms = ['windows-x64', 'windows-arm64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64'] as const;
 
-// Helper to check if user is admin (for now, simple check - enhance later)
-function requireAdmin(c: any) {
-  // TODO: Implement proper admin check via roles/permissions
-  // For now, all authenticated users can manage apps (development mode)
+// Check if user is admin of the app's owning organization
+async function requireAppAdmin(c: any, appId: string) {
   const userId = c.get('userId');
   if (!userId) throw new ForbiddenError('Admin access required');
+
+  const app = await getAppById(appId);
+  if (!app) throw new NotFoundError('App');
+
+  // System/global apps (no org) cannot be modified via API
+  if (!app.organizationId) {
+    throw new ForbiddenError('System apps cannot be modified');
+  }
+
+  const isAdmin = await isOrgAdmin(app.organizationId, userId);
+  if (!isAdmin) {
+    throw new ForbiddenError('Only organization admins can manage this app');
+  }
+}
+
+// Check if user is admin of ANY org (for creating new apps)
+async function requireOrgAdminForCreate(c: any, organizationId: string) {
+  const userId = c.get('userId');
+  if (!userId) throw new ForbiddenError('Admin access required');
+
+  const isAdmin = await isOrgAdmin(organizationId, userId);
+  if (!isAdmin) {
+    throw new ForbiddenError('Only organization admins can create apps');
+  }
+}
+
+// Check if user is admin of the org that owns the release's app
+async function requireReleaseAdmin(c: any, releaseId: string) {
+  const userId = c.get('userId');
+  if (!userId) throw new ForbiddenError('Admin access required');
+
+  const release = await db.query.releases.findFirst({
+    where: eq(releases.id, releaseId),
+  });
+  if (!release) throw new NotFoundError('Release');
+
+  // Look up the parent app to check org ownership
+  await requireAppAdmin(c, release.appId);
 }
 
 // Helper to get request metadata
@@ -262,6 +302,7 @@ appStore.get('/updates/:appId/:target/:arch/:currentVersion', async (c) => {
 // POST /api/v1/apps - Create app (admin only)
 const createAppSchema = z.object({
   id: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, 'ID must be lowercase alphanumeric with hyphens'),
+  organizationId: z.string().uuid(),
   name: z.string().min(1).max(100),
   description: z.string().min(1),
   longDescription: z.string().optional(),
@@ -274,9 +315,8 @@ const createAppSchema = z.object({
 });
 
 appStore.post('/apps', requireAuth, zValidator('json', createAppSchema), async (c) => {
-  requireAdmin(c);
-
   const input = c.req.valid('json');
+  await requireOrgAdminForCreate(c, input.organizationId);
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
@@ -309,9 +349,8 @@ const updateAppSchema = z.object({
 });
 
 appStore.put('/apps/:appId', requireAuth, zValidator('json', updateAppSchema), async (c) => {
-  requireAdmin(c);
-
   const appId = c.req.param('appId');
+  await requireAppAdmin(c, appId);
   const input = c.req.valid('json');
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
@@ -335,9 +374,8 @@ appStore.put('/apps/:appId', requireAuth, zValidator('json', updateAppSchema), a
 
 // DELETE /api/v1/apps/:appId - Delete app (admin only)
 appStore.delete('/apps/:appId', requireAuth, async (c) => {
-  requireAdmin(c);
-
   const appId = c.req.param('appId');
+  await requireAppAdmin(c, appId);
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
@@ -369,9 +407,8 @@ const createReleaseSchema = z.object({
 });
 
 appStore.post('/apps/:appId/releases', requireAuth, zValidator('json', createReleaseSchema), async (c) => {
-  requireAdmin(c);
-
   const appId = c.req.param('appId');
+  await requireAppAdmin(c, appId);
   const input = c.req.valid('json');
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
@@ -410,9 +447,8 @@ const updateReleaseSchema = z.object({
 });
 
 appStore.put('/releases/:releaseId', requireAuth, zValidator('json', updateReleaseSchema), async (c) => {
-  requireAdmin(c);
-
   const releaseId = c.req.param('releaseId');
+  await requireReleaseAdmin(c, releaseId);
   const input = c.req.valid('json');
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
@@ -436,9 +472,8 @@ appStore.put('/releases/:releaseId', requireAuth, zValidator('json', updateRelea
 
 // DELETE /api/v1/releases/:releaseId - Delete release (admin only)
 appStore.delete('/releases/:releaseId', requireAuth, async (c) => {
-  requireAdmin(c);
-
   const releaseId = c.req.param('releaseId');
+  await requireReleaseAdmin(c, releaseId);
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
@@ -470,9 +505,8 @@ const createAssetSchema = z.object({
 });
 
 appStore.post('/releases/:releaseId/assets', requireAuth, zValidator('json', createAssetSchema), async (c) => {
-  requireAdmin(c);
-
   const releaseId = c.req.param('releaseId');
+  await requireReleaseAdmin(c, releaseId);
   const input = c.req.valid('json');
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
@@ -497,9 +531,15 @@ appStore.post('/releases/:releaseId/assets', requireAuth, zValidator('json', cre
 
 // DELETE /api/v1/assets/:assetId - Delete release asset (admin only)
 appStore.delete('/assets/:assetId', requireAuth, async (c) => {
-  requireAdmin(c);
-
   const assetId = c.req.param('assetId');
+
+  // Look up asset → release → app to check permissions
+  const asset = await db.query.releaseAssets.findFirst({
+    where: eq(releaseAssets.id, assetId),
+  });
+  if (!asset) throw new NotFoundError('Asset');
+  await requireReleaseAdmin(c, asset.releaseId);
+
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
@@ -546,14 +586,9 @@ appStore.post('/apps/:appId/publish', requireAuth, zValidator('json', publishRel
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
-  // Check app exists
-  const app = await getAppById(appId);
-  if (!app) {
-    throw new NotFoundError('App');
-  }
-
-  // TODO: Check user has permission to publish to this app
-  // For now, any authenticated user can publish (development mode)
+  // Check app exists and user has permission
+  await requireAppAdmin(c, appId);
+  const app = await getAppById(appId)!;
 
   // Normalize version (remove leading 'v' if present for storage)
   const version = input.version.replace(/^v/, '');
@@ -645,9 +680,8 @@ appStore.post('/apps/:appId/publish', requireAuth, zValidator('json', publishRel
 
 // POST /api/v1/apps/:appId/sync - Sync single app from GitHub
 appStore.post('/apps/:appId/sync', requireAuth, async (c) => {
-  requireAdmin(c);
-
   const appId = c.req.param('appId');
+  await requireAppAdmin(c, appId);
   const meta = getRequestMeta(c);
   const userId = c.get('userId');
 
@@ -684,12 +718,22 @@ appStore.post('/apps/:appId/sync', requireAuth, async (c) => {
   return c.json({ result });
 });
 
-// POST /api/v1/sync - Sync all apps from GitHub
+// POST /api/v1/sync - Sync all apps from GitHub (platform admin only)
 appStore.post('/sync', requireAuth, async (c) => {
-  requireAdmin(c);
+  const userId = c.get('userId');
+  // Only the first registered user (platform admin) can sync all apps
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId!),
+  });
+  if (!user) throw new ForbiddenError('Admin access required');
+  const firstUser = await db.query.users.findFirst({
+    orderBy: (users, { asc }) => [asc(users.createdAt)],
+  });
+  if (!firstUser || firstUser.id !== userId) {
+    throw new ForbiddenError('Only platform admins can sync all apps');
+  }
 
   const meta = getRequestMeta(c);
-  const userId = c.get('userId');
 
   const results = await syncAllApps();
 

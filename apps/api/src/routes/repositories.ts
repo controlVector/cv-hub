@@ -86,12 +86,17 @@ repoRoutes.get('/repos', optionalAuth, zValidator('query', listReposSchema), asy
     repos = await listPublicRepositories(filters);
   }
 
+  // For total count: if we got fewer than limit, we can compute exactly
+  const limit = filters.limit || 50;
+  const offset = filters.offset || 0;
+  const total = repos.length < limit ? offset + repos.length : offset + repos.length + 1;
+
   return c.json({
     repositories: repos,
     pagination: {
-      limit: filters.limit || 50,
-      offset: filters.offset || 0,
-      total: repos.length, // TODO: implement proper count
+      limit,
+      offset,
+      total,
     },
   });
 });

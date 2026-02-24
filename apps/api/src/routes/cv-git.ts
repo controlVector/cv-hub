@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import { env } from '../config/env';
 import { db } from '../db';
-import { repositories, apiKeys } from '../db/schema';
+import { repositories, apiKeys, commits } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import {
@@ -462,8 +462,8 @@ cvGitRoutes.get('/repos/:owner/:repo/commits/:sha', optionalAuth, async (c) => {
     // Check database
     const commit = await db.query.commits.findFirst({
       where: and(
-        eq(repositories.id, repository.id),
-        eq(repositories.id, repository.id) // TODO: fix this - need commits table ref
+        eq(commits.repositoryId, repository.id),
+        eq(commits.sha, sha)
       ),
     });
 
