@@ -142,6 +142,62 @@ spec:
                 configMapKeyRef:
                   name: cv-hub-config
                   key: cookie-domain
+            # Stripe
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-secret-key
+            - name: STRIPE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-publishable-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-webhook-secret
+            - name: STRIPE_PRICE_PRO_MONTHLY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-pro-monthly
+            - name: STRIPE_PRICE_PRO_ANNUAL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-pro-annual
+            - name: STRIPE_PRICE_CVSAFE_PRO_ANNUAL
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-cvsafe-pro-annual
+            - name: STRIPE_PORTAL_CONFIG_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-portal-config-id
+            - name: STRIPE_PRICE_MCP_GATEWAY_MONTHLY
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-mcp-gateway-monthly
+            - name: STRIPE_PRICE_CREDITS_500
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-credits-500
+            - name: STRIPE_PRICE_CREDITS_2000
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-credits-2000
+            - name: STRIPE_PRICE_CREDITS_5000
+              valueFrom:
+                secretKeyRef:
+                  name: cv-hub-secrets
+                  key: stripe-price-credits-5000
           resources:
             requests:
               memory: "256Mi"
