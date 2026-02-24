@@ -36,6 +36,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
 import { RepositoryProvider, useRepository } from '../contexts/RepositoryContext';
+import { useAuth } from '../contexts/AuthContext';
 import {
   BranchSelector,
   CodeBrowser,
@@ -146,6 +147,9 @@ function RepositoryDetailContent() {
     navigateToRef,
   } = useRepository();
 
+  const { user } = useAuth();
+  const isPersonalRepo = user?.username === owner;
+
   const [tabValue, setTabValue] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -226,7 +230,7 @@ function RepositoryDetailContent() {
           <Typography
             variant="body2"
             sx={{ color: colors.orange, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
-            onClick={() => navigate(`/dashboard/orgs/${owner}/settings`)}
+            onClick={() => navigate(isPersonalRepo ? '/dashboard' : `/dashboard/orgs/${owner}/settings`)}
           >
             {owner}
           </Typography>
