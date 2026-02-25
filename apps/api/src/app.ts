@@ -44,6 +44,7 @@ import { cliApiRoutes } from './routes/cli-api';
 import { mcpOAuthRoutes } from './routes/mcp-oauth';
 import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
+import { contextEngineRoutes } from './routes/context-engine';
 import { mcpGateway } from './routes/mcp-gateway';
 import { errorHandler } from './utils/errors';
 
@@ -195,6 +196,9 @@ app.route('/mcp', mcpRoutes);
 
 // Executor API (Claude Code agents register, poll, submit results)
 app.route('/api/v1/executors', executorRoutes);
+
+// Context Engine API (knowledge-graph-driven context injection for Claude Code)
+app.route('/api/v1/repos', contextEngineRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 const oidcConfig = {
