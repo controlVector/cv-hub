@@ -7,3 +7,4 @@ export { registerGraphTools } from './graph';
 export { registerSearchTools } from './search';
 export { registerSyncTools } from './sync';
 export { registerExecutorRelayTools } from './executor-relay';
+export { registerContextEngineTools } from './context-engine';
