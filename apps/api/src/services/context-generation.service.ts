@@ -7,12 +7,27 @@ import { db } from '../db';
 import { repositorySummaries } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 import type { GraphManager } from './graph/graph.service';
+import type { ContextConcern } from './context-engine.service';
 
 interface RepoInfo {
   id: string;
   slug: string;
   defaultBranch: string | null;
 }
+
+// ── Concern path filters for Cypher WHERE clauses ─────────────────────
+
+const CONCERN_FILE_FILTERS: Record<string, string> = {
+  deployment:  `AND f.path =~ '.*(Dockerfile|docker-compose|k8s|helm|deploy|infra|\\\\.ya?ml|\\\\.env).*'`,
+  compilation: `AND f.path =~ '.*(package\\\\.json|tsconfig|webpack|vite|esbuild|Makefile|build).*'`,
+  business:    `AND f.path =~ '.*(route|controller|model|service|pricing|billing|safe|board).*'`,
+};
+
+const CONCERN_SYMBOL_FILTERS: Record<string, string> = {
+  deployment:  `AND s.file =~ '.*(Dockerfile|docker-compose|k8s|helm|deploy|infra|\\\\.ya?ml|\\\\.env).*'`,
+  compilation: `AND s.file =~ '.*(package\\\\.json|tsconfig|webpack|vite|esbuild|Makefile|build).*'`,
+  business:    `AND s.file =~ '.*(route|controller|model|service|pricing|billing|safe|board).*'`,
+};
 
 // ── Shared data fetchers ──────────────────────────────────────────────
 
@@ -31,11 +46,12 @@ async function fetchStats(graph: GraphManager) {
   }
 }
 
-async function fetchTopFiles(graph: GraphManager) {
+async function fetchTopFiles(graph: GraphManager, concern?: ContextConcern) {
   try {
+    const extraFilter = (concern && concern !== 'codebase' && CONCERN_FILE_FILTERS[concern]) || '';
     const results = await graph.query(
       `MATCH (f:File)
-       WHERE f.complexity > 0
+       WHERE f.complexity > 0 ${extraFilter}
        RETURN f.path AS path, f.linesOfCode AS linesOfCode, f.complexity AS complexity,
               f.summary AS summary, f.language AS language
        ORDER BY f.complexity DESC
@@ -51,11 +67,12 @@ async function fetchTopFiles(graph: GraphManager) {
   } catch { return []; }
 }
 
-async function fetchTopSymbols(graph: GraphManager) {
+async function fetchTopSymbols(graph: GraphManager, concern?: ContextConcern) {
   try {
+    const extraFilter = (concern && concern !== 'codebase' && CONCERN_SYMBOL_FILTERS[concern]) || '';
     const results = await graph.query(
       `MATCH (s:Symbol)
-       WHERE s.complexity > 0
+       WHERE s.complexity > 0 ${extraFilter}
        RETURN s.qualifiedName AS qualifiedName, s.name AS name, s.kind AS kind,
               s.file AS file, s.complexity AS complexity, s.summary AS summary
        ORDER BY s.complexity DESC
@@ -374,19 +391,22 @@ export interface StructuredContext {
 
 /**
  * Get structured context data (JSON-friendly) for MCP tool responses.
+ * When `concern` is set, fetchTopFiles and fetchTopSymbols apply concern-specific
+ * path filters (e.g. deployment concern includes Dockerfiles/k8s even if low complexity).
  */
 export async function getStructuredContext(
   repo: RepoInfo,
   ownerSlug: string,
   repoSlug: string,
-  graph: GraphManager
+  graph: GraphManager,
+  concern?: ContextConcern,
 ): Promise<StructuredContext> {
   const summaryRecord = await fetchSummary(repo.id);
 
   const [stats, topFiles, topSymbols, languages, modules, deps, recentCommits, deadCode, hotspots] = await Promise.all([
     fetchStats(graph),
-    fetchTopFiles(graph),
-    fetchTopSymbols(graph),
+    fetchTopFiles(graph, concern),
+    fetchTopSymbols(graph, concern),
     fetchLanguages(graph),
     fetchModules(graph),
     fetchDependencyMap(graph),
