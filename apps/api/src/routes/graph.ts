@@ -724,4 +724,28 @@ graphRoutes.get('/:owner/:repo/graph/impact/:qualifiedName', optionalAuth, async
   }
 });
 
+/**
+ * GET /context
+ * Get structured AI-generated context (summary, architecture, key files/symbols, etc.)
+ */
+graphRoutes.get('/:owner/:repo/graph/context', optionalAuth, async (c) => {
+  const { owner, repo } = c.req.param();
+  const userId = c.get('userId') ?? null;
+
+  const repository = await getRepository(owner, repo, userId);
+  if (!repository) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  try {
+    const { getStructuredContext } = await import('../services/context-generation.service');
+    const graph = await getGraphManager(repository.id);
+    const ownerSlug = repository.organization?.slug || repository.owner?.username || owner;
+    const context = await getStructuredContext(repository, ownerSlug, repository.slug, graph);
+    return c.json({ success: true, data: context });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default graphRoutes;

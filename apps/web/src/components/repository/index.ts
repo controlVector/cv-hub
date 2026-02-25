@@ -17,3 +17,4 @@ export { GraphCanvas } from './GraphCanvas';
 export { NodeDetailPanel } from './NodeDetailPanel';
 export { TimelineView } from './TimelineView';
 export { ImpactAnalysis } from './ImpactAnalysis';
+export { ContextOverview } from './ContextOverview';

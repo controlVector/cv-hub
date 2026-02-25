@@ -1093,18 +1093,59 @@ export async function hashObject(
 }
 
 /**
- * Commit a single file to a branch in a bare repo using git plumbing.
+ * Parse ls-tree output into structured entries
+ */
+function parseTreeEntries(output: string): Array<{ mode: string; type: string; sha: string; name: string }> {
+  return output.split('\n').filter(Boolean).map(line => {
+    const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
+    if (!match) return null;
+    return { mode: match[1], type: match[2], sha: match[3], name: match[4] };
+  }).filter(Boolean) as Array<{ mode: string; type: string; sha: string; name: string }>;
+}
+
+/**
+ * Build a modified tree: take an existing tree's entries, replace/add one entry,
+ * and create a new tree object via mktree.
+ */
+async function buildModifiedTree(
+  repoPath: string,
+  existingTreeSha: string | null,
+  entryName: string,
+  entryMode: string,
+  entryType: string,
+  entrySha: string
+): Promise<string> {
+  let entries: Array<{ mode: string; type: string; sha: string; name: string }> = [];
+
+  if (existingTreeSha) {
+    const output = await execGit(repoPath, ['ls-tree', existingTreeSha]);
+    entries = parseTreeEntries(output);
+  }
+
+  // Replace or add the entry
+  let replaced = false;
+  const newEntries = entries.map(e => {
+    if (e.name === entryName) {
+      replaced = true;
+      return { mode: entryMode, type: entryType, sha: entrySha, name: entryName };
+    }
+    return e;
+  });
+
+  if (!replaced) {
+    newEntries.push({ mode: entryMode, type: entryType, sha: entrySha, name: entryName });
+  }
+
+  const treeInput = newEntries.map(e => `${e.mode} ${e.type} ${e.sha}\t${e.name}`).join('\n') + '\n';
+  return (await execGitWithStdin(repoPath, ['mktree'], treeInput)).trim();
+}
+
+/**
+ * Commit one or more files to a branch in a bare repo using git plumbing.
+ * Supports nested paths (e.g. `docs/arch/CLAUDE.md`).
  * No worktree needed — safe for concurrent access.
  *
- * Steps:
- *  1. hash-object → blobHash
- *  2. ls-tree <ref> → existing tree entries
- *  3. Replace/add entry for filePath with new blobHash
- *  4. mktree → treeHash
- *  5. commit-tree treeHash -p <ref> -m message → commitHash
- *  6. update-ref refs/heads/<branch> commitHash
- *
- * Returns the new commit SHA, or null if content is unchanged (idempotent).
+ * Returns the new commit SHA, or null if all content is unchanged (idempotent).
  */
 export async function commitFileToRef(
   ownerSlug: string,
@@ -1119,14 +1160,11 @@ export async function commitFileToRef(
   const branch = ref.replace(/^refs\/heads\//, '');
 
   // 1. Create blob
-  const blobHash = await execGitWithStdin(
-    repoPath,
-    ['hash-object', '-w', '--stdin'],
-    content
-  );
-  const newBlobSha = blobHash.trim();
+  const newBlobSha = (await execGitWithStdin(
+    repoPath, ['hash-object', '-w', '--stdin'], content
+  )).trim();
 
-  // 2. Get current tree at ref
+  // 2. Resolve branch ref
   let refSha: string;
   try {
     refSha = (await execGit(repoPath, ['rev-parse', `refs/heads/${branch}`])).trim();
@@ -1134,64 +1172,75 @@ export async function commitFileToRef(
     throw new Error(`Branch '${branch}' does not exist`);
   }
 
-  const currentTree = await execGit(repoPath, ['ls-tree', refSha]);
+  // 3. Idempotency check — see if the file already has this blob SHA
+  try {
+    const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', filePath]);
+    const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
+    if (match && match[2] === newBlobSha) {
+      return null; // Content unchanged
+    }
+  } catch {
+    // File doesn't exist yet — that's fine
+  }
 
-  // 3. Check if file already exists with same content (idempotent)
-  const existingEntry = currentTree.split('\n').find(line => {
-    const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
-    return match && match[4] === filePath;
-  });
+  // 4. Build tree hierarchy bottom-up for nested paths
+  const parts = filePath.split('/');
+  const fileName = parts.pop()!;
 
-  if (existingEntry) {
-    const match = existingEntry.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
-    if (match && match[3] === newBlobSha) {
-      // Content unchanged — skip commit
-      return null;
+  // Walk down the existing tree to find SHA for each directory level
+  const dirShas: (string | null)[] = [];
+  let currentTreeSha: string = refSha;
+
+  // Resolve each intermediate directory's tree SHA
+  for (const dir of parts) {
+    try {
+      const output = await execGit(repoPath, ['ls-tree', currentTreeSha, '--', dir]);
+      const match = output.match(/^(\d+)\s+tree\s+([a-f0-9]+)\t/);
+      if (match) {
+        dirShas.push(match[2]);
+        currentTreeSha = match[2];
+      } else {
+        dirShas.push(null); // Directory doesn't exist yet
+        currentTreeSha = ''; // Can't walk further
+      }
+    } catch {
+      dirShas.push(null);
+      currentTreeSha = '';
     }
   }
 
-  // 4. Build new tree entries (replace or add the file)
-  const treeLines: string[] = [];
-  let replaced = false;
+  // Build trees bottom-up: start with the innermost directory
+  let childSha = newBlobSha;
+  let childType = 'blob';
+  let childMode = '100644';
+  let childName = fileName;
 
-  for (const line of currentTree.split('\n').filter(Boolean)) {
-    const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
-    if (match && match[4] === filePath) {
-      // Replace existing entry
-      treeLines.push(`100644 blob ${newBlobSha}\t${filePath}`);
-      replaced = true;
-    } else if (line.trim()) {
-      treeLines.push(line);
-    }
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const parentTreeSha = dirShas[i];
+    childSha = await buildModifiedTree(repoPath, parentTreeSha, childName, childMode, childType, childSha);
+    childName = parts[i];
+    childType = 'tree';
+    childMode = '040000';
   }
 
-  if (!replaced) {
-    treeLines.push(`100644 blob ${newBlobSha}\t${filePath}`);
-  }
+  // Build the root tree
+  const newRootTree = await buildModifiedTree(repoPath, refSha, childName, childMode, childType, childSha);
 
-  // 5. Create new tree
-  const treeInput = treeLines.join('\n') + '\n';
-  const treeHash = (await execGitWithStdin(repoPath, ['mktree'], treeInput)).trim();
-
-  // 6. Create commit
-  const now = new Date();
-  const timestamp = Math.floor(now.getTime() / 1000);
-  const tz = '+0000';
-
+  // 5. Create commit
+  const timestamp = Math.floor(Date.now() / 1000);
   const gitEnv = {
     GIT_AUTHOR_NAME: author.name,
     GIT_AUTHOR_EMAIL: author.email,
-    GIT_AUTHOR_DATE: `${timestamp} ${tz}`,
+    GIT_AUTHOR_DATE: `${timestamp} +0000`,
     GIT_COMMITTER_NAME: author.name,
     GIT_COMMITTER_EMAIL: author.email,
-    GIT_COMMITTER_DATE: `${timestamp} ${tz}`,
+    GIT_COMMITTER_DATE: `${timestamp} +0000`,
   };
 
-  // Use commit-tree with environment variables for author/committer
   const commitHash = await new Promise<string>((resolve, reject) => {
     const proc = spawn(
       'git',
-      ['commit-tree', treeHash, '-p', refSha, '-m', message],
+      ['commit-tree', newRootTree, '-p', refSha, '-m', message],
       { cwd: repoPath, env: { ...process.env, ...gitEnv } }
     );
     let stdout = '';
@@ -1205,8 +1254,135 @@ export async function commitFileToRef(
     proc.on('error', reject);
   });
 
-  // 7. Update branch ref
+  // 6. Update branch ref
   await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
 
+  return commitHash;
+}
+
+/**
+ * Commit multiple files in a single commit to a branch in a bare repo.
+ * Supports nested paths. Returns commit SHA or null if all unchanged.
+ */
+export async function commitFilesToRef(
+  ownerSlug: string,
+  repoSlug: string,
+  ref: string,
+  files: Array<{ path: string; content: string }>,
+  message: string,
+  author: { name: string; email: string }
+): Promise<string | null> {
+  const repoPath = getRepoPath(ownerSlug, repoSlug);
+  const branch = ref.replace(/^refs\/heads\//, '');
+
+  // Resolve branch ref
+  let refSha: string;
+  try {
+    refSha = (await execGit(repoPath, ['rev-parse', `refs/heads/${branch}`])).trim();
+  } catch {
+    throw new Error(`Branch '${branch}' does not exist`);
+  }
+
+  // Create blobs and check for changes
+  const blobEntries: Array<{ path: string; sha: string }> = [];
+  let hasChanges = false;
+
+  for (const file of files) {
+    const blobSha = (await execGitWithStdin(
+      repoPath, ['hash-object', '-w', '--stdin'], file.content
+    )).trim();
+
+    // Check if content changed
+    try {
+      const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', file.path]);
+      const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
+      if (!match || match[2] !== blobSha) {
+        hasChanges = true;
+      }
+    } catch {
+      hasChanges = true; // File doesn't exist yet
+    }
+
+    blobEntries.push({ path: file.path, sha: blobSha });
+  }
+
+  if (!hasChanges) {
+    return null; // All files unchanged
+  }
+
+  // Use read-tree + update-index approach via mktree for multiple files
+  // Build the complete tree by applying each file change sequentially
+  let currentRootSha = refSha;
+
+  for (const entry of blobEntries) {
+    const parts = entry.path.split('/');
+    const fileName = parts.pop()!;
+
+    // Walk down to find existing directory SHAs
+    const dirShas: (string | null)[] = [];
+    let walkSha: string = currentRootSha;
+
+    for (const dir of parts) {
+      try {
+        const output = await execGit(repoPath, ['ls-tree', walkSha, '--', dir]);
+        const match = output.match(/^(\d+)\s+tree\s+([a-f0-9]+)\t/);
+        if (match) {
+          dirShas.push(match[2]);
+          walkSha = match[2];
+        } else {
+          dirShas.push(null);
+          walkSha = '';
+        }
+      } catch {
+        dirShas.push(null);
+        walkSha = '';
+      }
+    }
+
+    // Build bottom-up
+    let childSha = entry.sha;
+    let childType = 'blob';
+    let childMode = '100644';
+    let childName = fileName;
+
+    for (let i = parts.length - 1; i >= 0; i--) {
+      childSha = await buildModifiedTree(repoPath, dirShas[i], childName, childMode, childType, childSha);
+      childName = parts[i];
+      childType = 'tree';
+      childMode = '040000';
+    }
+
+    currentRootSha = await buildModifiedTree(repoPath, currentRootSha, childName, childMode, childType, childSha);
+  }
+
+  // Create commit
+  const timestamp = Math.floor(Date.now() / 1000);
+  const gitEnv = {
+    GIT_AUTHOR_NAME: author.name,
+    GIT_AUTHOR_EMAIL: author.email,
+    GIT_AUTHOR_DATE: `${timestamp} +0000`,
+    GIT_COMMITTER_NAME: author.name,
+    GIT_COMMITTER_EMAIL: author.email,
+    GIT_COMMITTER_DATE: `${timestamp} +0000`,
+  };
+
+  const commitHash = await new Promise<string>((resolve, reject) => {
+    const proc = spawn(
+      'git',
+      ['commit-tree', currentRootSha, '-p', refSha, '-m', message],
+      { cwd: repoPath, env: { ...process.env, ...gitEnv } }
+    );
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+    proc.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`git commit-tree failed: ${stderr || stdout}`));
+    });
+    proc.on('error', reject);
+  });
+
+  await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
   return commitHash;
 }

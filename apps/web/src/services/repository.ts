@@ -549,6 +549,33 @@ export async function getRepositorySummaryApi(
 }
 
 /**
+ * Structured context from the knowledge graph (CLAUDE.md-style data)
+ */
+export interface RepoContext {
+  summary: string | null;
+  technologies: string[];
+  entryPoints: string[];
+  keyPatterns: string[];
+  stats: { fileCount: number; symbolCount: number; commitCount: number; moduleCount: number };
+  topFiles: Array<{ path: string; linesOfCode: number; complexity: number; summary: string }>;
+  topSymbols: Array<{ name: string; kind: string; file: string; complexity: number; summary: string }>;
+  languages: Array<{ language: string; count: number }>;
+  modules: Array<{ path: string; fileCount: number }>;
+  dependencies: Array<{ from: string; to: string; weight: number }>;
+  recentCommits: Array<{ sha: string; message: string; author: string; filesChanged: number; files: string[] }>;
+  deadCode: Array<{ name: string; kind: string; file: string; complexity: number }>;
+  complexityHotspots: Array<{ path: string; complexity: number; linesOfCode: number; density: number }>;
+}
+
+export async function getRepoContext(
+  owner: string,
+  repo: string,
+): Promise<RepoContext | null> {
+  const response = await api.get(`/v1/repos/${owner}/${repo}/graph/context`);
+  return response.data.data;
+}
+
+/**
  * Get file timeline
  */
 export async function getFileTimeline(

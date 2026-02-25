@@ -28,6 +28,8 @@ import {
   Search,
   Refresh,
   AutoAwesome as AIIcon,
+  Description,
+  BubbleChart,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -36,8 +38,10 @@ import { getArchitectureViz, getHeatmapViz, getRepositorySummaryApi, triggerGrap
 import type { VizData, VizNode } from '../../services/repository';
 import GraphCanvas, { type ColorMode } from './GraphCanvas';
 import NodeDetailPanel from './NodeDetailPanel';
+import ContextOverview from './ContextOverview';
 
 type ViewMode = 'dependencies' | 'calls' | 'modules' | 'complexity';
+type ArchView = 'graph' | 'context';
 
 const VIEW_MODES: { value: ViewMode; label: string; icon: React.ReactNode; description: string }[] = [
   { value: 'dependencies', label: 'Dependencies', icon: <AccountTree sx={{ fontSize: 16 }} />, description: 'File import relationships' },
@@ -53,6 +57,7 @@ interface ArchitectureTabProps {
 
 export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
   const navigate = useNavigate();
+  const [archView, setArchView] = useState<ArchView>('context');
   const [viewMode, setViewMode] = useState<ViewMode>('dependencies');
   const [colorMode, setColorMode] = useState<ColorMode>('default');
   const [selectedNode, setSelectedNode] = useState<VizNode | null>(null);
@@ -148,46 +153,64 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {/* Repo Summary */}
-      {repoSummary && (
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 2,
-            backgroundColor: 'rgba(139, 92, 246, 0.05)',
-            border: `1px solid ${colors.navyLighter}`,
-          }}
+      {/* Top-level view toggle: Context Overview vs Graph Visualization */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <ToggleButtonGroup
+          value={archView}
+          exclusive
+          onChange={(_, val) => val && setArchView(val)}
+          size="small"
+          sx={{ '& .MuiToggleButton-root': { textTransform: 'none', px: 2, py: 0.5 } }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-            <AIIcon sx={{ fontSize: 14, color: colors.orange }} />
-            <Typography variant="caption" sx={{ fontWeight: 600, color: colors.textMuted }}>
-              AI Repository Summary
-            </Typography>
-          </Box>
-          <Typography variant="body2" sx={{ fontSize: '0.85rem', lineHeight: 1.6, mb: 1 }}>
-            {repoSummary.summary}
-          </Typography>
-          {repoSummary.technologies?.length > 0 && (
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-              {repoSummary.technologies.map((tech: string) => (
-                <Chip key={tech} label={tech} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />
-              ))}
+          <ToggleButton value="context">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Description sx={{ fontSize: 16 }} />
+              <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>Context</Typography>
             </Box>
-          )}
-        </Box>
-      )}
+          </ToggleButton>
+          <ToggleButton value="graph">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <BubbleChart sx={{ fontSize: 16 }} />
+              <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>Graph</Typography>
+            </Box>
+          </ToggleButton>
+        </ToggleButtonGroup>
 
-      {/* Error state */}
-      {vizError && (
-        <Alert severity="error" sx={{ mb: 1 }}>
-          Failed to load graph data{vizErrorDetail instanceof Error ? `: ${vizErrorDetail.message}` : ''}
-        </Alert>
-      )}
+        <Box sx={{ flex: 1 }} />
+
+        {/* Sync button (always visible) */}
+        <Tooltip title="Sync Graph">
+          <IconButton size="small" onClick={handleSyncGraph} aria-label="Sync graph">
+            <Refresh sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {/* Sync feedback */}
       {syncMessage && (
         <Alert severity={syncMessage.type} onClose={() => setSyncMessage(null)}>
           {syncMessage.text}
+        </Alert>
+      )}
+
+      {/* Context Overview View */}
+      {archView === 'context' && (
+        <ContextOverview
+          owner={owner}
+          repo={repo}
+          onNavigateToFile={(path) => {
+            navigate(`/dashboard/repositories/${owner}/${repo}/blob/main/${path}`);
+          }}
+        />
+      )}
+
+      {/* Graph Visualization View */}
+      {archView === 'graph' && <>
+
+      {/* Error state */}
+      {vizError && (
+        <Alert severity="error" sx={{ mb: 1 }}>
+          Failed to load graph data{vizErrorDetail instanceof Error ? `: ${vizErrorDetail.message}` : ''}
         </Alert>
       )}
 
@@ -288,13 +311,6 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
             />
           </Box>
         )}
-
-        {/* Sync button */}
-        <Tooltip title="Sync Graph">
-          <IconButton size="small" onClick={handleSyncGraph} aria-label="Sync graph">
-            <Refresh sx={{ fontSize: 18 }} />
-          </IconButton>
-        </Tooltip>
       </Box>
 
       {/* Graph + Detail Panel */}
@@ -319,6 +335,8 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
           />
         )}
       </Box>
+
+      </>}
     </Box>
   );
 }

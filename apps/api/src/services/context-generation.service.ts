@@ -14,6 +14,180 @@ interface RepoInfo {
   defaultBranch: string | null;
 }
 
+// ── Shared data fetchers ──────────────────────────────────────────────
+
+async function fetchSummary(repoId: string) {
+  return db.query.repositorySummaries.findFirst({
+    where: eq(repositorySummaries.repositoryId, repoId),
+    orderBy: desc(repositorySummaries.createdAt),
+  });
+}
+
+async function fetchStats(graph: GraphManager) {
+  try {
+    return await graph.getStats();
+  } catch {
+    return { fileCount: 0, symbolCount: 0, commitCount: 0, moduleCount: 0, functionCount: 0, classCount: 0, relationshipCount: 0 };
+  }
+}
+
+async function fetchTopFiles(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (f:File)
+       WHERE f.complexity > 0
+       RETURN f.path AS path, f.linesOfCode AS linesOfCode, f.complexity AS complexity,
+              f.summary AS summary, f.language AS language
+       ORDER BY f.complexity DESC
+       LIMIT 15`
+    );
+    return results.map((r: any) => ({
+      path: r.path || '',
+      linesOfCode: r.linesOfCode || 0,
+      complexity: r.complexity || 0,
+      summary: r.summary || '',
+      language: r.language || '',
+    }));
+  } catch { return []; }
+}
+
+async function fetchTopSymbols(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (s:Symbol)
+       WHERE s.complexity > 0
+       RETURN s.qualifiedName AS qualifiedName, s.name AS name, s.kind AS kind,
+              s.file AS file, s.complexity AS complexity, s.summary AS summary
+       ORDER BY s.complexity DESC
+       LIMIT 15`
+    );
+    return results.map((r: any) => ({
+      qualifiedName: r.qualifiedName || '',
+      name: r.name || '',
+      kind: r.kind || '',
+      file: r.file || '',
+      complexity: r.complexity || 0,
+      summary: r.summary || '',
+    }));
+  } catch { return []; }
+}
+
+async function fetchModules(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (m:Module)-[:CONTAINS]->(f:File)
+       WITH m.path AS path, count(f) AS fileCount
+       WHERE NOT path CONTAINS '/'
+       RETURN path, fileCount
+       ORDER BY fileCount DESC
+       LIMIT 20`
+    );
+    return results.map((r: any) => ({
+      path: r.path || '',
+      fileCount: typeof r.fileCount === 'number' ? r.fileCount : 0,
+    }));
+  } catch { return []; }
+}
+
+async function fetchLanguages(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (f:File)
+       WHERE f.language IS NOT NULL AND f.language <> 'unknown'
+       RETURN f.language AS language, count(f) AS count
+       ORDER BY count DESC
+       LIMIT 10`
+    );
+    return results.map((r: any) => ({
+      language: r.language || '',
+      count: typeof r.count === 'number' ? r.count : 0,
+    }));
+  } catch { return []; }
+}
+
+async function fetchRecentCommits(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (c:Commit)
+       WHERE c.message IS NOT NULL
+       OPTIONAL MATCH (c)-[:MODIFIES]->(f:File)
+       WITH c, collect(f.path)[0..5] AS files
+       RETURN c.sha AS sha, c.message AS message, c.author AS author,
+              c.timestamp AS timestamp, c.filesChanged AS filesChanged, files
+       ORDER BY c.timestamp DESC
+       LIMIT 10`
+    );
+    return results.map((r: any) => ({
+      sha: (r.sha || '').slice(0, 8),
+      message: (r.message || '').split('\n')[0].slice(0, 80),
+      author: r.author || '',
+      filesChanged: r.filesChanged || 0,
+      files: (r.files || []) as string[],
+    }));
+  } catch { return []; }
+}
+
+async function fetchDependencyMap(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (a:File)-[:IMPORTS]->(b:File)
+       WITH split(a.path, '/')[0] AS fromModule, split(b.path, '/')[0] AS toModule
+       WHERE fromModule <> toModule
+       RETURN fromModule, toModule, count(*) AS weight
+       ORDER BY weight DESC
+       LIMIT 20`
+    );
+    return results.map((r: any) => ({
+      from: r.fromModule || '',
+      to: r.toModule || '',
+      weight: typeof r.weight === 'number' ? r.weight : 0,
+    }));
+  } catch { return []; }
+}
+
+async function fetchDeadCode(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (s:Symbol)
+       WHERE s.kind IN ['function', 'method'] AND s.visibility <> 'private'
+       AND NOT EXISTS { MATCH ()-[:CALLS]->(s) }
+       AND NOT s.name STARTS WITH '_'
+       AND NOT s.name = 'constructor'
+       RETURN s.name AS name, s.kind AS kind, s.file AS file, s.complexity AS complexity
+       ORDER BY s.complexity DESC
+       LIMIT 10`
+    );
+    return results.map((r: any) => ({
+      name: r.name || '',
+      kind: r.kind || '',
+      file: r.file || '',
+      complexity: r.complexity || 0,
+    }));
+  } catch { return []; }
+}
+
+async function fetchComplexityHotspots(graph: GraphManager) {
+  try {
+    const results = await graph.query(
+      `MATCH (f:File)
+       WHERE f.complexity > 0 AND f.linesOfCode > 0
+       WITH f, f.complexity * 1.0 / f.linesOfCode AS density
+       RETURN f.path AS path, f.complexity AS complexity, f.linesOfCode AS linesOfCode,
+              round(density * 1000) / 1000.0 AS density
+       ORDER BY density DESC
+       LIMIT 10`
+    );
+    return results.map((r: any) => ({
+      path: r.path || '',
+      complexity: r.complexity || 0,
+      linesOfCode: r.linesOfCode || 0,
+      density: r.density || 0,
+    }));
+  } catch { return []; }
+}
+
+// ── CLAUDE.md generator ───────────────────────────────────────────────
+
 /**
  * Generate CLAUDE.md content from graph data and repository summaries.
  * Returns the markdown string, or null if no summary data is available.
@@ -24,108 +198,24 @@ export async function generateClaudeMd(
   repoSlug: string,
   graph: GraphManager
 ): Promise<string | null> {
-  // Fetch latest repository summary
-  const summary = await db.query.repositorySummaries.findFirst({
-    where: eq(repositorySummaries.repositoryId, repo.id),
-    orderBy: desc(repositorySummaries.createdAt),
-  });
+  const summary = await fetchSummary(repo.id);
+  if (!summary) return null;
 
-  if (!summary) {
-    return null; // No AI summary available — skip
-  }
+  // Fetch all data in parallel
+  const [stats, topFiles, topSymbols, modules, languages, recentCommits, deps, deadCode, hotspots] = await Promise.all([
+    fetchStats(graph),
+    fetchTopFiles(graph),
+    fetchTopSymbols(graph),
+    fetchModules(graph),
+    fetchLanguages(graph),
+    fetchRecentCommits(graph),
+    fetchDependencyMap(graph),
+    fetchDeadCode(graph),
+    fetchComplexityHotspots(graph),
+  ]);
 
-  // Fetch graph stats
-  let stats = { fileCount: 0, symbolCount: 0, commitCount: 0, moduleCount: 0, functionCount: 0, classCount: 0, relationshipCount: 0 };
-  try {
-    stats = await graph.getStats();
-  } catch {
-    // Graph might be empty
-  }
-
-  // Fetch top 15 files by complexity
-  let topFiles: Array<{ path: string; linesOfCode: number; complexity: number; summary: string; language: string }> = [];
-  try {
-    const fileResults = await graph.query(
-      `MATCH (f:File)
-       WHERE f.complexity > 0
-       RETURN f.path AS path, f.linesOfCode AS linesOfCode, f.complexity AS complexity,
-              f.summary AS summary, f.language AS language
-       ORDER BY f.complexity DESC
-       LIMIT 15`
-    );
-    topFiles = fileResults.map((r: any) => ({
-      path: r.path || '',
-      linesOfCode: r.linesOfCode || 0,
-      complexity: r.complexity || 0,
-      summary: r.summary || '',
-      language: r.language || '',
-    }));
-  } catch {
-    // Graph query failed
-  }
-
-  // Fetch top 15 symbols by complexity
-  let topSymbols: Array<{ qualifiedName: string; name: string; kind: string; file: string; complexity: number; summary: string }> = [];
-  try {
-    const symbolResults = await graph.query(
-      `MATCH (s:Symbol)
-       WHERE s.complexity > 0
-       RETURN s.qualifiedName AS qualifiedName, s.name AS name, s.kind AS kind,
-              s.file AS file, s.complexity AS complexity, s.summary AS summary
-       ORDER BY s.complexity DESC
-       LIMIT 15`
-    );
-    topSymbols = symbolResults.map((r: any) => ({
-      qualifiedName: r.qualifiedName || '',
-      name: r.name || '',
-      kind: r.kind || '',
-      file: r.file || '',
-      complexity: r.complexity || 0,
-      summary: r.summary || '',
-    }));
-  } catch {
-    // Graph query failed
-  }
-
-  // Fetch module/directory structure
-  let modules: Array<{ path: string; fileCount: number }> = [];
-  try {
-    const moduleResults = await graph.query(
-      `MATCH (m:Module)-[:CONTAINS]->(f:File)
-       WITH m.path AS path, count(f) AS fileCount
-       WHERE NOT path CONTAINS '/'
-       RETURN path, fileCount
-       ORDER BY fileCount DESC
-       LIMIT 20`
-    );
-    modules = moduleResults.map((r: any) => ({
-      path: r.path || '',
-      fileCount: typeof r.fileCount === 'number' ? r.fileCount : 0,
-    }));
-  } catch {
-    // Graph query failed
-  }
-
-  // Fetch language breakdown from file nodes
-  let languages: Array<{ language: string; count: number }> = [];
-  try {
-    const langResults = await graph.query(
-      `MATCH (f:File)
-       WHERE f.language IS NOT NULL AND f.language <> 'unknown'
-       RETURN f.language AS language, count(f) AS count
-       ORDER BY count DESC
-       LIMIT 10`
-    );
-    languages = langResults.map((r: any) => ({
-      language: r.language || '',
-      count: typeof r.count === 'number' ? r.count : 0,
-    }));
-  } catch {
-    // Graph query failed
-  }
-
-  // Assemble the markdown
   const lines: string[] = [];
+  const esc = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
 
   lines.push('# CLAUDE.md — Auto-generated by CV-Hub');
   lines.push('');
@@ -141,9 +231,7 @@ export async function generateClaudeMd(
   const techs = (summary.technologies as string[] | null) || [];
   if (techs.length > 0) {
     lines.push('## Technologies');
-    for (const tech of techs) {
-      lines.push(`- ${tech}`);
-    }
+    for (const tech of techs) lines.push(`- ${tech}`);
     lines.push('');
   }
 
@@ -151,9 +239,7 @@ export async function generateClaudeMd(
   const entryPoints = (summary.entryPoints as string[] | null) || [];
   if (entryPoints.length > 0) {
     lines.push('## Entry Points');
-    for (const ep of entryPoints) {
-      lines.push(`- ${ep}`);
-    }
+    for (const ep of entryPoints) lines.push(`- ${ep}`);
     lines.push('');
   }
 
@@ -161,9 +247,7 @@ export async function generateClaudeMd(
   const patterns = (summary.keyPatterns as string[] | null) || [];
   if (patterns.length > 0) {
     lines.push('## Architecture Patterns');
-    for (const p of patterns) {
-      lines.push(`- ${p}`);
-    }
+    for (const p of patterns) lines.push(`- ${p}`);
     lines.push('');
   }
 
@@ -171,8 +255,7 @@ export async function generateClaudeMd(
   lines.push('## Repository Stats');
   lines.push(`- ${stats.fileCount} files, ${stats.symbolCount} symbols, ${stats.commitCount} commits`);
   if (languages.length > 0) {
-    const langStr = languages.map(l => `${l.language} (${l.count})`).join(', ');
-    lines.push(`- Languages: ${langStr}`);
+    lines.push(`- Languages: ${languages.map(l => `${l.language} (${l.count})`).join(', ')}`);
   }
   lines.push('');
 
@@ -182,8 +265,7 @@ export async function generateClaudeMd(
     lines.push('| File | LOC | Complexity | Summary |');
     lines.push('|------|-----|------------|---------|');
     for (const f of topFiles) {
-      const summaryText = f.summary ? f.summary.replace(/\|/g, '\\|').replace(/\n/g, ' ') : '';
-      lines.push(`| ${f.path} | ${f.linesOfCode} | ${f.complexity} | ${summaryText} |`);
+      lines.push(`| ${f.path} | ${f.linesOfCode} | ${f.complexity} | ${esc(f.summary)} |`);
     }
     lines.push('');
   }
@@ -194,8 +276,7 @@ export async function generateClaudeMd(
     lines.push('| Symbol | Kind | File | Complexity | Summary |');
     lines.push('|--------|------|------|------------|---------|');
     for (const s of topSymbols) {
-      const summaryText = s.summary ? s.summary.replace(/\|/g, '\\|').replace(/\n/g, ' ') : '';
-      lines.push(`| ${s.name} | ${s.kind} | ${s.file} | ${s.complexity} | ${summaryText} |`);
+      lines.push(`| ${s.name} | ${s.kind} | ${s.file} | ${s.complexity} | ${esc(s.summary)} |`);
     }
     lines.push('');
   }
@@ -203,8 +284,53 @@ export async function generateClaudeMd(
   // Directory Structure
   if (modules.length > 0) {
     lines.push('## Directory Structure');
-    for (const m of modules) {
-      lines.push(`- \`${m.path}/\` — ${m.fileCount} files`);
+    for (const m of modules) lines.push(`- \`${m.path}/\` — ${m.fileCount} files`);
+    lines.push('');
+  }
+
+  // Module Dependencies
+  if (deps.length > 0) {
+    lines.push('## Module Dependencies');
+    lines.push('Top cross-module import relationships:');
+    lines.push('');
+    for (const d of deps) {
+      lines.push(`- \`${d.from}/\` → \`${d.to}/\` (${d.weight} imports)`);
+    }
+    lines.push('');
+  }
+
+  // Complexity Hotspots
+  if (hotspots.length > 0) {
+    lines.push('## Complexity Hotspots');
+    lines.push('Files with highest complexity density (complexity / LOC):');
+    lines.push('');
+    lines.push('| File | Complexity | LOC | Density |');
+    lines.push('|------|------------|-----|---------|');
+    for (const h of hotspots) {
+      lines.push(`| ${h.path} | ${h.complexity} | ${h.linesOfCode} | ${h.density} |`);
+    }
+    lines.push('');
+  }
+
+  // Dead Code Candidates
+  if (deadCode.length > 0) {
+    lines.push('## Dead Code Candidates');
+    lines.push('Public functions/methods with no callers in the graph:');
+    lines.push('');
+    lines.push('| Symbol | Kind | File | Complexity |');
+    lines.push('|--------|------|------|------------|');
+    for (const d of deadCode) {
+      lines.push(`| ${d.name} | ${d.kind} | ${d.file} | ${d.complexity} |`);
+    }
+    lines.push('');
+  }
+
+  // Recent Changes
+  if (recentCommits.length > 0) {
+    lines.push('## Recent Changes');
+    for (const c of recentCommits) {
+      const filesStr = c.files.length > 0 ? ` (${c.files.join(', ')})` : '';
+      lines.push(`- \`${c.sha}\` ${esc(c.message)}${filesStr}`);
     }
     lines.push('');
   }
@@ -228,16 +354,9 @@ export async function generateClaudeMd(
   return lines.join('\n');
 }
 
-/**
- * Get structured context data (JSON-friendly) for MCP tool responses.
- * Returns the same data as CLAUDE.md but as a structured object.
- */
-export async function getStructuredContext(
-  repo: RepoInfo,
-  ownerSlug: string,
-  repoSlug: string,
-  graph: GraphManager
-): Promise<{
+// ── Structured context (for MCP tools) ────────────────────────────────
+
+export interface StructuredContext {
   summary: string | null;
   technologies: string[];
   entryPoints: string[];
@@ -247,81 +366,34 @@ export async function getStructuredContext(
   topSymbols: Array<{ name: string; kind: string; file: string; complexity: number; summary: string }>;
   languages: Array<{ language: string; count: number }>;
   modules: Array<{ path: string; fileCount: number }>;
-}> {
-  // Fetch latest repository summary
-  const summaryRecord = await db.query.repositorySummaries.findFirst({
-    where: eq(repositorySummaries.repositoryId, repo.id),
-    orderBy: desc(repositorySummaries.createdAt),
-  });
+  dependencies: Array<{ from: string; to: string; weight: number }>;
+  recentCommits: Array<{ sha: string; message: string; author: string; filesChanged: number; files: string[] }>;
+  deadCode: Array<{ name: string; kind: string; file: string; complexity: number }>;
+  complexityHotspots: Array<{ path: string; complexity: number; linesOfCode: number; density: number }>;
+}
 
-  // Fetch graph stats
-  let stats = { fileCount: 0, symbolCount: 0, commitCount: 0, moduleCount: 0, functionCount: 0, classCount: 0, relationshipCount: 0 };
-  try {
-    stats = await graph.getStats();
-  } catch {
-    // Graph might be empty
-  }
+/**
+ * Get structured context data (JSON-friendly) for MCP tool responses.
+ */
+export async function getStructuredContext(
+  repo: RepoInfo,
+  ownerSlug: string,
+  repoSlug: string,
+  graph: GraphManager
+): Promise<StructuredContext> {
+  const summaryRecord = await fetchSummary(repo.id);
 
-  // Top files
-  let topFiles: Array<{ path: string; linesOfCode: number; complexity: number; summary: string }> = [];
-  try {
-    const fileResults = await graph.query(
-      `MATCH (f:File) WHERE f.complexity > 0
-       RETURN f.path AS path, f.linesOfCode AS linesOfCode, f.complexity AS complexity, f.summary AS summary
-       ORDER BY f.complexity DESC LIMIT 15`
-    );
-    topFiles = fileResults.map((r: any) => ({
-      path: r.path || '',
-      linesOfCode: r.linesOfCode || 0,
-      complexity: r.complexity || 0,
-      summary: r.summary || '',
-    }));
-  } catch { /* empty */ }
-
-  // Top symbols
-  let topSymbols: Array<{ name: string; kind: string; file: string; complexity: number; summary: string }> = [];
-  try {
-    const symbolResults = await graph.query(
-      `MATCH (s:Symbol) WHERE s.complexity > 0
-       RETURN s.name AS name, s.kind AS kind, s.file AS file, s.complexity AS complexity, s.summary AS summary
-       ORDER BY s.complexity DESC LIMIT 15`
-    );
-    topSymbols = symbolResults.map((r: any) => ({
-      name: r.name || '',
-      kind: r.kind || '',
-      file: r.file || '',
-      complexity: r.complexity || 0,
-      summary: r.summary || '',
-    }));
-  } catch { /* empty */ }
-
-  // Languages
-  let languages: Array<{ language: string; count: number }> = [];
-  try {
-    const langResults = await graph.query(
-      `MATCH (f:File) WHERE f.language IS NOT NULL AND f.language <> 'unknown'
-       RETURN f.language AS language, count(f) AS count ORDER BY count DESC LIMIT 10`
-    );
-    languages = langResults.map((r: any) => ({
-      language: r.language || '',
-      count: typeof r.count === 'number' ? r.count : 0,
-    }));
-  } catch { /* empty */ }
-
-  // Modules
-  let modules: Array<{ path: string; fileCount: number }> = [];
-  try {
-    const moduleResults = await graph.query(
-      `MATCH (m:Module)-[:CONTAINS]->(f:File)
-       WITH m.path AS path, count(f) AS fileCount
-       WHERE NOT path CONTAINS '/'
-       RETURN path, fileCount ORDER BY fileCount DESC LIMIT 20`
-    );
-    modules = moduleResults.map((r: any) => ({
-      path: r.path || '',
-      fileCount: typeof r.fileCount === 'number' ? r.fileCount : 0,
-    }));
-  } catch { /* empty */ }
+  const [stats, topFiles, topSymbols, languages, modules, deps, recentCommits, deadCode, hotspots] = await Promise.all([
+    fetchStats(graph),
+    fetchTopFiles(graph),
+    fetchTopSymbols(graph),
+    fetchLanguages(graph),
+    fetchModules(graph),
+    fetchDependencyMap(graph),
+    fetchRecentCommits(graph),
+    fetchDeadCode(graph),
+    fetchComplexityHotspots(graph),
+  ]);
 
   return {
     summary: summaryRecord?.summary || null,
@@ -334,9 +406,13 @@ export async function getStructuredContext(
       commitCount: stats.commitCount,
       moduleCount: stats.moduleCount,
     },
-    topFiles,
-    topSymbols,
+    topFiles: topFiles.map(f => ({ path: f.path, linesOfCode: f.linesOfCode, complexity: f.complexity, summary: f.summary })),
+    topSymbols: topSymbols.map(s => ({ name: s.name, kind: s.kind, file: s.file, complexity: s.complexity, summary: s.summary })),
     languages,
     modules,
+    dependencies: deps,
+    recentCommits,
+    deadCode,
+    complexityHotspots: hotspots,
   };
 }
