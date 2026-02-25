@@ -215,11 +215,13 @@ ${topSymbols.slice(0, 20).map(s => `- ${s.kind} ${s.name} in ${s.file} (complexi
       });
     }
 
-    // Deduct credits for platform key
+    // Deduct credits for platform key (proportional to tokens)
     if (!keyInfo.isBYOK && options.orgId) {
       try {
-        const { deductCredits } = await import('./credit.service');
-        await deductCredits(options.orgId, 1, `Repo summary: ${repositoryId}`);
+        const { deductCredits, calculateCreditCost } = await import('./credit.service');
+        const totalTokens = result.promptTokens + result.completionTokens;
+        const cost = calculateCreditCost('summarization', totalTokens);
+        await deductCredits(options.orgId, cost, `Repo summary: ${repositoryId}`, { tokensUsed: totalTokens });
       } catch (err) {
         console.warn('[Summarization] Credit deduction failed:', err instanceof Error ? err.message : err);
       }
@@ -281,11 +283,13 @@ export async function summarizeFiles(
         }
       }
 
-      // Deduct credits for platform key (1 credit per batch)
+      // Deduct credits for platform key (proportional to tokens)
       if (!keyInfo.isBYOK && options.orgId) {
         try {
-          const { deductCredits } = await import('./credit.service');
-          await deductCredits(options.orgId, 1, `File summaries batch: ${i / batchSize + 1}`);
+          const { deductCredits, calculateCreditCost } = await import('./credit.service');
+          const totalTokens = result.promptTokens + result.completionTokens;
+          const cost = calculateCreditCost('summarization', totalTokens);
+          await deductCredits(options.orgId, cost, `File summaries batch: ${i / batchSize + 1}`, { tokensUsed: totalTokens });
         } catch (err) {
           console.warn('[Summarization] Credit deduction failed:', err instanceof Error ? err.message : err);
         }
@@ -354,11 +358,13 @@ export async function summarizeSymbols(
         }
       }
 
-      // Deduct credits for platform key (1 credit per batch)
+      // Deduct credits for platform key (proportional to tokens)
       if (!keyInfo.isBYOK && options.orgId) {
         try {
-          const { deductCredits } = await import('./credit.service');
-          await deductCredits(options.orgId, 1, `Symbol summaries batch: ${i / batchSize + 1}`);
+          const { deductCredits, calculateCreditCost } = await import('./credit.service');
+          const totalTokens = result.promptTokens + result.completionTokens;
+          const cost = calculateCreditCost('summarization', totalTokens);
+          await deductCredits(options.orgId, cost, `Symbol summaries batch: ${i / batchSize + 1}`, { tokensUsed: totalTokens });
         } catch (err) {
           console.warn('[Summarization] Credit deduction failed:', err instanceof Error ? err.message : err);
         }

@@ -1048,9 +1048,10 @@ async function syncVectorEmbeddings(
 
     console.log(`[GraphSync] Embedding ${allChunks.length} chunks`);
 
-    // Generate embeddings in batches
+    // Generate embeddings in batches, track total tokens for billing
     const embeddingBatchSize = 20;
     const vectorPoints: VectorPoint[] = [];
+    let syncTotalTokensUsed = 0;
 
     for (let i = 0; i < allChunks.length; i += embeddingBatchSize) {
       const chunkBatch = allChunks.slice(i, i + embeddingBatchSize);
@@ -1058,6 +1059,7 @@ async function syncVectorEmbeddings(
 
       try {
         const result = await generateEmbeddingsBatch(texts);
+        syncTotalTokensUsed += result.totalTokensUsed;
 
         for (let j = 0; j < chunkBatch.length; j++) {
           const chunk = chunkBatch[j];
@@ -1089,6 +1091,26 @@ async function syncVectorEmbeddings(
           `Generating embeddings (${Math.min(i + embeddingBatchSize, allChunks.length)}/${allChunks.length})`,
           0.3 + (i + embeddingBatchSize) / allChunks.length * 0.5
         );
+      }
+    }
+
+    // Deduct credits for sync embeddings (previously unbilled)
+    if (syncTotalTokensUsed > 0) {
+      try {
+        const repo = await db.query.repositories.findFirst({
+          where: eq(repositories.id, repositoryId),
+        });
+        if (repo?.organizationId) {
+          const { deductCredits, calculateCreditCost } = await import('../credit.service');
+          const cost = calculateCreditCost('embedding', syncTotalTokensUsed);
+          await deductCredits(repo.organizationId, cost, `Graph sync embeddings: ${repositoryId}`, {
+            tokensUsed: syncTotalTokensUsed,
+            chunksProcessed: allChunks.length,
+          });
+          console.log(`[GraphSync] Deducted ${cost} credits for ${syncTotalTokensUsed} embedding tokens`);
+        }
+      } catch (err: any) {
+        console.warn('[GraphSync] Embedding credit deduction failed:', err.message);
       }
     }
 

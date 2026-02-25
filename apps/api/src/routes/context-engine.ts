@@ -13,7 +13,6 @@ import { repositories } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth } from '../middleware/auth';
 import { canUserAccessRepo } from '../services/repository.service';
-import { getGraphManager } from '../services/graph/graph.service';
 import {
   initSessionContext,
   generateTurnContext,
@@ -91,8 +90,7 @@ contextEngineRoutes.post(
 
     try {
       const ownerSlug = repository.organization?.slug || repository.owner?.username || owner;
-      const graph = await getGraphManager(repository.id);
-      const result = await initSessionContext(repository.id, ownerSlug, repository.slug, graph, {
+      const result = await initSessionContext(repository.id, ownerSlug, repository.slug, {
         session_id: body.session_id,
         user_id: userId,
         executor_id: body.executor_id,
@@ -130,8 +128,7 @@ contextEngineRoutes.post(
     }
 
     try {
-      const graph = await getGraphManager(repository.id);
-      const result = await generateTurnContext(repository.id, graph, {
+      const result = await generateTurnContext(repository.id, {
         session_id: body.session_id,
         files_touched: body.files_touched,
         symbols_referenced: body.symbols_referenced,

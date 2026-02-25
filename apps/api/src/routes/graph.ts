@@ -343,6 +343,23 @@ graphRoutes.post('/:owner/:repo/graph/sync', requireAuth, async (c) => {
     }, 409);
   }
 
+  // Pre-sync credit gate
+  if (repository.organizationId) {
+    try {
+      const { hasCreditsOrBYOK, checkMonthlyQuota } = await import('../services/credit.service');
+      if (!(await hasCreditsOrBYOK(repository.organizationId))) {
+        return c.json({ error: 'Insufficient credits. Purchase credits or add a BYOK API key.', code: 'INSUFFICIENT_CREDITS' }, 402);
+      }
+      const quota = await checkMonthlyQuota(repository.organizationId);
+      if (!quota.allowed) {
+        return c.json({ error: quota.warning, code: 'MONTHLY_QUOTA_EXCEEDED' }, 429);
+      }
+    } catch (err) {
+      // Credit check failed — allow sync to proceed rather than blocking
+      console.warn('[Graph] Credit gate check failed:', err instanceof Error ? err.message : err);
+    }
+  }
+
   try {
     const jobId = await enqueueGraphSync(repository.id, jobType);
 

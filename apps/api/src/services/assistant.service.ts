@@ -339,11 +339,13 @@ export async function chat(
   const data = await response.json();
   const assistantMessage = data.choices[0]?.message?.content || 'No response generated.';
 
-  // Deduct 1 credit for platform AI assistant usage
-  if (organizationId) {
+  // Deduct credits proportional to token usage
+  if (organizationId && data.usage) {
     try {
-      const { deductCredits } = await import('./credit.service');
-      await deductCredits(organizationId, 1, `AI assistant: ${repositoryId}`);
+      const { deductCredits, calculateCreditCost } = await import('./credit.service');
+      const totalTokens = data.usage.prompt_tokens + data.usage.completion_tokens;
+      const cost = calculateCreditCost('assistant', totalTokens);
+      await deductCredits(organizationId, cost, `AI assistant: ${repositoryId}`, { tokensUsed: totalTokens });
     } catch (err) {
       console.warn('[Assistant] Credit deduction failed:', err instanceof Error ? err.message : err);
     }

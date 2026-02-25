@@ -9,8 +9,8 @@ import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
 } from '../../services/repository.service';
-import { getGraphManager } from '../../services/graph/graph.service';
 import { getFocusedContext, type ContextConcern } from '../../services/context-engine.service';
+import { getImpactAnalysis, getFileDependents } from '../../services/context-engine-adapter';
 
 async function resolveRepo(owner: string, repoSlug: string, userId: string) {
   const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
@@ -54,8 +54,7 @@ export function registerContextEngineTools(
       }
 
       try {
-        const graph = await getGraphManager(repoData.id);
-        const result = await getFocusedContext(repoData.id, graph, {
+        const result = await getFocusedContext(repoData.id, {
           files,
           symbols,
           concern: concern as ContextConcern | undefined,
@@ -102,18 +101,16 @@ export function registerContextEngineTools(
       }
 
       try {
-        const graph = await getGraphManager(repoData.id);
         const hops = depth || 2;
 
-        // Try as symbol first (impact analysis)
-        const impact = await graph.getImpactAnalysis(target, hops);
+        // Impact analysis via adapter (wraps graph /impact route)
+        const impact = await getImpactAnalysis(repoData.id, target, hops);
 
-        // Also get file dependents if it looks like a file path
-        let fileDependents: any[] = [];
+        // File dependents via adapter (wraps graph /file route)
+        let fileDeps: Array<{ path: string; summary?: string }> = [];
         if (target.includes('/') || target.includes('.')) {
           try {
-            const deps = await graph.getFileDependents(target);
-            fileDependents = deps.map((r: any) => r.dependent);
+            fileDeps = await getFileDependents(repoData.id, target);
           } catch { /* not a file path */ }
         }
 
@@ -137,15 +134,15 @@ export function registerContextEngineTools(
           lines.push('');
         }
 
-        if (fileDependents.length > 0) {
-          lines.push(`### Import Dependents (${fileDependents.length})`);
-          for (const d of fileDependents.slice(0, 15)) {
-            lines.push(`- ${d.path || d}`);
+        if (fileDeps.length > 0) {
+          lines.push(`### Import Dependents (${fileDeps.length})`);
+          for (const d of fileDeps.slice(0, 15)) {
+            lines.push(`- ${d.path}`);
           }
           lines.push('');
         }
 
-        if (impact.callers.length === 0 && impact.coChanged.length === 0 && fileDependents.length === 0) {
+        if (impact.callers.length === 0 && impact.coChanged.length === 0 && fileDeps.length === 0) {
           lines.push('No callers, co-change partners, or dependents found.');
         }
 

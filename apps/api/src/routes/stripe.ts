@@ -282,8 +282,15 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
   // Get subscription
   const subscription = await getOrgSubscription(orgId);
 
-  // Fetch credits for org
+  // Fetch credits and quota for org
   const credits = await getOrgCreditBalance(orgId);
+  let quotaStatus: { allowed: boolean; used: number; limit: number; warning?: string } | null = null;
+  try {
+    const { checkMonthlyQuota } = await import('../services/credit.service');
+    quotaStatus = await checkMonthlyQuota(orgId);
+  } catch {
+    // Quota check failed — omit from response
+  }
 
   if (!subscription) {
     const mcpAddon = await getOrgAddon(orgId, 'mcp_gateway');
@@ -292,6 +299,7 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
       tier: 'starter',
       status: 'free',
       credits,
+      quotaStatus,
       addons: {
         mcpGateway: mcpAddon
           ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }
@@ -327,6 +335,7 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
     tierDisplayName,
     status: subscription.status,
     credits,
+    quotaStatus,
     addons: {
       mcpGateway: mcpAddon
         ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }

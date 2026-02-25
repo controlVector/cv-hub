@@ -2,12 +2,25 @@
  * Context Engine Service
  * Provides knowledge-graph-driven context injection for Claude Code sessions.
  * Detects compaction, scores context by relevance, and manages session state.
+ *
+ * ARCHITECTURE: This service owns session state, compaction detection, concern-based
+ * scoring, and token budgeting. All graph/vector queries are delegated to the adapter
+ * (context-engine-adapter.ts), which wraps the same service functions that the CV-Git
+ * MCP tools expose. No direct FalkorDB/Qdrant access from this file.
  */
 
 import { db } from '../db';
-import { contextEngineSessions, repositorySummaries } from '../db/schema';
-import { eq, and, desc } from 'drizzle-orm';
-import type { GraphManager } from './graph/graph.service';
+import { contextEngineSessions } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import {
+  getRepoContext,
+  getFileCoChangePartners,
+  getFileDependencies,
+  getFileDependents,
+  findCallers,
+  findCallees,
+  getScopedFileSummaries,
+} from './context-engine-adapter';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -126,14 +139,13 @@ function detectConcern(filesTouched: string[]): ContextConcern | null {
 
   for (const file of filesTouched) {
     for (const [concern, pattern] of Object.entries(CONCERN_PATTERNS) as [ContextConcern, RegExp][]) {
-      if (concern === 'codebase') continue; // skip fallback
+      if (concern === 'codebase') continue;
       if (pattern.test(file)) {
         counts[concern]++;
       }
     }
   }
 
-  // Check if any non-default concern covers >60% of touched files
   const threshold = filesTouched.length * 0.6;
   let best: ContextConcern | null = null;
   let bestCount = 0;
@@ -156,9 +168,9 @@ function estimateTokens(text: string): number {
 
 function computeScore(
   item: {
-    structuralRelevance: number; // 0-1
-    recencyScore: number;        // 0-1
-    concernMatch: number;        // 0-1
+    structuralRelevance: number;
+    recencyScore: number;
+    concernMatch: number;
   },
   concern: ContextConcern,
 ): number {
@@ -175,10 +187,10 @@ function matchesConcern(path: string, concern: ContextConcern): boolean {
   return CONCERN_PATTERNS[concern].test(path);
 }
 
-// ── Graph expansion helpers ───────────────────────────────────────────
+// ── Graph expansion via adapter ───────────────────────────────────────
 
-async function expandFilesFromGraph(
-  graph: GraphManager,
+async function expandFilesViaAdapter(
+  repoId: string,
   filesTouched: string[],
   concern: ContextConcern,
   limit: number,
@@ -189,68 +201,49 @@ async function expandFilesFromGraph(
   const seen = new Set(filesTouched);
 
   for (const filePath of filesTouched.slice(0, 10)) {
-    // Get co-change partners
-    try {
-      const coChanged = await graph.query(
-        `MATCH (c:Commit)-[:MODIFIES]->(f:File {path: $filePath})
-         MATCH (c)-[:MODIFIES]->(other:File)
-         WHERE other.path <> $filePath
-         WITH other, count(c) AS coChangeCount
-         WHERE coChangeCount >= 2
-         RETURN other.path AS path, other.summary AS summary,
-                other.complexity AS complexity, coChangeCount
-         ORDER BY coChangeCount DESC
-         LIMIT 5`,
-        { filePath },
-      );
+    // Co-change partners (via adapter → query_graph MCP tool)
+    const coChanged = await getFileCoChangePartners(repoId, filePath, 5);
+    for (const r of coChanged) {
+      if (seen.has(r.path)) continue;
+      seen.add(r.path);
+      const concernMatch = matchesConcern(r.path, concern) ? 1.0 : 0.0;
+      const structural = Math.min(1.0, (r.coChangeCount || 1) / 10);
+      items.push({
+        type: 'file',
+        source: 'graph',
+        relevanceScore: computeScore({ structuralRelevance: structural, recencyScore: 0.5, concernMatch }, concern),
+        content: r.summary ? `**${r.path}** — ${r.summary}` : `**${r.path}** (co-changed ${r.coChangeCount}x)`,
+        metadata: { path: r.path, coChangeCount: r.coChangeCount, complexity: r.complexity },
+      });
+    }
 
-      for (const r of coChanged) {
-        if (seen.has(r.path)) continue;
-        seen.add(r.path);
-        const concernMatch = matchesConcern(r.path, concern) ? 1.0 : 0.0;
-        const structural = Math.min(1.0, (r.coChangeCount || 1) / 10);
-        const recency = 0.5; // default for co-change (no timestamp available inline)
-        items.push({
-          type: 'file',
-          source: 'graph',
-          relevanceScore: computeScore({ structuralRelevance: structural, recencyScore: recency, concernMatch }, concern),
-          content: r.summary ? `**${r.path}** — ${r.summary}` : `**${r.path}** (co-changed ${r.coChangeCount}x)`,
-          metadata: { path: r.path, coChangeCount: r.coChangeCount, complexity: r.complexity },
-        });
-      }
-    } catch { /* graph query failed, skip */ }
+    // Import neighbors (via adapter → getFileDependencies + getFileDependents)
+    const [deps, dependents] = await Promise.all([
+      getFileDependencies(repoId, filePath),
+      getFileDependents(repoId, filePath),
+    ]);
+    const importNeighbors = [...deps, ...dependents];
 
-    // Get import neighbors
-    try {
-      const imports = await graph.query(
-        `MATCH (f:File {path: $filePath})-[:IMPORTS]-(other:File)
-         RETURN other.path AS path, other.summary AS summary, other.complexity AS complexity
-         LIMIT 5`,
-        { filePath },
-      );
-
-      for (const r of imports) {
-        if (seen.has(r.path)) continue;
-        seen.add(r.path);
-        const concernMatch = matchesConcern(r.path, concern) ? 1.0 : 0.0;
-        items.push({
-          type: 'file',
-          source: 'graph',
-          relevanceScore: computeScore({ structuralRelevance: 0.6, recencyScore: 0.3, concernMatch }, concern),
-          content: r.summary ? `**${r.path}** — ${r.summary}` : `**${r.path}** (import neighbor)`,
-          metadata: { path: r.path, complexity: r.complexity },
-        });
-      }
-    } catch { /* skip */ }
+    for (const r of importNeighbors) {
+      if (!r.path || seen.has(r.path)) continue;
+      seen.add(r.path);
+      const concernMatch = matchesConcern(r.path, concern) ? 1.0 : 0.0;
+      items.push({
+        type: 'file',
+        source: 'graph',
+        relevanceScore: computeScore({ structuralRelevance: 0.6, recencyScore: 0.3, concernMatch }, concern),
+        content: r.summary ? `**${r.path}** — ${r.summary}` : `**${r.path}** (import neighbor)`,
+        metadata: { path: r.path, complexity: r.complexity },
+      });
+    }
   }
 
-  // Sort by score and limit
   items.sort((a, b) => b.relevanceScore - a.relevanceScore);
   return items.slice(0, limit);
 }
 
-async function expandSymbolsFromGraph(
-  graph: GraphManager,
+async function expandSymbolsViaAdapter(
+  repoId: string,
   symbolsReferenced: string[],
   concern: ContextConcern,
   limit: number,
@@ -261,94 +254,64 @@ async function expandSymbolsFromGraph(
   const seen = new Set(symbolsReferenced);
 
   for (const symbolName of symbolsReferenced.slice(0, 10)) {
-    // Get callers
-    try {
-      const callers = await graph.query(
-        `MATCH (caller:Symbol)-[:CALLS]->(s:Symbol)
-         WHERE s.qualifiedName = $symbolName OR s.name = $symbolName
-         RETURN caller.qualifiedName AS qualifiedName, caller.name AS name,
-                caller.kind AS kind, caller.file AS file, caller.summary AS summary
-         LIMIT 5`,
-        { symbolName },
-      );
+    // Callers (via adapter → find_callers MCP tool)
+    const callers = await findCallers(repoId, symbolName);
+    for (const r of callers) {
+      if (seen.has(r.qualifiedName)) continue;
+      seen.add(r.qualifiedName);
+      const concernMatch = r.file ? (matchesConcern(r.file, concern) ? 1.0 : 0.0) : 0.0;
+      items.push({
+        type: 'symbol',
+        source: 'graph',
+        relevanceScore: computeScore({ structuralRelevance: 0.7, recencyScore: 0.3, concernMatch }, concern),
+        content: r.summary
+          ? `**${r.name}** (${r.kind} in ${r.file}) — ${r.summary}`
+          : `**${r.name}** (${r.kind} in ${r.file}) — calls ${symbolName}`,
+        metadata: { qualifiedName: r.qualifiedName, kind: r.kind, file: r.file },
+      });
+    }
 
-      for (const r of callers) {
-        if (seen.has(r.qualifiedName)) continue;
-        seen.add(r.qualifiedName);
-        const concernMatch = r.file ? (matchesConcern(r.file, concern) ? 1.0 : 0.0) : 0.0;
-        items.push({
-          type: 'symbol',
-          source: 'graph',
-          relevanceScore: computeScore({ structuralRelevance: 0.7, recencyScore: 0.3, concernMatch }, concern),
-          content: r.summary
-            ? `**${r.name}** (${r.kind} in ${r.file}) — ${r.summary}`
-            : `**${r.name}** (${r.kind} in ${r.file}) — calls ${symbolName}`,
-          metadata: { qualifiedName: r.qualifiedName, kind: r.kind, file: r.file },
-        });
-      }
-    } catch { /* skip */ }
-
-    // Get callees
-    try {
-      const callees = await graph.query(
-        `MATCH (s:Symbol)-[:CALLS]->(callee:Symbol)
-         WHERE s.qualifiedName = $symbolName OR s.name = $symbolName
-         RETURN callee.qualifiedName AS qualifiedName, callee.name AS name,
-                callee.kind AS kind, callee.file AS file, callee.summary AS summary
-         LIMIT 5`,
-        { symbolName },
-      );
-
-      for (const r of callees) {
-        if (seen.has(r.qualifiedName)) continue;
-        seen.add(r.qualifiedName);
-        const concernMatch = r.file ? (matchesConcern(r.file, concern) ? 1.0 : 0.0) : 0.0;
-        items.push({
-          type: 'symbol',
-          source: 'graph',
-          relevanceScore: computeScore({ structuralRelevance: 0.6, recencyScore: 0.3, concernMatch }, concern),
-          content: r.summary
-            ? `**${r.name}** (${r.kind} in ${r.file}) — ${r.summary}`
-            : `**${r.name}** (${r.kind} in ${r.file}) — called by ${symbolName}`,
-          metadata: { qualifiedName: r.qualifiedName, kind: r.kind, file: r.file },
-        });
-      }
-    } catch { /* skip */ }
+    // Callees (via adapter → find_callees MCP tool)
+    const callees = await findCallees(repoId, symbolName);
+    for (const r of callees) {
+      if (seen.has(r.qualifiedName)) continue;
+      seen.add(r.qualifiedName);
+      const concernMatch = r.file ? (matchesConcern(r.file, concern) ? 1.0 : 0.0) : 0.0;
+      items.push({
+        type: 'symbol',
+        source: 'graph',
+        relevanceScore: computeScore({ structuralRelevance: 0.6, recencyScore: 0.3, concernMatch }, concern),
+        content: r.summary
+          ? `**${r.name}** (${r.kind} in ${r.file}) — ${r.summary}`
+          : `**${r.name}** (${r.kind} in ${r.file}) — called by ${symbolName}`,
+        metadata: { qualifiedName: r.qualifiedName, kind: r.kind, file: r.file },
+      });
+    }
   }
 
   items.sort((a, b) => b.relevanceScore - a.relevanceScore);
   return items.slice(0, limit);
 }
 
-async function fetchScopedSummary(
-  graph: GraphManager,
+async function fetchScopedSummaryViaAdapter(
+  repoId: string,
   concern: ContextConcern,
   limit: number,
 ): Promise<RankedContextItem[]> {
   const filter = CONCERN_CYPHER_FILTERS[concern];
-  try {
-    const results = await graph.query(
-      `MATCH (f:File)
-       WHERE f.summary IS NOT NULL AND f.summary <> '' AND ${filter}
-       RETURN f.path AS path, f.summary AS summary, f.complexity AS complexity
-       ORDER BY f.complexity DESC
-       LIMIT $limit`,
-      { limit },
-    );
+  // Delegates to adapter → query_graph MCP tool
+  const results = await getScopedFileSummaries(repoId, filter, limit);
 
-    return results.map((r: any) => ({
-      type: 'file' as const,
-      source: 'graph' as const,
-      relevanceScore: computeScore(
-        { structuralRelevance: 0.4, recencyScore: 0.2, concernMatch: 1.0 },
-        concern,
-      ),
-      content: `**${r.path}** — ${r.summary}`,
-      metadata: { path: r.path, complexity: r.complexity },
-    }));
-  } catch {
-    return [];
-  }
+  return results.map(r => ({
+    type: 'file' as const,
+    source: 'graph' as const,
+    relevanceScore: computeScore(
+      { structuralRelevance: 0.4, recencyScore: 0.2, concernMatch: 1.0 },
+      concern,
+    ),
+    content: `**${r.path}** — ${r.summary || ''}`,
+    metadata: { path: r.path, complexity: r.complexity },
+  }));
 }
 
 // ── Format helpers ────────────────────────────────────────────────────
@@ -368,7 +331,6 @@ function formatContextMarkdown(
 
   lines.push(`## ${header}\n`);
 
-  // Group by type
   const fileItems = items.filter(i => i.type === 'file');
   const symbolItems = items.filter(i => i.type === 'symbol');
   const summaryItems = items.filter(i => i.type === 'summary');
@@ -404,13 +366,13 @@ function formatContextMarkdown(
 
 /**
  * Initialize session context. Called at session start.
- * Returns a focused context markdown based on repo summary + concern.
+ * Delegates to get_repo_context MCP tool (via adapter) for repo overview,
+ * and query_graph for concern-scoped file summaries.
  */
 export async function initSessionContext(
   repoId: string,
   ownerSlug: string,
   repoSlug: string,
-  graph: GraphManager,
   options: {
     session_id: string;
     user_id: string;
@@ -431,34 +393,34 @@ export async function initSessionContext(
     concern,
   );
 
-  // Fetch repo summary
-  const summary = await db.query.repositorySummaries.findFirst({
-    where: eq(repositorySummaries.repositoryId, repoId),
-    orderBy: desc(repositorySummaries.createdAt),
-  });
+  // Fetch repo context via adapter (wraps get_repo_context MCP tool)
+  const repoContext = await getRepoContext(
+    { id: repoId, slug: repoSlug, defaultBranch: null },
+    ownerSlug,
+    repoSlug,
+    concern,
+  );
 
-  // Fetch concern-scoped files from graph
-  const scopedItems = await fetchScopedSummary(graph, concern, 15);
+  // Fetch concern-scoped files via adapter (wraps query_graph MCP tool)
+  const scopedItems = await fetchScopedSummaryViaAdapter(repoId, concern, 15);
 
   // Build markdown
   const lines: string[] = [];
   lines.push(`# Context Engine — ${ownerSlug}/${repoSlug}\n`);
 
-  if (summary) {
+  if (repoContext.summary) {
     lines.push('## Repository Overview');
-    lines.push(summary.summary);
+    lines.push(repoContext.summary);
     lines.push('');
 
-    const techs = (summary.technologies as string[] | null) || [];
-    if (techs.length > 0) {
-      lines.push(`**Technologies:** ${techs.join(', ')}`);
+    if (repoContext.technologies.length > 0) {
+      lines.push(`**Technologies:** ${repoContext.technologies.join(', ')}`);
       lines.push('');
     }
 
-    const patterns = (summary.keyPatterns as string[] | null) || [];
-    if (patterns.length > 0) {
+    if (repoContext.keyPatterns.length > 0) {
       lines.push('**Architecture:**');
-      for (const p of patterns) lines.push(`- ${p}`);
+      for (const p of repoContext.keyPatterns) lines.push(`- ${p}`);
       lines.push('');
     }
   }
@@ -503,14 +465,13 @@ export async function initSessionContext(
 
 /**
  * Generate turn-by-turn context injection.
- * Detects compaction, expands graph context, scores, deduplicates, and budget-fits.
+ * All graph queries delegated to adapter (find_callers, find_callees,
+ * co-change partners, file dependencies MCP tool equivalents).
  */
 export async function generateTurnContext(
   repoId: string,
-  graph: GraphManager,
   signal: ActivitySignal,
 ): Promise<ContextResult> {
-  // Load or create session
   const session = await db.query.contextEngineSessions.findFirst({
     where: and(
       eq(contextEngineSessions.sessionId, signal.session_id),
@@ -519,7 +480,6 @@ export async function generateTurnContext(
   });
 
   if (!session) {
-    // Session not initialized — return empty
     return { markdown: '', token_estimate: 0, compaction_detected: false };
   }
 
@@ -533,8 +493,6 @@ export async function generateTurnContext(
   let activeConcern = session.activeConcern as ContextConcern;
   const detectedConcern = detectConcern(signal.files_touched);
   if (detectedConcern && detectedConcern !== activeConcern) {
-    // For simplicity in v1, apply the detected concern immediately for scoring
-    // (The plan says track 3+ turns before persisting, but we use it for weights now)
     activeConcern = detectedConcern;
   }
 
@@ -544,24 +502,24 @@ export async function generateTurnContext(
   // Gather context items
   const allItems: RankedContextItem[] = [];
 
-  // If compaction detected and we have checkpoint data, prioritize recovery
+  // Checkpoint recovery on compaction
   if (compactionDetected && session.checkpointSummary) {
     allItems.push({
       type: 'summary',
       source: 'summary',
-      relevanceScore: 1.0, // highest priority for recovery
+      relevanceScore: 1.0,
       content: session.checkpointSummary,
       metadata: { source: 'checkpoint' },
     });
   }
 
-  // Graph expansion for touched files
+  // Graph expansion via adapter
   const existingFiles = new Set(session.injectedFiles || []);
   const existingSymbols = new Set(session.injectedSymbols || []);
 
   const [fileItems, symbolItems] = await Promise.all([
-    expandFilesFromGraph(graph, signal.files_touched, activeConcern, compactionDetected ? 15 : 8),
-    expandSymbolsFromGraph(graph, signal.symbols_referenced, activeConcern, compactionDetected ? 10 : 5),
+    expandFilesViaAdapter(repoId, signal.files_touched, activeConcern, compactionDetected ? 15 : 8),
+    expandSymbolsViaAdapter(repoId, signal.symbols_referenced, activeConcern, compactionDetected ? 10 : 5),
   ]);
 
   // Deduplicate against already-injected
@@ -579,11 +537,11 @@ export async function generateTurnContext(
     }
   }
 
-  // If compaction detected, also re-inject checkpoint files that aren't in signal
+  // Compaction recovery: re-expand checkpoint files
   if (compactionDetected && session.checkpointFiles) {
     const checkpointFiles = session.checkpointFiles.filter(f => !signal.files_touched.includes(f));
     if (checkpointFiles.length > 0) {
-      const recoveryItems = await expandFilesFromGraph(graph, checkpointFiles, activeConcern, 10);
+      const recoveryItems = await expandFilesViaAdapter(repoId, checkpointFiles, activeConcern, 10);
       for (const item of recoveryItems) {
         allItems.push(item);
       }
@@ -593,7 +551,7 @@ export async function generateTurnContext(
   // Sort by relevance score
   allItems.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-  // Budget-fit: select items within token limit
+  // Budget-fit
   const selected: RankedContextItem[] = [];
   let tokenCount = 0;
   for (const item of allItems) {
@@ -603,7 +561,6 @@ export async function generateTurnContext(
     tokenCount += itemTokens;
   }
 
-  // If nothing new to inject, return empty
   if (selected.length === 0) {
     await updateSession(session.id, {
       lastTurnCount: signal.turn_count,
@@ -612,11 +569,9 @@ export async function generateTurnContext(
     return { markdown: '', token_estimate: 0, compaction_detected: compactionDetected };
   }
 
-  // Format markdown
   const header = compactionDetected ? 'Context Recovery' : 'Relevant Context';
   const markdown = formatContextMarkdown(selected, header, compactionDetected);
 
-  // Update session state
   const newInjectedFiles = [
     ...(session.injectedFiles || []),
     ...selected.filter(i => i.metadata.path).map(i => i.metadata.path as string),
@@ -643,7 +598,6 @@ export async function generateTurnContext(
 
 /**
  * Save a compaction checkpoint. Called from PreCompact hook.
- * Stores current working state so it can be recovered after compaction.
  */
 export async function saveCheckpoint(
   sessionId: string,
@@ -672,11 +626,10 @@ export async function saveCheckpoint(
 
 /**
  * Get focused context on demand (for MCP tools).
- * Same scoring pipeline as generateTurnContext but without session state mutation.
+ * All graph queries delegated to adapter.
  */
 export async function getFocusedContext(
   repoId: string,
-  graph: GraphManager,
   params: {
     files?: string[];
     symbols?: string[];
@@ -688,14 +641,13 @@ export async function getFocusedContext(
   const maxTokens = params.max_tokens || 2000;
 
   const [fileItems, symbolItems] = await Promise.all([
-    expandFilesFromGraph(graph, params.files || [], concern, 15),
-    expandSymbolsFromGraph(graph, params.symbols || [], concern, 10),
+    expandFilesViaAdapter(repoId, params.files || [], concern, 15),
+    expandSymbolsViaAdapter(repoId, params.symbols || [], concern, 10),
   ]);
 
   const allItems = [...fileItems, ...symbolItems];
   allItems.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-  // Budget-fit
   const selected: RankedContextItem[] = [];
   let tokenCount = 0;
   for (const item of allItems) {

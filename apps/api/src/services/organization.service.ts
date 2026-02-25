@@ -140,6 +140,14 @@ export async function createOrganization(
     acceptedAt: new Date(),
   });
 
+  // Seed initial free credits
+  try {
+    const { addCredits, INITIAL_FREE_CREDITS } = await import('./credit.service');
+    await addCredits(org.id, INITIAL_FREE_CREDITS, 'bonus', `Welcome: ${INITIAL_FREE_CREDITS} free credits`);
+  } catch (err) {
+    logger.warn('general', 'Failed to seed initial credits', { orgId: org.id });
+  }
+
   logger.info('general', 'Organization created', { orgId: org.id, slug: org.slug, creatorId: creatorUserId });
   return org;
 }

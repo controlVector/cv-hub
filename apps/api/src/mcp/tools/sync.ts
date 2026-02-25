@@ -45,6 +45,21 @@ export function registerSyncTools(
       if (!repoData) {
         return { content: [{ type: 'text', text: 'Repository not found or access denied' }], isError: true };
       }
+      // Pre-sync credit gate
+      if (repoData.organizationId) {
+        try {
+          const { hasCreditsOrBYOK, checkMonthlyQuota } = await import('../../services/credit.service');
+          if (!(await hasCreditsOrBYOK(repoData.organizationId))) {
+            return { content: [{ type: 'text', text: 'Insufficient credits. Purchase credits or add a BYOK API key.' }], isError: true };
+          }
+          const quota = await checkMonthlyQuota(repoData.organizationId);
+          if (!quota.allowed) {
+            return { content: [{ type: 'text', text: quota.warning || 'Monthly quota exceeded' }], isError: true };
+          }
+        } catch {
+          // Credit check failed — allow sync to proceed
+        }
+      }
       try {
         const jobId = await enqueueGraphSync(repoData.id, job_type ?? 'full');
         return {

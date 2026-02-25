@@ -35,6 +35,13 @@ interface AISettingsCardProps {
   tier: string;
 }
 
+interface QuotaStatus {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  warning?: string;
+}
+
 interface EmbeddingConfig {
   provider: string | null;
   model: string | null;
@@ -84,6 +91,17 @@ export default function AISettingsCard({
     },
     enabled: !!orgSlug,
   });
+
+  const { data: subscriptionData } = useQuery<{ quotaStatus?: QuotaStatus; tier?: string }>({
+    queryKey: ['subscription', organizationId],
+    queryFn: async () => {
+      const res = await api.get(`/stripe/subscription/${organizationId}`);
+      return res.data;
+    },
+    enabled: !!organizationId,
+  });
+
+  const quotaStatus = subscriptionData?.quotaStatus;
 
   // Initialize form from config
   useEffect(() => {
@@ -228,6 +246,52 @@ export default function AISettingsCard({
             </Box>
           )}
         </Box>
+
+        {/* Monthly Usage Meter */}
+        {quotaStatus && (
+          <Box sx={{ mb: 3, mt: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Monthly Usage
+              </Typography>
+              <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                {quotaStatus.used.toLocaleString()} / {quotaStatus.limit.toLocaleString()} credits
+              </Typography>
+            </Box>
+
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(100, (quotaStatus.used / quotaStatus.limit) * 100)}
+              sx={{
+                mb: 1,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                '& .MuiLinearProgress-bar': {
+                  backgroundColor:
+                    quotaStatus.used >= quotaStatus.limit
+                      ? colors.coral
+                      : quotaStatus.used >= quotaStatus.limit * 0.8
+                        ? '#f0a030'
+                        : colors.green,
+                  borderRadius: 3,
+                },
+              }}
+            />
+
+            {quotaStatus.warning && (
+              <Alert severity={quotaStatus.allowed ? 'warning' : 'error'} sx={{ mb: 1 }}>
+                {quotaStatus.warning}
+              </Alert>
+            )}
+
+            {!isPaidTier && quotaStatus.used >= quotaStatus.limit * 0.5 && (
+              <Typography variant="body2" sx={{ color: colors.textMuted }}>
+                Upgrade to Pro for 1,500 credits/month
+              </Typography>
+            )}
+          </Box>
+        )}
 
         <Divider sx={{ my: 3 }} />
 

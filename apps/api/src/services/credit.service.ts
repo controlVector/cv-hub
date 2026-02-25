@@ -6,7 +6,7 @@
  * BYOK (Bring Your Own Key) usage is free and never consumes credits.
  */
 
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, gte, and } from 'drizzle-orm';
 import { db } from '../db';
 import {
   organizationCredits,
@@ -16,6 +16,30 @@ import {
 import { getOrgSubscription } from './stripe.service';
 import { getPricingTierById } from './pricing.service';
 import { logger } from '../utils/logger';
+
+// ============================================================================
+// Token-Proportional Credit Calculation
+// ============================================================================
+
+export const INITIAL_FREE_CREDITS = 50;
+
+export const CREDIT_RATES = {
+  EMBEDDING_TOKENS_PER_CREDIT: 10_000,  // 1 credit per 10K embedding tokens
+  LLM_TOKENS_PER_CREDIT: 2_500,         // 1 credit per 2.5K LLM tokens
+  SEARCH_CREDIT_COST: 1,                // flat 1 credit per search
+  MIN_CREDIT_COST: 1,                   // minimum 1 credit per operation
+} as const;
+
+export function calculateCreditCost(
+  operation: 'embedding' | 'summarization' | 'assistant' | 'search',
+  tokensUsed: number,
+): number {
+  if (operation === 'search') return CREDIT_RATES.SEARCH_CREDIT_COST;
+  const rate = operation === 'embedding'
+    ? CREDIT_RATES.EMBEDDING_TOKENS_PER_CREDIT
+    : CREDIT_RATES.LLM_TOKENS_PER_CREDIT;
+  return Math.max(Math.ceil(tokensUsed / rate), CREDIT_RATES.MIN_CREDIT_COST);
+}
 
 // ============================================================================
 // Balance & Queries
@@ -235,4 +259,94 @@ export async function refreshMonthlyCredits(orgId: string): Promise<void> {
     orgId,
     allowance,
   });
+}
+
+// ============================================================================
+// Monthly Quota Tracking & Enforcement
+// ============================================================================
+
+const MONTHLY_LIMITS: Record<string, number> = {
+  starter: 100,
+  pro: 1500,
+  enterprise: 10000,
+};
+
+/**
+ * Get total credit usage for an org in the current calendar month
+ */
+export async function getMonthlyUsage(orgId: string): Promise<number> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const result = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(ABS(${creditTransactions.amount})), 0)`,
+    })
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.organizationId, orgId),
+        eq(creditTransactions.type, 'usage'),
+        gte(creditTransactions.createdAt, startOfMonth),
+      )
+    );
+
+  return Number(result[0]?.total || 0);
+}
+
+/**
+ * Check if an org is within its monthly quota
+ */
+export async function checkMonthlyQuota(orgId: string): Promise<{
+  allowed: boolean;
+  used: number;
+  limit: number;
+  warning?: string;
+}> {
+  // Determine the org's tier
+  let tierName = 'starter';
+  try {
+    const subscription = await getOrgSubscription(orgId);
+    if (subscription?.pricingTierId) {
+      const tier = await getPricingTierById(subscription.pricingTierId);
+      if (tier) tierName = tier.name;
+    }
+  } catch {
+    // Default to starter
+  }
+
+  const limit = MONTHLY_LIMITS[tierName] ?? MONTHLY_LIMITS.starter;
+  const used = await getMonthlyUsage(orgId);
+
+  // Hard block at limit for starter tier
+  if (tierName === 'starter' && used >= limit) {
+    return {
+      allowed: false,
+      used,
+      limit,
+      warning: `Monthly quota exceeded (${used}/${limit} credits). Upgrade to Pro for 1,500 credits/month.`,
+    };
+  }
+
+  // Soft warning at 80% for paid tiers
+  if (used >= limit * 0.8 && used < limit) {
+    return {
+      allowed: true,
+      used,
+      limit,
+      warning: `Approaching monthly limit: ${used}/${limit} credits used (${Math.round((used / limit) * 100)}%).`,
+    };
+  }
+
+  // Hard block for all tiers at limit
+  if (used >= limit) {
+    return {
+      allowed: false,
+      used,
+      limit,
+      warning: `Monthly quota exceeded (${used}/${limit} credits). Contact support or wait for next billing cycle.`,
+    };
+  }
+
+  return { allowed: true, used, limit };
 }

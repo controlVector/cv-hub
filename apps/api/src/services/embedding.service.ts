@@ -621,11 +621,12 @@ export async function generateRepositoryEmbeddings(
     config,
   });
 
-  // Deduct credits when using platform key
+  // Deduct credits when using platform key (proportional to tokens)
   if (config.billedTo === 'platform' && organizationId) {
     try {
-      const { deductCredits } = await import('./credit.service');
-      await deductCredits(organizationId, 1, `Embedding ${operation}: ${repositoryId}`);
+      const { deductCredits, calculateCreditCost } = await import('./credit.service');
+      const cost = calculateCreditCost('embedding', result.totalTokensUsed);
+      await deductCredits(organizationId, cost, `Embedding ${operation}: ${repositoryId}`, { tokensUsed: result.totalTokensUsed });
     } catch (err) {
       console.warn('[Embedding] Credit deduction failed:', err instanceof Error ? err.message : err);
     }
