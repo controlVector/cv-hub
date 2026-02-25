@@ -35,7 +35,7 @@ import {
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { colors } from '../../theme';
-import { getRepoContext, type RepoContext } from '../../services/repository';
+import { getRepoContext } from '../../services/repository';
 
 interface ContextOverviewProps {
   owner: string;

@@ -27,14 +27,12 @@ import {
   Whatshot,
   Search,
   Refresh,
-  AutoAwesome as AIIcon,
   Description,
   BubbleChart,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { colors } from '../../theme';
-import { getArchitectureViz, getHeatmapViz, getRepositorySummaryApi, triggerGraphSync } from '../../services/repository';
+import { getArchitectureViz, getHeatmapViz, triggerGraphSync } from '../../services/repository';
 import type { VizData, VizNode } from '../../services/repository';
 import GraphCanvas, { type ColorMode } from './GraphCanvas';
 import NodeDetailPanel from './NodeDetailPanel';
@@ -84,13 +82,6 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
     queryFn: () => getHeatmapViz(owner, repo, colorMode as 'recency' | 'frequency' | 'churn'),
     enabled: colorMode !== 'default',
     staleTime: 60000,
-  });
-
-  // Fetch repo summary
-  const { data: repoSummary } = useQuery({
-    queryKey: ['repoSummary', owner, repo],
-    queryFn: () => getRepositorySummaryApi(owner, repo),
-    staleTime: 300000,
   });
 
   // Merge heatmap data into viz data when active (memoized)
