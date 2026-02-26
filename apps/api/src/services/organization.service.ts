@@ -1,16 +1,20 @@
-import { eq, and, desc, sql, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, sql, ilike, or, gt, isNull } from 'drizzle-orm';
+import crypto from 'crypto';
 import { db } from '../db';
 import {
   organizations,
   organizationMembers,
+  orgInvites,
   apps,
   type Organization,
   type NewOrganization,
   type OrganizationMember,
   type NewOrganizationMember,
+  type OrgInvite,
   type OrgRole,
 } from '../db/schema';
 import { logger } from '../utils/logger';
+import { ForbiddenError, ConflictError, NotFoundError } from '../utils/errors';
 
 // ============================================================================
 // Organization Service
@@ -263,12 +267,24 @@ export async function addOrganizationMember(
   return member;
 }
 
-// Update member role
+// Update member role (with last-owner protection)
 export async function updateMemberRole(
   orgId: string,
   userId: string,
   newRole: OrgRole
 ): Promise<OrganizationMember | null> {
+  // Check if this would demote the last owner
+  const currentRole = await getUserOrgRole(orgId, userId);
+  if (currentRole === 'owner' && newRole !== 'owner') {
+    const [ownerCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.role, 'owner')));
+    if (Number(ownerCount?.count || 0) <= 1) {
+      throw new ForbiddenError('Cannot demote the last owner');
+    }
+  }
+
   const [member] = await db
     .update(organizationMembers)
     .set({ role: newRole, updatedAt: new Date() })
@@ -286,8 +302,20 @@ export async function updateMemberRole(
   return member ?? null;
 }
 
-// Remove member from organization
+// Remove member from organization (with last-owner protection)
 export async function removeOrganizationMember(orgId: string, userId: string): Promise<boolean> {
+  // Check if this would remove the last owner
+  const currentRole = await getUserOrgRole(orgId, userId);
+  if (currentRole === 'owner') {
+    const [ownerCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.role, 'owner')));
+    if (Number(ownerCount?.count || 0) <= 1) {
+      throw new ForbiddenError('Cannot remove the last owner');
+    }
+  }
+
   const result = await db
     .delete(organizationMembers)
     .where(
@@ -339,6 +367,140 @@ export async function getUserOrganizations(userId: string): Promise<Organization
   }
 
   return orgsWithStats;
+}
+
+// ============================================================================
+// Organization Invite Service (token-based email invites)
+// ============================================================================
+
+const INVITE_EXPIRY_DAYS = 7;
+
+// Create an invite
+export async function createInvite(
+  orgId: string,
+  email: string,
+  role: OrgRole = 'member',
+  invitedByUserId: string
+): Promise<OrgInvite> {
+  if (role === 'owner') {
+    throw new ForbiddenError('Cannot invite as owner');
+  }
+
+  // Check for existing pending invite
+  const existing = await db.query.orgInvites.findFirst({
+    where: and(
+      eq(orgInvites.organizationId, orgId),
+      eq(orgInvites.email, email.toLowerCase()),
+      isNull(orgInvites.acceptedAt),
+    ),
+  });
+  if (existing) {
+    throw new ConflictError('A pending invite already exists for this email');
+  }
+
+  const token = crypto.randomBytes(48).toString('base64url');
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + INVITE_EXPIRY_DAYS);
+
+  const [invite] = await db
+    .insert(orgInvites)
+    .values({
+      organizationId: orgId,
+      email: email.toLowerCase(),
+      role,
+      token,
+      invitedBy: invitedByUserId,
+      expiresAt,
+    })
+    .returning();
+
+  logger.info('general', 'Org invite created', { orgId, email: email.toLowerCase(), role });
+  return invite;
+}
+
+// List pending invites for an org
+export async function listPendingInvites(orgId: string): Promise<OrgInvite[]> {
+  return db.query.orgInvites.findMany({
+    where: and(
+      eq(orgInvites.organizationId, orgId),
+      isNull(orgInvites.acceptedAt),
+      gt(orgInvites.expiresAt, new Date()),
+    ),
+    orderBy: [desc(orgInvites.createdAt)],
+  });
+}
+
+// Cancel (delete) an invite
+export async function cancelInvite(orgId: string, inviteId: string): Promise<boolean> {
+  const result = await db
+    .delete(orgInvites)
+    .where(and(eq(orgInvites.id, inviteId), eq(orgInvites.organizationId, orgId)))
+    .returning({ id: orgInvites.id });
+  return result.length > 0;
+}
+
+// Get invite by token
+export async function getInviteByToken(token: string): Promise<OrgInvite | null> {
+  const invite = await db.query.orgInvites.findFirst({
+    where: eq(orgInvites.token, token),
+  });
+  return invite ?? null;
+}
+
+// Accept an invite by token
+export async function acceptInviteByToken(
+  token: string,
+  userId: string,
+  userEmail: string
+): Promise<OrganizationMember> {
+  const invite = await getInviteByToken(token);
+  if (!invite) {
+    throw new NotFoundError('Invite');
+  }
+  if (invite.acceptedAt) {
+    throw new ConflictError('Invite has already been accepted');
+  }
+  if (invite.expiresAt < new Date()) {
+    throw new ForbiddenError('Invite has expired');
+  }
+  if (invite.email !== userEmail.toLowerCase()) {
+    throw new ForbiddenError('Email does not match invite');
+  }
+
+  // Mark invite as accepted
+  await db
+    .update(orgInvites)
+    .set({ acceptedAt: new Date(), updatedAt: new Date() })
+    .where(eq(orgInvites.id, invite.id));
+
+  // Create membership (use onConflictDoNothing in case membership already exists)
+  const [member] = await db
+    .insert(organizationMembers)
+    .values({
+      organizationId: invite.organizationId,
+      userId,
+      role: invite.role,
+      invitedBy: invite.invitedBy,
+      invitedAt: invite.createdAt,
+      acceptedAt: new Date(),
+    })
+    .onConflictDoNothing({ target: [organizationMembers.organizationId, organizationMembers.userId] })
+    .returning();
+
+  if (!member) {
+    // Already a member — return existing
+    const existing = await db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.organizationId, invite.organizationId),
+        eq(organizationMembers.userId, userId),
+      ),
+    });
+    if (!existing) throw new ConflictError('Failed to create membership');
+    return existing;
+  }
+
+  logger.info('general', 'Org invite accepted', { orgId: invite.organizationId, userId, token: invite.id });
+  return member;
 }
 
 // ============================================================================
