@@ -718,4 +718,112 @@ orgRoutes.delete('/:slug/embedding-config', requireAuth, async (c) => {
   return c.json({ success: true });
 });
 
+// ============================================================================
+// Org-scoped Personal Access Tokens
+// ============================================================================
+
+const orgPatSchema = z.object({
+  name: z.string().min(1).max(255),
+  scopes: z.array(z.string()).min(1),
+  expiresAt: z.string().datetime().optional(),
+  expiresInDays: z.number().int().min(1).max(365).optional(),
+});
+
+/**
+ * POST /orgs/:slug/pats - Create org-scoped PAT (admin+ only)
+ */
+orgRoutes.post(
+  '/:slug/pats',
+  requireAuth,
+  zValidator('json', orgPatSchema),
+  async (c) => {
+    const { slug } = c.req.param();
+    const userId = c.get('userId')!;
+    const body = c.req.valid('json');
+
+    const org = await getOrganizationBySlug(slug);
+    if (!org) return c.json({ error: 'Organization not found' }, 404);
+
+    if (!await isOrgAdmin(org.id, userId)) {
+      return c.json({ error: 'Only organization admins can manage PATs' }, 403);
+    }
+
+    let expiration: Date | undefined;
+    if (body.expiresAt) {
+      expiration = new Date(body.expiresAt);
+    } else if (body.expiresInDays) {
+      expiration = new Date(Date.now() + body.expiresInDays * 24 * 60 * 60 * 1000);
+    }
+
+    const { createToken } = await import('../services/pat.service');
+    const result = await createToken({
+      userId,
+      name: body.name,
+      scopes: body.scopes,
+      expiresAt: expiration,
+      organizationId: org.id,
+    });
+
+    return c.json({
+      token: result.token,
+      tokenInfo: result.tokenInfo,
+      warning: "Make sure to copy your token now. You won't be able to see it again!",
+    }, 201);
+  },
+);
+
+/**
+ * GET /orgs/:slug/pats - List org-scoped PATs (admin+ only)
+ */
+orgRoutes.get(
+  '/:slug/pats',
+  requireAuth,
+  async (c) => {
+    const { slug } = c.req.param();
+    const userId = c.get('userId')!;
+
+    const org = await getOrganizationBySlug(slug);
+    if (!org) return c.json({ error: 'Organization not found' }, 404);
+
+    if (!await isOrgAdmin(org.id, userId)) {
+      return c.json({ error: 'Only organization admins can view PATs' }, 403);
+    }
+
+    const { listOrgTokens } = await import('../services/pat.service');
+    const tokens = await listOrgTokens(org.id);
+
+    return c.json({ tokens });
+  },
+);
+
+/**
+ * DELETE /orgs/:slug/pats/:patId - Revoke org-scoped PAT (admin+ only)
+ */
+orgRoutes.delete(
+  '/:slug/pats/:patId',
+  requireAuth,
+  async (c) => {
+    const { slug, patId } = c.req.param();
+    const userId = c.get('userId')!;
+
+    const org = await getOrganizationBySlug(slug);
+    if (!org) return c.json({ error: 'Organization not found' }, 404);
+
+    if (!await isOrgAdmin(org.id, userId)) {
+      return c.json({ error: 'Only organization admins can revoke PATs' }, 403);
+    }
+
+    const { revokeToken } = await import('../services/pat.service');
+    try {
+      await revokeToken(userId, patId);
+      return c.json({ success: true });
+    } catch (error: any) {
+      if (error.name === 'NotFoundError') {
+        return c.json({ error: 'Token not found or already revoked' }, 404);
+      }
+      throw error;
+    }
+  },
+);
+
 export { orgRoutes as organizationRoutes };

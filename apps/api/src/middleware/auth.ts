@@ -2,6 +2,7 @@ import type { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { verifyAccessToken } from '../services/token.service';
 import { getSessionUser } from '../services/session.service';
+import { validateToken } from '../services/pat.service';
 import { AuthenticationError } from '../utils/errors';
 import { authLogger } from '../utils/logger';
 
@@ -16,6 +17,22 @@ export async function requireAuth(c: Context, next: Next) {
 
   const token = authHeader.slice(7);
 
+  // 1. Try PAT (cv_pat_*) first if it has the prefix
+  if (token.startsWith('cv_pat_')) {
+    const result = await validateToken(token);
+    if (!result.valid || !result.userId) {
+      throw new AuthenticationError('Invalid or expired personal access token');
+    }
+    c.set('userId', result.userId);
+    c.set('tokenScopes', result.scopes ?? []);
+    if (result.organizationId) {
+      c.set('patOrgId', result.organizationId);
+    }
+    await next();
+    return;
+  }
+
+  // 2. Try JWT
   try {
     const payload = await verifyAccessToken(token);
     c.set('userId', payload.sub);
@@ -33,14 +50,30 @@ export async function optionalAuth(c: Context, next: Next) {
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    try {
-      const payload = await verifyAccessToken(token);
-      c.set('userId', payload.sub);
-      c.set('sessionId', payload.sid);
-      await next();
-      return;
-    } catch {
-      // Ignore invalid tokens, try cookie auth
+
+    // Try PAT first if it has the prefix
+    if (token.startsWith('cv_pat_')) {
+      const result = await validateToken(token);
+      if (result.valid && result.userId) {
+        c.set('userId', result.userId);
+        c.set('tokenScopes', result.scopes ?? []);
+        if (result.organizationId) {
+          c.set('patOrgId', result.organizationId);
+        }
+        await next();
+        return;
+      }
+    } else {
+      // Try JWT
+      try {
+        const payload = await verifyAccessToken(token);
+        c.set('userId', payload.sub);
+        c.set('sessionId', payload.sid);
+        await next();
+        return;
+      } catch {
+        // Ignore invalid tokens, try cookie auth
+      }
     }
   }
 

@@ -18,6 +18,7 @@ export interface CreateTokenInput {
   name: string;
   scopes: string[];
   expiresAt?: Date;
+  organizationId?: string;
 }
 
 export interface TokenInfo {
@@ -25,6 +26,7 @@ export interface TokenInfo {
   name: string;
   tokenPrefix: string;
   scopes: string[];
+  organizationId: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -37,6 +39,7 @@ export interface TokenValidationResult {
   userId?: string;
   scopes?: string[];
   tokenId?: string;
+  organizationId?: string | null;
   error?: string;
 }
 
@@ -117,7 +120,7 @@ function validateScopes(scopes: string[]): void {
  * Returns the full token (only shown once)
  */
 export async function createToken(input: CreateTokenInput): Promise<{ token: string; tokenInfo: TokenInfo }> {
-  const { userId, name, scopes, expiresAt } = input;
+  const { userId, name, scopes, expiresAt, organizationId } = input;
 
   // Validate scopes
   validateScopes(scopes);
@@ -144,6 +147,7 @@ export async function createToken(input: CreateTokenInput): Promise<{ token: str
     tokenPrefix,
     scopes,
     expiresAt,
+    organizationId: organizationId || null,
   }).returning();
 
   return {
@@ -153,6 +157,7 @@ export async function createToken(input: CreateTokenInput): Promise<{ token: str
       name: pat.name,
       tokenPrefix: pat.tokenPrefix,
       scopes: pat.scopes as string[],
+      organizationId: pat.organizationId,
       expiresAt: pat.expiresAt,
       lastUsedAt: pat.lastUsedAt,
       createdAt: pat.createdAt,
@@ -203,6 +208,7 @@ export async function validateToken(token: string): Promise<TokenValidationResul
     userId: pat.userId,
     scopes: pat.scopes as string[],
     tokenId: pat.id,
+    organizationId: pat.organizationId,
   };
 }
 
@@ -263,6 +269,7 @@ export async function listTokens(userId: string): Promise<TokenInfo[]> {
     name: pat.name,
     tokenPrefix: pat.tokenPrefix,
     scopes: pat.scopes as string[],
+    organizationId: pat.organizationId,
     expiresAt: pat.expiresAt,
     lastUsedAt: pat.lastUsedAt,
     createdAt: pat.createdAt,
@@ -293,12 +300,38 @@ export async function getToken(userId: string, tokenId: string): Promise<TokenIn
     name: pat.name,
     tokenPrefix: pat.tokenPrefix,
     scopes: pat.scopes as string[],
+    organizationId: pat.organizationId,
     expiresAt: pat.expiresAt,
     lastUsedAt: pat.lastUsedAt,
     createdAt: pat.createdAt,
     isExpired: pat.expiresAt ? pat.expiresAt < now : false,
     isRevoked: !!pat.revokedAt,
   };
+}
+
+/**
+ * List tokens scoped to an organization
+ */
+export async function listOrgTokens(organizationId: string): Promise<TokenInfo[]> {
+  const tokens = await db.query.personalAccessTokens.findMany({
+    where: eq(personalAccessTokens.organizationId, organizationId),
+    orderBy: (tokens, { desc }) => [desc(tokens.createdAt)],
+  });
+
+  const now = new Date();
+
+  return tokens.map(pat => ({
+    id: pat.id,
+    name: pat.name,
+    tokenPrefix: pat.tokenPrefix,
+    scopes: pat.scopes as string[],
+    organizationId: pat.organizationId,
+    expiresAt: pat.expiresAt,
+    lastUsedAt: pat.lastUsedAt,
+    createdAt: pat.createdAt,
+    isExpired: pat.expiresAt ? pat.expiresAt < now : false,
+    isRevoked: !!pat.revokedAt,
+  }));
 }
 
 /**

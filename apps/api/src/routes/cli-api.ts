@@ -73,6 +73,9 @@ async function requireCliAuth(
     }
     c.set('userId', result.userId);
     c.set('tokenScopes', result.scopes ?? []);
+    if (result.organizationId) {
+      c.set('patOrgId', result.organizationId);
+    }
     return next();
   }
 

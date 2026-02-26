@@ -1,6 +1,7 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp, index, jsonb, pgEnum } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users';
+import { organizations } from './organizations';
 
 // ============================================================================
 // Enums
@@ -25,6 +26,7 @@ export const patScopeEnum = pgEnum('pat_scope', [
 export const personalAccessTokens = pgTable('personal_access_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
 
   // Token identification
   name: varchar('name', { length: 255 }).notNull(),
@@ -51,6 +53,7 @@ export const personalAccessTokens = pgTable('personal_access_tokens', {
   index('pat_user_id_idx').on(table.userId),
   index('pat_token_hash_idx').on(table.tokenHash),
   index('pat_expires_at_idx').on(table.expiresAt),
+  index('pat_org_id_idx').on(table.organizationId),
 ]);
 
 // ============================================================================
@@ -61,6 +64,10 @@ export const personalAccessTokensRelations = relations(personalAccessTokens, ({ 
   user: one(users, {
     fields: [personalAccessTokens.userId],
     references: [users.id],
+  }),
+  organization: one(organizations, {
+    fields: [personalAccessTokens.organizationId],
+    references: [organizations.id],
   }),
 }));
 
