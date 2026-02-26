@@ -7,35 +7,15 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
+import { resolveRepository } from '../middleware/resolve-repository';
 import { db } from '../db';
-import { repositories, webhooks } from '../db/schema';
+import { webhooks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import * as webhookService from '../services/webhook.service';
 import { NotFoundError, ValidationError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
 const webhookRoutes = new Hono<AppEnv>();
-
-// ============================================================================
-// Helper to get repository by owner/repo
-// ============================================================================
-
-async function getRepository(owner: string, repo: string) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) return null;
-
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) return null;
-
-  return repository;
-}
 
 // ============================================================================
 // Webhook CRUD
@@ -61,7 +41,7 @@ webhookRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -98,7 +78,7 @@ webhookRoutes.get(
   async (c) => {
     const { owner, repo } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -118,7 +98,7 @@ webhookRoutes.get(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -152,7 +132,7 @@ webhookRoutes.patch(
     const { owner, repo, id } = c.req.param();
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -186,7 +166,7 @@ webhookRoutes.delete(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -229,7 +209,7 @@ webhookRoutes.get(
     const { owner, repo, id } = c.req.param();
     const { limit, offset } = c.req.valid('query');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -257,7 +237,7 @@ webhookRoutes.post(
   async (c) => {
     const { owner, repo, id, deliveryId } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -289,7 +269,7 @@ webhookRoutes.post(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }

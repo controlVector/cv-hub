@@ -7,35 +7,12 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
-import { db } from '../db';
-import { repositories } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { resolveRepository } from '../middleware/resolve-repository';
 import * as statusService from '../services/commit-status.service';
 import { ValidationError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
 const commitStatusRoutes = new Hono<AppEnv>();
-
-// ============================================================================
-// Helper to get repository by owner/repo
-// ============================================================================
-
-async function getRepository(owner: string, repo: string) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) return null;
-
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) return null;
-
-  return repository;
-}
 
 // ============================================================================
 // Status Endpoints
@@ -61,7 +38,7 @@ commitStatusRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -96,7 +73,7 @@ commitStatusRoutes.get(
   async (c) => {
     const { owner, repo, sha } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -115,7 +92,7 @@ commitStatusRoutes.get(
   async (c) => {
     const { owner, repo, sha } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }

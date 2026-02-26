@@ -9,9 +9,6 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { db } from '../db';
-import { repositories } from '../db/schema';
-import { eq } from 'drizzle-orm';
 import {
   getGraphManager,
   enqueueGraphSync,
@@ -20,7 +17,7 @@ import {
 } from '../services/graph';
 import type { GraphQuery } from '../services/graph';
 import { optionalAuth, requireAuth } from '../middleware/auth';
-import { canUserAccessRepo } from '../services/repository.service';
+import { resolveRepository } from '../middleware/resolve-repository';
 import type { AppEnv } from '../app';
 
 const graphRoutes = new Hono<AppEnv>();
@@ -37,37 +34,6 @@ const graphQuerySchema = z.object({
 });
 
 /**
- * Helper to get repository by owner/slug with access control
- */
-async function getRepository(owner: string, repo: string, userId: string | null) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) {
-    return null;
-  }
-
-  // Verify owner matches
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) {
-    return null;
-  }
-
-  // Enforce access control — same rules as code browsing
-  const canAccess = await canUserAccessRepo(repository.id, userId);
-  if (!canAccess) {
-    return null;
-  }
-
-  return repository;
-}
-
-/**
  * GET /stats
  * Get graph statistics
  */
@@ -75,7 +41,7 @@ graphRoutes.get('/:owner/:repo/graph/stats', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -111,7 +77,7 @@ graphRoutes.post(
     const userId = c.get('userId') ?? null;
     const query = c.req.valid('json') as GraphQuery;
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -155,7 +121,7 @@ graphRoutes.get('/:owner/:repo/graph/symbol/:name', optionalAuth, async (c) => {
   const { owner, repo, name } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -189,7 +155,7 @@ graphRoutes.get('/:owner/:repo/graph/file/*', optionalAuth, async (c) => {
     return c.json({ error: 'Invalid file path' }, 400);
   }
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -229,7 +195,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/dead-code', optionalAuth, async (c
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -259,7 +225,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/complexity', optionalAuth, async (
   const userId = c.get('userId') ?? null;
   const threshold = Math.max(0, Math.min(parseInt(c.req.query('threshold') || '10', 10) || 10, 100));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -296,7 +262,7 @@ graphRoutes.get('/:owner/:repo/graph/analysis/call-paths', optionalAuth, async (
     return c.json({ error: 'Both "from" and "to" query parameters are required' }, 400);
   }
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -330,7 +296,7 @@ graphRoutes.post('/:owner/:repo/graph/sync', requireAuth, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const jobType = body.jobType || 'full';
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -385,7 +351,7 @@ graphRoutes.get('/:owner/:repo/graph/sync/status', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -426,7 +392,7 @@ graphRoutes.get('/:owner/:repo/graph/sync/job/:jobId', optionalAuth, async (c) =
   const { owner, repo, jobId } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -468,7 +434,7 @@ graphRoutes.post(
     const userId = c.get('userId')!;
     const { query, params } = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -517,7 +483,7 @@ graphRoutes.get('/:owner/:repo/graph/viz/dependencies', optionalAuth, async (c) 
   const userId = c.get('userId') ?? null;
   const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '300', 10) || 300, 1000));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -541,7 +507,7 @@ graphRoutes.get('/:owner/:repo/graph/viz/calls', optionalAuth, async (c) => {
   const symbol = c.req.query('symbol');
   const depth = Math.max(1, Math.min(parseInt(c.req.query('depth') || '2', 10) || 2, 5));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -563,7 +529,7 @@ graphRoutes.get('/:owner/:repo/graph/viz/modules', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -588,7 +554,7 @@ graphRoutes.get('/:owner/:repo/graph/viz/complexity', optionalAuth, async (c) =>
   const rawType = c.req.query('type') || 'file';
   const type: 'file' | 'symbol' = rawType === 'symbol' ? 'symbol' : 'file';
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -614,7 +580,7 @@ graphRoutes.get('/:owner/:repo/graph/viz/heatmap', optionalAuth, async (c) => {
     ? (rawMetric as 'recency' | 'frequency' | 'churn')
     : 'recency';
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -638,7 +604,7 @@ graphRoutes.get('/:owner/:repo/graph/summary', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -672,7 +638,7 @@ graphRoutes.get('/:owner/:repo/graph/timeline/file/*', optionalAuth, async (c) =
   }
   const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -695,7 +661,7 @@ graphRoutes.get('/:owner/:repo/graph/timeline/symbol/:qualifiedName', optionalAu
   const userId = c.get('userId') ?? null;
   const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -718,7 +684,7 @@ graphRoutes.get('/:owner/:repo/graph/impact/:qualifiedName', optionalAuth, async
   const userId = c.get('userId') ?? null;
   const depth = Math.max(1, Math.min(parseInt(c.req.query('depth') || '2', 10) || 2, 5));
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -749,7 +715,7 @@ graphRoutes.get('/:owner/:repo/graph/context', optionalAuth, async (c) => {
   const { owner, repo } = c.req.param();
   const userId = c.get('userId') ?? null;
 
-  const repository = await getRepository(owner, repo, userId);
+  const repository = await resolveRepository(owner, repo, userId);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }

@@ -11,10 +11,10 @@ import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { db } from '../db';
-import { repositories, contextEngineSessions } from '../db/schema';
+import { contextEngineSessions } from '../db/schema';
 import { eq, desc, and, gte, count, sql } from 'drizzle-orm';
 import { requireAuth, optionalAuth } from '../middleware/auth';
-import { canUserAccessRepo } from '../services/repository.service';
+import { resolveRepository } from '../middleware/resolve-repository';
 import { getGraphManager } from '../services/graph';
 import { env } from '../config/env';
 import {
@@ -27,28 +27,6 @@ import { processEgress } from '../services/context-engine-egress.service';
 import type { AppEnv } from '../app';
 
 const contextEngineRoutes = new Hono<AppEnv>();
-
-// ── Helper: resolve repo with access control ──────────────────────────
-
-async function getRepository(owner: string, repo: string, userId: string | null) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) return null;
-
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) return null;
-
-  const canAccess = await canUserAccessRepo(repository.id, userId);
-  if (!canAccess) return null;
-
-  return repository;
-}
 
 // ── Schemas ───────────────────────────────────────────────────────────
 
@@ -86,7 +64,7 @@ contextEngineRoutes.get(
     const { owner, repo } = c.req.param();
     const userId = c.get('userId') ?? null;
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -181,7 +159,7 @@ contextEngineRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -220,7 +198,7 @@ contextEngineRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -260,7 +238,7 @@ contextEngineRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -302,7 +280,7 @@ contextEngineRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -345,7 +323,7 @@ contextEngineRoutes.get(
     const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
     const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -393,7 +371,7 @@ contextEngineRoutes.get(
     const { owner, repo, sessionId } = c.req.param();
     const userId = c.get('userId') ?? null;
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -442,7 +420,7 @@ contextEngineRoutes.get(
     const concern = c.req.query('concern');
     const file = c.req.query('file');
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -507,7 +485,7 @@ contextEngineRoutes.get(
     const { owner, repo } = c.req.param();
     const userId = c.get('userId') ?? null;
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -580,7 +558,7 @@ contextEngineRoutes.get(
     const userId = c.get('userId') ?? null;
     const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '300', 10) || 300, 1000));
 
-    const repository = await getRepository(owner, repo, userId);
+    const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }

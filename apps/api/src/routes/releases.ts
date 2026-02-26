@@ -7,35 +7,12 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
-import { db } from '../db';
-import { repositories } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { resolveRepository } from '../middleware/resolve-repository';
 import * as releaseService from '../services/release.service';
 import { NotFoundError, ValidationError, ConflictError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
 const releaseRoutes = new Hono<AppEnv>();
-
-// ============================================================================
-// Helper to get repository by owner/repo
-// ============================================================================
-
-async function getRepository(owner: string, repo: string) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) return null;
-
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) return null;
-
-  return repository;
-}
 
 // ============================================================================
 // Release CRUD
@@ -62,7 +39,7 @@ releaseRoutes.post(
     const userId = c.get('userId')!;
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -107,7 +84,7 @@ releaseRoutes.get(
     const { owner, repo } = c.req.param();
     const { limit, offset } = c.req.valid('query');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -141,7 +118,7 @@ releaseRoutes.get(
   async (c) => {
     const { owner, repo } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -164,7 +141,7 @@ releaseRoutes.get(
   async (c) => {
     const { owner, repo, tag } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -193,7 +170,7 @@ releaseRoutes.get(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -233,7 +210,7 @@ releaseRoutes.patch(
     const { owner, repo, id } = c.req.param();
     const body = c.req.valid('json');
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -275,7 +252,7 @@ releaseRoutes.delete(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -311,7 +288,7 @@ releaseRoutes.post(
   async (c) => {
     const { owner, repo, id } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -355,7 +332,7 @@ releaseRoutes.get(
   async (c) => {
     const { owner, repo, id, assetId } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }
@@ -400,7 +377,7 @@ releaseRoutes.delete(
   async (c) => {
     const { owner, repo, id, assetId } = c.req.param();
 
-    const repository = await getRepository(owner, repo);
+    const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
     }

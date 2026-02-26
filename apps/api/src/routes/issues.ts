@@ -7,35 +7,12 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireAuth, optionalAuth } from '../middleware/auth';
-import { db } from '../db';
-import { repositories } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { resolveRepository } from '../middleware/resolve-repository';
 import * as issueService from '../services/issue.service';
 import { NotFoundError, ForbiddenError, ValidationError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
 const issueRoutes = new Hono<AppEnv>();
-
-// ============================================================================
-// Helper to get repository by owner/repo
-// ============================================================================
-
-async function getRepository(owner: string, repo: string) {
-  const repository = await db.query.repositories.findFirst({
-    where: eq(repositories.slug, repo),
-    with: {
-      organization: true,
-      owner: true,
-    },
-  });
-
-  if (!repository) return null;
-
-  const ownerSlug = repository.organization?.slug || repository.owner?.username;
-  if (ownerSlug !== owner) return null;
-
-  return repository;
-}
 
 // ============================================================================
 // Issue CRUD
@@ -61,7 +38,7 @@ issueRoutes.get('/repos/:owner/:repo/issues', optionalAuth, zValidator('query', 
   const { owner, repo } = c.req.param();
   const query = c.req.valid('query');
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -106,7 +83,7 @@ issueRoutes.post('/repos/:owner/:repo/issues', requireAuth, zValidator('json', c
   const userId = c.get('userId')!;
   const body = c.req.valid('json');
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -138,7 +115,7 @@ issueRoutes.post('/repos/:owner/:repo/issues', requireAuth, zValidator('json', c
 issueRoutes.get('/repos/:owner/:repo/issues/:number', async (c) => {
   const { owner, repo, number } = c.req.param();
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -170,7 +147,7 @@ issueRoutes.patch('/repos/:owner/:repo/issues/:number', requireAuth, zValidator(
   const userId = c.get('userId')!;
   const body = c.req.valid('json');
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -202,7 +179,7 @@ issueRoutes.delete('/repos/:owner/:repo/issues/:number', requireAuth, async (c) 
   const { owner, repo, number } = c.req.param();
   const userId = c.get('userId')!;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -235,7 +212,7 @@ issueRoutes.post('/repos/:owner/:repo/issues/:number/close', requireAuth, async 
   const { owner, repo, number } = c.req.param();
   const userId = c.get('userId')!;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -257,7 +234,7 @@ issueRoutes.post('/repos/:owner/:repo/issues/:number/reopen', requireAuth, async
   const { owner, repo, number } = c.req.param();
   const userId = c.get('userId')!;
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -282,7 +259,7 @@ issueRoutes.post('/repos/:owner/:repo/issues/:number/reopen', requireAuth, async
 issueRoutes.get('/repos/:owner/:repo/issues/:number/comments', async (c) => {
   const { owner, repo, number } = c.req.param();
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -309,7 +286,7 @@ issueRoutes.post('/repos/:owner/:repo/issues/:number/comments', requireAuth, zVa
   const userId = c.get('userId')!;
   const { body } = c.req.valid('json');
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -379,7 +356,7 @@ issueRoutes.delete('/repos/:owner/:repo/issues/:number/comments/:commentId', req
 issueRoutes.get('/repos/:owner/:repo/labels', async (c) => {
   const { owner, repo } = c.req.param();
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
@@ -395,7 +372,7 @@ issueRoutes.get('/repos/:owner/:repo/labels', async (c) => {
 issueRoutes.get('/repos/:owner/:repo/milestones', async (c) => {
   const { owner, repo } = c.req.param();
 
-  const repository = await getRepository(owner, repo);
+  const repository = await resolveRepository(owner, repo, c.get('userId') ?? null);
   if (!repository) {
     return c.json({ error: 'Repository not found' }, 404);
   }
