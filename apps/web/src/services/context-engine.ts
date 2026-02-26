@@ -90,7 +90,28 @@ export interface CEGlobalSessionsResponse {
   pagination: { limit: number; offset: number; total: number };
 }
 
+export interface CEHealth {
+  graph: {
+    connected: boolean;
+    latencyMs: number;
+  };
+  skNodeCount: number;
+  lastEgressTimestamp: number | null;
+  hooksInstalled: boolean;
+  activeSessions: number;
+}
+
 // API Functions
+
+export async function getContextEngineHealth(
+  owner: string,
+  repo: string,
+): Promise<CEHealth> {
+  const response = await api.get(
+    `/v1/repos/${owner}/${repo}/context-engine/health`,
+  );
+  return response.data.data;
+}
 
 export async function getContextEngineSessions(
   owner: string,

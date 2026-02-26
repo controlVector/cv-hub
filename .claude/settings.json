@@ -2,30 +2,42 @@
   "hooks": {
     "SessionStart": [
       {
-        "command": "bash .claude/hooks/session-start.sh",
-        "timeout": 10000
-      }
-    ],
-    "SessionEnd": [
-      {
-        "command": "bash .claude/hooks/session-end.sh",
-        "timeout": 5000
-      }
-    ],
-    "PreCompact": [
-      {
-        "command": "bash .claude/hooks/context-checkpoint.sh",
-        "timeout": 5000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
+          }
+        ]
       }
     ],
     "Stop": [
       {
-        "command": "bash .claude/hooks/poll-tasks.sh",
-        "timeout": 5000
-      },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-turn.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
       {
-        "command": "bash .claude/hooks/context-turn.sh",
-        "timeout": 8000
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-checkpoint.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-end.sh"
+          }
+        ]
       }
     ]
   }

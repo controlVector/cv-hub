@@ -25,6 +25,12 @@ import {
   Hub,
   LinkRounded,
   InsertDriveFile,
+  CheckCircle,
+  Cancel,
+  Storage,
+  Schedule,
+  Terminal,
+  Group,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -32,6 +38,7 @@ import { colors } from '../theme';
 import {
   getContextEngineStats,
   getContextEngineSessions,
+  getContextEngineHealth,
 } from '../services/context-engine';
 
 function StatCard({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
@@ -45,6 +52,27 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
       <Box>
         <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 700, lineHeight: 1.1 }}>{value}</Typography>
         <Typography variant="caption" sx={{ color: colors.textMuted, fontSize: '0.65rem' }}>{label}</Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function HealthMetric({ label, ok, detail, icon }: {
+  label: string; ok: boolean; detail: string; icon: React.ReactNode;
+}) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 140 }}>
+      <Box sx={{ color: colors.textMuted, display: 'flex' }}>{icon}</Box>
+      {ok
+        ? <CheckCircle sx={{ fontSize: 14, color: '#22c55e' }} />
+        : <Cancel sx={{ fontSize: 14, color: '#ef4444' }} />}
+      <Box>
+        <Typography variant="body2" sx={{ fontSize: '0.8rem', fontWeight: 600, lineHeight: 1.2 }}>
+          {detail}
+        </Typography>
+        <Typography variant="caption" sx={{ color: colors.textMuted, fontSize: '0.6rem' }}>
+          {label}
+        </Typography>
       </Box>
     </Box>
   );
@@ -84,6 +112,13 @@ export default function ContextEngineDashboard() {
     staleTime: 30000,
   });
 
+  const { data: health } = useQuery({
+    queryKey: ['ceHealth', owner, repo],
+    queryFn: () => getContextEngineHealth(owner!, repo!),
+    enabled: !!owner && !!repo,
+    staleTime: 30000,
+  });
+
   if (statsLoading) {
     return (
       <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -114,6 +149,52 @@ export default function ContextEngineDashboard() {
         <Psychology sx={{ fontSize: 24, color: colors.cyan }} />
         <Typography variant="h5" sx={{ fontWeight: 600 }}>Context Engine</Typography>
       </Box>
+
+      {/* Health Card */}
+      {health && (
+        <Box sx={{
+          p: 2, borderRadius: 1.5, backgroundColor: colors.navyLight,
+          border: `1px solid ${colors.navyLighter}`,
+        }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.85rem' }}>
+            Engine Health
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <HealthMetric
+              label="FalkorDB"
+              ok={health.graph.connected}
+              detail={health.graph.connected ? `${health.graph.latencyMs}ms` : 'unreachable'}
+              icon={<Storage sx={{ fontSize: 16 }} />}
+            />
+            <HealthMetric
+              label="SK Nodes"
+              ok={health.skNodeCount > 0}
+              detail={String(health.skNodeCount)}
+              icon={<Hub sx={{ fontSize: 16 }} />}
+            />
+            <HealthMetric
+              label="Last Egress"
+              ok={health.lastEgressTimestamp !== null}
+              detail={health.lastEgressTimestamp
+                ? formatRelativeTime(new Date(health.lastEgressTimestamp).toISOString())
+                : 'none'}
+              icon={<Schedule sx={{ fontSize: 16 }} />}
+            />
+            <HealthMetric
+              label="Hooks"
+              ok={health.hooksInstalled}
+              detail={health.hooksInstalled ? 'installed' : 'missing'}
+              icon={<Terminal sx={{ fontSize: 16 }} />}
+            />
+            <HealthMetric
+              label="Active Sessions"
+              ok={health.activeSessions > 0}
+              detail={String(health.activeSessions)}
+              icon={<Group sx={{ fontSize: 16 }} />}
+            />
+          </Box>
+        </Box>
+      )}
 
       {/* Stats Row */}
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>

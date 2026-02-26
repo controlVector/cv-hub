@@ -74,6 +74,7 @@ if [[ -n "$executor_id" && -n "${CLAUDE_ENV_FILE:-}" ]]; then
   echo "CV_HUB_PAT=${CV_HUB_PAT}" >> "$CLAUDE_ENV_FILE"
   [[ -n "$repo_name" ]] && echo "CV_HUB_REPO=${repo_name}" >> "$CLAUDE_ENV_FILE"
   [[ -n "$session_id" ]] && echo "CV_HUB_SESSION_ID=${session_id}" >> "$CLAUDE_ENV_FILE"
+  [[ -n "${CV_HUB_ORG_OVERRIDE:-}" ]] && echo "CV_HUB_ORG_OVERRIDE=${CV_HUB_ORG_OVERRIDE}" >> "$CLAUDE_ENV_FILE"
 fi
 
 # ── Context Engine: inject initial context ─────────────────────────

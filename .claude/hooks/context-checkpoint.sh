@@ -26,7 +26,7 @@ if [[ -z "${CV_HUB_API:-}" || -z "${CV_HUB_PAT:-}" || -z "${CV_HUB_REPO:-}" || -
   exit 0
 fi
 
-owner="${CV_HUB_REPO%%/*}"
+owner="${CV_HUB_ORG_OVERRIDE:-${CV_HUB_REPO%%/*}}"
 repoSlug="${CV_HUB_REPO##*/}"
 
 # Read hook input from stdin

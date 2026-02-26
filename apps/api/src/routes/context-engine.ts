@@ -8,12 +8,15 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 import { db } from '../db';
 import { repositories, contextEngineSessions } from '../db/schema';
 import { eq, desc, and, gte, count, sql } from 'drizzle-orm';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import { canUserAccessRepo } from '../services/repository.service';
 import { getGraphManager } from '../services/graph';
+import { env } from '../config/env';
 import {
   initSessionContext,
   generateTurnContext,
@@ -73,6 +76,99 @@ const checkpointSchema = z.object({
   files_in_context: z.array(z.string()).default([]),
   symbols_in_context: z.array(z.string()).default([]),
 });
+
+// ── GET /health — Context engine health for a repo ────────────────────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/health',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    const ownerSlug = repository.organization?.slug || repository.owner?.username || owner;
+
+    // 1. Graph connectivity — can the adapter reach FalkorDB?
+    let graphConnected = false;
+    let graphLatencyMs = 0;
+    try {
+      const start = performance.now();
+      const graph = await getGraphManager(repository.id);
+      await graph.query('RETURN 1');
+      graphLatencyMs = Math.round(performance.now() - start);
+      graphConnected = true;
+    } catch {
+      graphLatencyMs = 0;
+    }
+
+    // 2. SK node count
+    let skNodeCount = 0;
+    // 3. Last egress timestamp
+    let lastEgressTimestamp: number | null = null;
+    if (graphConnected) {
+      try {
+        const graph = await getGraphManager(repository.id);
+        const [countResult, latestResult] = await Promise.all([
+          graph.query('MATCH (sk:SessionKnowledge) RETURN count(sk) AS cnt'),
+          graph.query(
+            'MATCH (sk:SessionKnowledge) RETURN sk.timestamp AS ts ORDER BY sk.timestamp DESC LIMIT 1',
+          ),
+        ]);
+        skNodeCount = (countResult[0] as any)?.cnt ?? 0;
+        lastEgressTimestamp = (latestResult[0] as any)?.ts ?? null;
+      } catch {
+        // graph queries failed — counts stay at defaults
+      }
+    }
+
+    // 4. Hooks detected — check if .claude/hooks/session-start.sh exists on disk
+    let hooksInstalled = false;
+    try {
+      const repoPath = path.join(env.GIT_STORAGE_PATH, ownerSlug, `${repository.slug}.git`);
+      const hookPath = path.join(repoPath, '.claude', 'hooks', 'session-start.sh');
+      await fs.access(hookPath);
+      hooksInstalled = true;
+    } catch {
+      // file doesn't exist or not accessible
+    }
+
+    // 5. Active sessions — sessions with activity in the last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    let activeSessions = 0;
+    try {
+      const result = await db.select({ total: count() })
+        .from(contextEngineSessions)
+        .where(
+          and(
+            eq(contextEngineSessions.repositoryId, repository.id),
+            gte(contextEngineSessions.lastActivityAt, oneHourAgo),
+          ),
+        );
+      activeSessions = result[0]?.total ?? 0;
+    } catch {
+      // db query failed
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        graph: {
+          connected: graphConnected,
+          latencyMs: graphLatencyMs,
+        },
+        skNodeCount,
+        lastEgressTimestamp,
+        hooksInstalled,
+        activeSessions,
+      },
+    });
+  },
+);
 
 // ── POST /init — Initialize session context ───────────────────────────
 
