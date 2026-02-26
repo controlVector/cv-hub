@@ -1,11 +1,13 @@
-import { eq, and, inArray, count, isNull } from 'drizzle-orm';
+import { eq, and, inArray, count, isNull, gte, sql } from 'drizzle-orm';
 import { db } from '../db';
 import {
   subscriptions,
   pricingTiers,
   repositories,
   organizationMembers,
+  contextEngineSessions,
   type PricingTierLimits,
+  type PricingTierFeatures,
 } from '../db/schema';
 import { getPricingTierByName } from './pricing.service';
 import { logger } from '../utils/logger';
@@ -18,8 +20,29 @@ export interface OrgTierInfo {
   tierName: string;
   tierDisplayName: string;
   limits: PricingTierLimits;
+  features: PricingTierFeatures;
   isFreeTier: boolean;
 }
+
+// Hardcoded feature defaults when no tier is in the DB
+const STARTER_FEATURES: PricingTierFeatures = {
+  branchProtection: false,
+  sso: false,
+  customDomain: false,
+  analytics: false,
+  auditLogs: false,
+  prioritySupport: false,
+  sla: false,
+  dedicatedInstance: false,
+  ipAllowlisting: false,
+  webhooks: true,
+  apiAccess: true,
+  configManagement: false,
+  configExternalStores: false,
+  configExports: false,
+  mcpGateway: false,
+  contextEngine: true, // enabled but limited by egressPerDay
+};
 
 /**
  * Resolve the effective pricing tier for an organization.
@@ -61,7 +84,10 @@ export async function getOrgTierInfo(orgId: string): Promise<OrgTierInfo> {
         configSets: 0,
         configSchemas: 0,
         configHistoryDays: 0,
+        egressPerDay: 50,
+        skNodesPerRepo: 100,
       },
+      features: STARTER_FEATURES,
       isFreeTier: true,
     };
   }
@@ -70,6 +96,7 @@ export async function getOrgTierInfo(orgId: string): Promise<OrgTierInfo> {
     tierName: tier.name,
     tierDisplayName: tier.displayName,
     limits: tier.limits as PricingTierLimits,
+    features: (tier.features ?? STARTER_FEATURES) as PricingTierFeatures,
     isFreeTier: tier.basePriceMonthly === 0 || tier.basePriceMonthly === null,
   };
 }
@@ -224,5 +251,102 @@ export async function getOrgUsageWithLimits(orgId: string): Promise<OrgUsageWith
       environments: tierInfo.limits.environments,
       buildMinutes: tierInfo.limits.buildMinutes,
     },
+  };
+}
+
+// ============================================================================
+// Context Engine Limit Checks
+// ============================================================================
+
+/**
+ * Count egress calls today for all repos in an organization.
+ * Uses lastActivityAt on context_engine_sessions to approximate daily turns.
+ */
+export async function getOrgEgressToday(orgId: string): Promise<number> {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  // Count turns across all org repos updated today
+  const [result] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${contextEngineSessions.lastTurnCount}), 0)`,
+    })
+    .from(contextEngineSessions)
+    .innerJoin(repositories, eq(contextEngineSessions.repositoryId, repositories.id))
+    .where(
+      and(
+        eq(repositories.organizationId, orgId),
+        gte(contextEngineSessions.lastActivityAt, startOfDay),
+      )
+    );
+
+  return Number(result?.total || 0);
+}
+
+/**
+ * Check if an org's context engine is enabled by their plan.
+ */
+export async function checkContextEngineAccess(orgId: string): Promise<{
+  allowed: boolean;
+  tierName: string;
+}> {
+  const tierInfo = await getOrgTierInfo(orgId);
+  const contextEngine = tierInfo.features?.contextEngine ?? true;
+
+  return {
+    allowed: contextEngine,
+    tierName: tierInfo.tierName,
+  };
+}
+
+/**
+ * Check if an org can make another egress call today.
+ */
+export async function checkEgressLimit(orgId: string): Promise<LimitCheckResult> {
+  const tierInfo = await getOrgTierInfo(orgId);
+  const limit = tierInfo.limits.egressPerDay ?? null;
+
+  // null means unlimited
+  if (limit === null) {
+    return { allowed: true, current: 0, limit: -1, tierName: tierInfo.tierName };
+  }
+
+  const current = await getOrgEgressToday(orgId);
+
+  return {
+    allowed: current < limit,
+    current,
+    limit,
+    tierName: tierInfo.tierName,
+  };
+}
+
+/**
+ * Check if a repo can store another SK node based on the org's plan.
+ */
+export async function checkSKNodeLimit(orgId: string, repoId: string): Promise<LimitCheckResult> {
+  const tierInfo = await getOrgTierInfo(orgId);
+  const limit = tierInfo.limits.skNodesPerRepo ?? null;
+
+  // null means unlimited
+  if (limit === null) {
+    return { allowed: true, current: 0, limit: -1, tierName: tierInfo.tierName };
+  }
+
+  // Count SK nodes for this repo via context engine sessions turn count
+  const [result] = await db
+    .select({
+      total: sql<number>`COALESCE(SUM(${contextEngineSessions.lastTurnCount}), 0)`,
+    })
+    .from(contextEngineSessions)
+    .where(eq(contextEngineSessions.repositoryId, repoId));
+
+  const current = Number(result?.total || 0);
+
+  return {
+    allowed: current < limit,
+    current,
+    limit,
+    tierName: tierInfo.tierName,
   };
 }

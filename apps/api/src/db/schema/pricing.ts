@@ -38,6 +38,8 @@ export const pricingTiers = pgTable('pricing_tiers', {
     configSets: number | null;      // Max config sets (0 = disabled)
     configSchemas: number | null;   // Max config schemas
     configHistoryDays: number | null; // Config history retention in days
+    egressPerDay: number | null;    // Max context engine egress calls per day (null = unlimited)
+    skNodesPerRepo: number | null;  // Max SessionKnowledge nodes per repo (null = unlimited)
   }>().notNull(),
 
   // Features included in this tier
@@ -57,6 +59,7 @@ export const pricingTiers = pgTable('pricing_tiers', {
     configExternalStores: boolean;    // External config stores (AWS SSM, Vault, etc.)
     configExports: boolean;           // Config export functionality
     mcpGateway: boolean;              // MCP Gateway access (bolt-on for Starter, included in Pro/Enterprise)
+    contextEngine: boolean;           // Context engine access (limited for Starter, full for Pro/Enterprise)
   }>().notNull(),
 
   // Display configuration

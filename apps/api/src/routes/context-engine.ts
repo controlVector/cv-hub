@@ -25,6 +25,8 @@ import {
   type ContextConcern,
 } from '../services/context-engine.service';
 import { processEgress } from '../services/context-engine-egress.service';
+import { checkEgressLimit, checkSKNodeLimit, checkContextEngineAccess } from '../services/tier-limits.service';
+import { TierLimitError } from '../utils/errors';
 import type { AppEnv } from '../app';
 
 const contextEngineRoutes = new Hono<AppEnv>();
@@ -204,6 +206,14 @@ contextEngineRoutes.post(
       return c.json({ error: 'Repository not found' }, 404);
     }
 
+    // Enforce context engine access for org repos
+    if (repository.organizationId) {
+      const ceAccess = await checkContextEngineAccess(repository.organizationId);
+      if (!ceAccess.allowed) {
+        throw new TierLimitError('context_engine', 0, 0, ceAccess.tierName);
+      }
+    }
+
     try {
       const result = await generateTurnContext(repository.id, {
         session_id: body.session_id,
@@ -284,6 +294,24 @@ contextEngineRoutes.post(
     const repository = await resolveRepository(owner, repo, userId);
     if (!repository) {
       return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    // Enforce plan limits for org repos
+    if (repository.organizationId) {
+      const ceAccess = await checkContextEngineAccess(repository.organizationId);
+      if (!ceAccess.allowed) {
+        throw new TierLimitError('context_engine', 0, 0, ceAccess.tierName);
+      }
+
+      const egressCheck = await checkEgressLimit(repository.organizationId);
+      if (!egressCheck.allowed) {
+        throw new TierLimitError('egress', egressCheck.current, egressCheck.limit, egressCheck.tierName);
+      }
+
+      const skCheck = await checkSKNodeLimit(repository.organizationId, repository.id);
+      if (!skCheck.allowed) {
+        throw new TierLimitError('sk_nodes', skCheck.current, skCheck.limit, skCheck.tierName);
+      }
     }
 
     try {
