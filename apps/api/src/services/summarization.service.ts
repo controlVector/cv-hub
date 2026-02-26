@@ -455,7 +455,7 @@ export async function syncSummaries(
   // 5. Get all files for summarization (those without summary)
   const filesToSummarize = await graph.query(`
     MATCH (f:File)
-    WHERE f.summary IS NULL AND f.linesOfCode > 0
+    WHERE (f.summary IS NULL OR f.summary = '') AND f.linesOfCode > 0
     RETURN f.path AS path, f.language AS language, f.linesOfCode AS linesOfCode
     ORDER BY f.complexity DESC
     LIMIT 100
@@ -474,7 +474,7 @@ export async function syncSummaries(
   // 6. Get symbols for summarization (those without summary)
   const symbolsToSummarize = await graph.query(`
     MATCH (s:Symbol)
-    WHERE s.summary IS NULL AND s.complexity > 0
+    WHERE (s.summary IS NULL OR s.summary = '') AND s.complexity > 0
     RETURN s.qualifiedName AS qualifiedName, s.name AS name, s.kind AS kind,
            s.file AS file, s.signature AS signature
     ORDER BY s.complexity DESC

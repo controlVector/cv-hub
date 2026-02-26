@@ -272,7 +272,7 @@ export class GraphManager {
 
     await this.query(cypher, {
       ...file,
-      summary: file.summary || '',
+      summary: file.summary || null,
       updatedAt: Date.now()
     });
   }

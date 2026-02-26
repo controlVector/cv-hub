@@ -27,8 +27,8 @@ cwd="${cwd:-$(pwd)}"
 repo_url=$(git -C "$cwd" remote get-url origin 2>/dev/null || true)
 repo_name=""
 if [[ -n "$repo_url" ]]; then
-  # Extract owner/repo from SSH or HTTPS URLs
-  repo_name=$(echo "$repo_url" | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+  # Extract owner/repo from SSH or HTTPS URLs, strip .git suffix
+  repo_name=$(echo "$repo_url" | sed -E 's#\.git$##' | sed -E 's#.*[:/]([^/]+/[^/]+)$#\1#')
 fi
 
 # Build executor name
@@ -49,14 +49,14 @@ payload=$(cat <<EOF
 EOF
 )
 
-# Register executor
+# Register executor (non-fatal — context injection proceeds even if this fails)
 resp=$(curl -sf -X POST \
   -H "Authorization: Bearer ${CV_HUB_PAT}" \
   -H "Content-Type: application/json" \
   -d "$payload" \
-  "${CV_HUB_API}/api/v1/executors" 2>/dev/null) || exit 0
+  "${CV_HUB_API}/api/v1/executors" 2>/dev/null) || resp=""
 
-executor_id=$(echo "$resp" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+executor_id=$(echo "$resp" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
 
 if [[ -n "$executor_id" && -n "${CLAUDE_ENV_FILE:-}" ]]; then
   echo "CV_HUB_EXECUTOR_ID=${executor_id}" >> "$CLAUDE_ENV_FILE"
@@ -70,6 +70,12 @@ fi
 if [[ -n "$repo_name" && -n "$session_id" ]]; then
   owner="${repo_name%%/*}"
   repoSlug="${repo_name##*/}"
+
+  # Allow local owner override (git remote org may differ from CV-Hub org slug)
+  CV_HUB_ORG_OVERRIDE="${CV_HUB_ORG_OVERRIDE:-}"
+  if [[ -n "$CV_HUB_ORG_OVERRIDE" ]]; then
+    owner="$CV_HUB_ORG_OVERRIDE"
+  fi
   ctx_resp=$(curl -sf -X POST \
     -H "Authorization: Bearer ${CV_HUB_PAT}" \
     -H "Content-Type: application/json" \

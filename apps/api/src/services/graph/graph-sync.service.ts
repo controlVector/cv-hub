@@ -412,7 +412,10 @@ export async function processGraphSync(
 }
 
 /**
- * Sync file nodes from repository to graph
+ * Sync file nodes from repository to graph.
+ * Uses getTreeRecursive so ALL files (not just root-level) get File nodes.
+ * This is critical for syncSymbolNodes which later tries to MATCH File nodes
+ * to SET linesOfCode/complexity and create DEFINES edges.
  */
 async function syncFileNodes(
   graph: GraphManager,
@@ -424,8 +427,8 @@ async function syncFileNodes(
   let edgesCreated = 0;
 
   try {
-    // Get the file tree
-    const tree = await gitBackend.getTree(ownerSlug, repoSlug, branch, '');
+    // Get ALL files recursively — not just root-level
+    const tree = await gitBackend.getTreeRecursive(ownerSlug, repoSlug, branch);
 
     for (const entry of tree) {
       if (entry.type === 'blob') {
@@ -439,7 +442,7 @@ async function syncFileNodes(
           lastModified: Date.now(),
           size: entry.size || 0,
           gitHash: entry.sha || '',
-          linesOfCode: 0, // Would need to read file to count
+          linesOfCode: 0, // Updated later by syncSymbolNodes for code files
           complexity: 0,
         };
 
@@ -447,6 +450,8 @@ async function syncFileNodes(
         nodesCreated++;
       }
     }
+
+    console.log(`[GraphSync] Created ${nodesCreated} file nodes (recursive)`);
   } catch (error: any) {
     console.error(`[GraphSync] Error syncing files: ${error.message}`);
   }
