@@ -1,8 +1,9 @@
-import { eq, and, desc, sql, ilike, or, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, ilike, or, isNull, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import {
   repositories,
   repositoryMembers,
+  organizationMembers,
   branches,
   repoStars,
   repoWatchers,
@@ -470,6 +471,56 @@ export async function canUserAccessRepo(repoId: string, userId: string | null): 
   if (repo.userId === userId) return true;
 
   return false;
+}
+
+/**
+ * Get all repository IDs a user can access.
+ * Returns repos the user owns, is a direct member of, or has access to via org membership.
+ * Does NOT include all public repos — only repos with an explicit relationship.
+ */
+export async function getUserAccessibleRepoIds(userId: string): Promise<string[]> {
+  // 1. Repos the user directly owns
+  const ownedRepos = await db
+    .select({ id: repositories.id })
+    .from(repositories)
+    .where(eq(repositories.userId, userId));
+
+  // 2. Repos the user is a direct member of
+  const memberRepos = await db
+    .select({ id: repositoryMembers.repositoryId })
+    .from(repositoryMembers)
+    .where(eq(repositoryMembers.userId, userId));
+
+  // 3. Repos in orgs the user is a member of (internal/private repos accessible via org membership)
+  const userOrgIds = await db
+    .select({ orgId: organizationMembers.organizationId })
+    .from(organizationMembers)
+    .where(eq(organizationMembers.userId, userId));
+
+  let orgRepos: { id: string }[] = [];
+  if (userOrgIds.length > 0) {
+    orgRepos = await db
+      .select({ id: repositories.id })
+      .from(repositories)
+      .where(
+        and(
+          inArray(repositories.organizationId, userOrgIds.map(r => r.orgId)),
+          or(
+            eq(repositories.visibility, 'internal'),
+            eq(repositories.visibility, 'private'),
+            eq(repositories.visibility, 'public'),
+          ),
+        ),
+      );
+  }
+
+  // Merge and deduplicate
+  const idSet = new Set<string>();
+  for (const r of ownedRepos) idSet.add(r.id);
+  for (const r of memberRepos) idSet.add(r.id);
+  for (const r of orgRepos) idSet.add(r.id);
+
+  return Array.from(idSet);
 }
 
 /**

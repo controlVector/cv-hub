@@ -12,9 +12,10 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { db } from '../db';
 import { contextEngineSessions } from '../db/schema';
-import { eq, desc, and, gte, count, sql } from 'drizzle-orm';
+import { eq, desc, and, gte, count, sql, inArray } from 'drizzle-orm';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import { resolveRepository } from '../middleware/resolve-repository';
+import { getUserAccessibleRepoIds } from '../services/repository.service';
 import { getGraphManager } from '../services/graph';
 import { env } from '../config/env';
 import {
@@ -693,6 +694,9 @@ globalContextEngineRoutes.get(
       const now = new Date();
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
+      // Get repos the user can access — scope all queries to these
+      const accessibleRepoIds = await getUserAccessibleRepoIds(userId);
+
       // Aggregate from Postgres across all repos the user has sessions for
       const [totalResult, activeResult] = await Promise.all([
         db.select({ total: count() })
@@ -708,7 +712,7 @@ globalContextEngineRoutes.get(
           ),
       ]);
 
-      // Get distinct repos the user has CE sessions for
+      // Get distinct repos the user has CE sessions for, filtered by current access
       const repoRows = await db
         .selectDistinctOn([contextEngineSessions.repositoryId], {
           repositoryId: contextEngineSessions.repositoryId,
@@ -716,11 +720,17 @@ globalContextEngineRoutes.get(
         .from(contextEngineSessions)
         .where(eq(contextEngineSessions.userId, userId));
 
-      // Aggregate FalkorDB stats across repos (capped at 20 to avoid N+1 overload)
+      // Only include repos the user still has access to
+      const accessibleSet = new Set(accessibleRepoIds);
+      const repoIds = repoRows
+        .map(r => r.repositoryId)
+        .filter(id => accessibleSet.has(id))
+        .slice(0, 20);
+
+      // Aggregate FalkorDB stats across accessible repos
       let totalKnowledgeNodes = 0;
       let totalAboutEdges = 0;
       let totalFollowsEdges = 0;
-      const repoIds = repoRows.map(r => r.repositoryId).slice(0, 20);
 
       for (const repoId of repoIds) {
         try {
@@ -766,9 +776,18 @@ globalContextEngineRoutes.get(
     const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
 
     try {
+      // Get repos the user can access — scope session list to these
+      const accessibleRepoIds = await getUserAccessibleRepoIds(userId);
+      const accessFilter = accessibleRepoIds.length > 0
+        ? and(
+            eq(contextEngineSessions.userId, userId),
+            inArray(contextEngineSessions.repositoryId, accessibleRepoIds),
+          )
+        : and(eq(contextEngineSessions.userId, userId), sql`false`);
+
       const [sessions, totalResult] = await Promise.all([
         db.query.contextEngineSessions.findMany({
-          where: eq(contextEngineSessions.userId, userId),
+          where: accessFilter,
           orderBy: [desc(contextEngineSessions.lastActivityAt)],
           limit,
           offset,
@@ -784,7 +803,7 @@ globalContextEngineRoutes.get(
         }),
         db.select({ total: count() })
           .from(contextEngineSessions)
-          .where(eq(contextEngineSessions.userId, userId)),
+          .where(accessFilter!),
       ]);
 
       return c.json({
