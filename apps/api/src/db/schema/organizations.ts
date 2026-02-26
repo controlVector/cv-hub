@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp, index, pgEnum, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, timestamp, index, pgEnum, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users';
 
@@ -83,11 +83,31 @@ export const organizationMembers = pgTable('organization_members', {
 }, (table) => [
   index('org_members_org_id_idx').on(table.organizationId),
   index('org_members_user_id_idx').on(table.userId),
+  uniqueIndex('org_members_org_user_unique').on(table.organizationId, table.userId),
+]);
+
+// Organization invites table (token-based email invites)
+export const orgInvites = pgTable('org_invites', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  role: orgRoleEnum('role').default('member').notNull(),
+  token: varchar('token', { length: 128 }).notNull().unique(),
+  invitedBy: uuid('invited_by').references(() => users.id),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('org_invites_token_idx').on(table.token),
+  index('org_invites_org_id_idx').on(table.organizationId),
+  // Partial unique index (org_id, email) WHERE accepted_at IS NULL is enforced in migration SQL
 ]);
 
 // Relations
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   members: many(organizationMembers),
+  invites: many(orgInvites),
 }));
 
 export const organizationMembersRelations = relations(organizationMembers, ({ one }) => ({
@@ -101,11 +121,24 @@ export const organizationMembersRelations = relations(organizationMembers, ({ on
   }),
 }));
 
+export const orgInvitesRelations = relations(orgInvites, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [orgInvites.organizationId],
+    references: [organizations.id],
+  }),
+  inviter: one(users, {
+    fields: [orgInvites.invitedBy],
+    references: [users.id],
+  }),
+}));
+
 // Type exports
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type NewOrganizationMember = typeof organizationMembers.$inferInsert;
+export type OrgInvite = typeof orgInvites.$inferSelect;
+export type NewOrgInvite = typeof orgInvites.$inferInsert;
 export type OrgRole = typeof orgRoleEnum.enumValues[number];
 export type InstanceType = typeof instanceTypeEnum.enumValues[number];
 
