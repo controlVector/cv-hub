@@ -294,6 +294,7 @@ contextEngineRoutes.post(
         symbolsReferenced: body.symbols_referenced,
         concern: body.concern,
         repositoryId: repository.id,
+        organizationId: repository.organizationId || null,
       });
 
       return c.json({

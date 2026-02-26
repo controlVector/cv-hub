@@ -7,6 +7,28 @@
  *
  * v1: No LLM calls. Summaries are extracted via truncation, file descriptions
  * via regex pattern matching. Conservative by design.
+ *
+ * ── 8-Step Egress Pipeline ──────────────────────────────────────────────
+ *
+ * 1. Extract file references    — Regex-match file paths in the transcript,
+ *                                 validate against known File nodes in FalkorDB.
+ * 2. Extract symbol references  — Regex-match PascalCase/camelCase identifiers
+ *                                 and qualified names, resolve against known
+ *                                 Symbol nodes.
+ * 3. Build summary              — Truncate the transcript to 500 chars (no LLM).
+ * 4. Create SessionKnowledge    — Upsert a SessionKnowledge node in the graph
+ *    node                         with turn metadata, summary, files, and symbols.
+ * 5. Create ABOUT edges         — Link the SessionKnowledge node to each
+ *                                 referenced File and Symbol node (role:
+ *                                 touched vs referenced).
+ * 6. Create FOLLOWS edge        — Chain this turn to the previous turn's
+ *                                 SessionKnowledge node for temporal ordering.
+ * 7. Enrich file summaries      — Extract "file handles/implements…" patterns
+ *                                 from the transcript and update File node
+ *                                 summaries when the new description is richer.
+ * 8. Embed in Qdrant            — Generate a vector embedding of the summary
+ *                                 and store it as a session_knowledge point
+ *                                 for semantic search.
  */
 
 import { getGraphManager } from './graph/graph.service';
@@ -25,6 +47,7 @@ export interface EgressInput {
   symbolsReferenced: string[];
   concern: string;
   repositoryId: string;
+  organizationId?: string | null;
 }
 
 export interface EgressResult {
@@ -89,6 +112,7 @@ export async function processEgress(input: EgressInput): Promise<EgressResult> {
     symbolsReferenced,
     concern,
     repositoryId,
+    organizationId,
   } = input;
 
   const knowledgeNodeId = `${sessionId}:turn:${turnNumber}`;
@@ -197,6 +221,8 @@ export async function processEgress(input: EgressInput): Promise<EgressResult> {
     source: 'claude_code',
     filesTouched: allFiles,
     symbolsReferenced: allSymbols,
+    repoId: repositoryId,
+    orgId: organizationId || null,
   });
 
   // ── Step 5: Create ABOUT edges ─────────────────────────────────────

@@ -148,6 +148,8 @@ export class GraphManager {
       // SessionKnowledge indexes
       ['SessionKnowledge', 'sessionId'],
       ['SessionKnowledge', 'timestamp'],
+      ['SessionKnowledge', 'repoId'],
+      ['SessionKnowledge', 'orgId'],
     ];
 
     for (const [label, property] of indexes) {
@@ -502,12 +504,16 @@ export class GraphManager {
           sk.source = $source,
           sk.filesTouched = $filesTouched,
           sk.symbolsReferenced = $symbolsReferenced,
+          sk.repoId = $repoId,
+          sk.orgId = $orgId,
           sk.updatedAt = $updatedAt
       RETURN sk
     `;
 
     await this.query(cypher, {
       ...sk,
+      repoId: sk.repoId || null,
+      orgId: sk.orgId || null,
       updatedAt: Date.now(),
     });
   }
@@ -570,7 +576,8 @@ export class GraphManager {
        RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
               sk.timestamp AS timestamp, sk.summary AS summary,
               sk.concern AS concern, sk.source AS source,
-              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced`,
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced,
+              sk.repoId AS repoId, sk.orgId AS orgId`,
       { sessionId, turnNumber },
     );
     if (result.length === 0) return null;
@@ -584,6 +591,8 @@ export class GraphManager {
       source: r.source || '',
       filesTouched: r.filesTouched || [],
       symbolsReferenced: r.symbolsReferenced || [],
+      repoId: r.repoId || undefined,
+      orgId: r.orgId || undefined,
     };
   }
 
@@ -608,7 +617,8 @@ export class GraphManager {
        RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
               sk.timestamp AS timestamp, sk.summary AS summary,
               sk.concern AS concern, sk.source AS source,
-              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced,
+              sk.repoId AS repoId, sk.orgId AS orgId
        ORDER BY sk.timestamp DESC
        LIMIT $limit`,
       { filePaths, excludeSessionId: excludeSessionId || '', limit },
@@ -623,6 +633,8 @@ export class GraphManager {
       source: r.source || '',
       filesTouched: r.filesTouched || [],
       symbolsReferenced: r.symbolsReferenced || [],
+      repoId: r.repoId || undefined,
+      orgId: r.orgId || undefined,
     }));
   }
 
@@ -647,7 +659,8 @@ export class GraphManager {
        RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
               sk.timestamp AS timestamp, sk.summary AS summary,
               sk.concern AS concern, sk.source AS source,
-              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced,
+              sk.repoId AS repoId, sk.orgId AS orgId
        ORDER BY sk.timestamp DESC
        LIMIT $limit`,
       { qualifiedNames, excludeSessionId: excludeSessionId || '', limit },
@@ -662,6 +675,8 @@ export class GraphManager {
       source: r.source || '',
       filesTouched: r.filesTouched || [],
       symbolsReferenced: r.symbolsReferenced || [],
+      repoId: r.repoId || undefined,
+      orgId: r.orgId || undefined,
     }));
   }
 

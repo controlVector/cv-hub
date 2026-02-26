@@ -86,6 +86,8 @@ export interface SessionKnowledgeNode {
   source: string;
   filesTouched: string[];
   symbolsReferenced: string[];
+  repoId?: string;
+  orgId?: string | null;
 }
 
 export interface AboutEdge {
