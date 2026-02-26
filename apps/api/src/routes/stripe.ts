@@ -19,6 +19,7 @@ import { getUserById } from '../services/user.service';
 import { getPricingTierById } from '../services/pricing.service';
 import { getOrgAddon } from '../services/addon.service';
 import { getOrgCreditBalance } from '../services/credit.service';
+import { getOrgUsage, getOrgTierInfo, getOrgEgressToday } from '../services/tier-limits.service';
 
 const stripeRoutes = new Hono<AppEnv>();
 
@@ -250,6 +251,17 @@ stripeRoutes.post(
       throw new ForbiddenError('Only organization admins can manage billing');
     }
 
+    // Verify org has an active subscription (free orgs can't access portal)
+    const sub = await getOrgSubscription(input.organizationId);
+    if (!sub) {
+      return c.json({
+        error: {
+          code: 'NO_SUBSCRIPTION',
+          message: 'Organization does not have an active subscription. Upgrade to access the billing portal.',
+        },
+      }, 400);
+    }
+
     try {
       const portalUrl = await createPortalSession(input.organizationId, input.returnUrl);
       return c.json({ url: portalUrl });
@@ -292,14 +304,27 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
     // Quota check failed — omit from response
   }
 
+  // Fetch usage + tier info for dashboard
+  const tierInfo = await getOrgTierInfo(orgId);
+  const orgUsage = await getOrgUsage(orgId);
+  const egressToday = await getOrgEgressToday(orgId);
+
+  const usage = {
+    repos: { current: orgUsage.repos, limit: tierInfo.limits.repositories ?? -1 },
+    members: { current: orgUsage.members, limit: tierInfo.limits.teamMembers ?? -1 },
+    egressToday: { current: egressToday, limit: tierInfo.limits.egressPerDay ?? -1 },
+  };
+
   if (!subscription) {
     const mcpAddon = await getOrgAddon(orgId, 'mcp_gateway');
     return c.json({
       subscription: null,
       tier: 'starter',
+      tierDisplayName: 'Starter',
       status: 'free',
       credits,
       quotaStatus,
+      usage,
       addons: {
         mcpGateway: mcpAddon
           ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }
@@ -336,6 +361,7 @@ stripeRoutes.get('/subscription/:orgId', requireAuth, async (c) => {
     status: subscription.status,
     credits,
     quotaStatus,
+    usage,
     addons: {
       mcpGateway: mcpAddon
         ? { status: mcpAddon.status, cancelAtPeriodEnd: mcpAddon.cancelAtPeriodEnd }

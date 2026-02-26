@@ -14,6 +14,13 @@ import {
   markEventProcessed,
   getOrgSubscription,
 } from './stripe.service';
+import {
+  getOrgUsage,
+  getOrgTierInfo,
+  getOrgEgressToday,
+} from './tier-limits.service';
+import { getOrgCreditBalance } from './credit.service';
+import { getOrgAddon } from './addon.service';
 import { db } from '../db';
 import {
   organizations,
@@ -22,7 +29,10 @@ import {
   subscriptions,
   pricingTiers,
   stripeEvents,
+  repositories,
+  contextEngineSessions,
 } from '../db/schema';
+import type { PricingTierLimits, PricingTierFeatures } from '../db/schema';
 
 let seq = 0;
 function uid() { return `${Date.now()}_${++seq}`; }
@@ -423,6 +433,198 @@ describe('Stripe Service', () => {
       });
 
       expect(await getOrgSubscription(org.id)).toBeNull();
+    });
+  });
+
+  // ========================================================================
+  // Subscription Info Enrichment (Step 3)
+  // Tests for the data that the GET /subscription/:orgId endpoint returns
+  // ========================================================================
+  describe('subscription info enrichment', () => {
+    async function createTier(overrides: {
+      limits?: Partial<PricingTierLimits>;
+      features?: Partial<PricingTierFeatures>;
+      basePriceMonthly?: number;
+      name?: string;
+    } = {}) {
+      const name = overrides.name || `tier_${uid()}`;
+      const [tier] = await db.insert(pricingTiers).values({
+        name,
+        displayName: name.charAt(0).toUpperCase() + name.slice(1),
+        limits: {
+          environments: 1, repositories: 10, teamMembers: 5, storageGb: 10,
+          buildMinutes: 1000, configSets: 0, configSchemas: 0, configHistoryDays: 0,
+          egressPerDay: 200, skNodesPerRepo: 500,
+          ...overrides.limits,
+        },
+        features: {
+          branchProtection: true, sso: false, customDomain: false, analytics: true,
+          auditLogs: true, prioritySupport: true, sla: false, dedicatedInstance: false,
+          ipAllowlisting: false, webhooks: true, apiAccess: true,
+          configManagement: true, configExternalStores: false, configExports: true,
+          mcpGateway: true, contextEngine: true,
+          ...overrides.features,
+        },
+        basePriceMonthly: overrides.basePriceMonthly ?? 2900,
+      }).returning();
+      return tier;
+    }
+
+    async function createSub(orgId: string, tierId: string, customerId: string) {
+      const [sub] = await db.insert(subscriptions).values({
+        organizationId: orgId,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: `sub_${uid()}`,
+        pricingTierId: tierId,
+        status: 'active',
+        billingInterval: 'monthly',
+      }).returning();
+      return sub;
+    }
+
+    it('free org: tier info returns starter defaults', async () => {
+      const { org } = await createOrg();
+      const tierInfo = await getOrgTierInfo(org.id);
+      expect(tierInfo.tierName).toBe('starter');
+      expect(tierInfo.isFreeTier).toBe(true);
+      expect(tierInfo.limits.repositories).toBe(5);
+      expect(tierInfo.limits.egressPerDay).toBe(50);
+    });
+
+    it('free org: usage returns zero counts', async () => {
+      const { org } = await createOrg();
+      const usage = await getOrgUsage(org.id);
+      expect(usage.repos).toBe(0);
+      expect(usage.members).toBe(0);
+    });
+
+    it('free org: credits returns zero balance', async () => {
+      const { org } = await createOrg();
+      const credits = await getOrgCreditBalance(org.id);
+      expect(credits.balance).toBe(0);
+      expect(credits.monthlyAllowance).toBe(0);
+    });
+
+    it('free org: no active subscription', async () => {
+      const { org } = await createOrg();
+      const sub = await getOrgSubscription(org.id);
+      expect(sub).toBeNull();
+    });
+
+    it('free org: addon returns null when none configured', async () => {
+      const { org } = await createOrg();
+      const addon = await getOrgAddon(org.id, 'mcp_gateway');
+      expect(addon).toBeNull();
+    });
+
+    it('pro org: tier info returns paid tier', async () => {
+      const { org, customerId } = await createOrg();
+      const tier = await createTier({
+        name: 'pro',
+        limits: { repositories: 20, egressPerDay: 500, skNodesPerRepo: 1000 },
+        basePriceMonthly: 2900,
+      });
+      await createSub(org.id, tier.id, customerId);
+
+      const tierInfo = await getOrgTierInfo(org.id);
+      expect(tierInfo.tierName).toBe('pro');
+      expect(tierInfo.isFreeTier).toBe(false);
+      expect(tierInfo.limits.repositories).toBe(20);
+      expect(tierInfo.limits.egressPerDay).toBe(500);
+    });
+
+    it('pro org: usage reflects actual repos', async () => {
+      const { org, customerId } = await createOrg();
+      const tier = await createTier({ name: 'pro', basePriceMonthly: 2900 });
+      await createSub(org.id, tier.id, customerId);
+
+      // Create 3 repos
+      for (let i = 0; i < 3; i++) {
+        const u = uid();
+        await db.insert(repositories).values({
+          name: `Repo ${u}`, slug: `repo-${u}`,
+          organizationId: org.id, visibility: 'private', defaultBranch: 'main',
+        });
+      }
+
+      const usage = await getOrgUsage(org.id);
+      expect(usage.repos).toBe(3);
+    });
+
+    it('egress today returns 0 when no sessions', async () => {
+      const { org } = await createOrg();
+      const egress = await getOrgEgressToday(org.id);
+      expect(egress).toBe(0);
+    });
+
+    it('egress today sums turns across sessions', async () => {
+      const { org } = await createOrg();
+      const u = uid();
+
+      // Create a repo for the org
+      const [repo] = await db.insert(repositories).values({
+        name: `Repo ${u}`, slug: `repo-${u}`,
+        organizationId: org.id, visibility: 'private', defaultBranch: 'main',
+      }).returning();
+
+      // Create a user for the sessions
+      const [user] = await db.insert(users).values({
+        username: `egress_user_${u}`,
+        email: `egress_${u}@example.com`,
+        displayName: 'Egress Test',
+        emailVerified: true,
+      }).returning();
+
+      // Create sessions with turns
+      await db.insert(contextEngineSessions).values([
+        {
+          sessionId: `ses_a_${u}`,
+          repositoryId: repo.id,
+          userId: user.id,
+          lastTurnCount: 15,
+          lastActivityAt: new Date(),
+        },
+        {
+          sessionId: `ses_b_${u}`,
+          repositoryId: repo.id,
+          userId: user.id,
+          lastTurnCount: 25,
+          lastActivityAt: new Date(),
+        },
+      ]);
+
+      const egress = await getOrgEgressToday(org.id);
+      expect(egress).toBe(40);
+    });
+  });
+
+  // ========================================================================
+  // Portal Guard (Step 3)
+  // Tests that the portal session requires an active subscription
+  // ========================================================================
+  describe('portal guard', () => {
+    it('free org has no subscription for portal', async () => {
+      const { org } = await createOrg();
+      // Portal guard: check subscription first
+      const sub = await getOrgSubscription(org.id);
+      expect(sub).toBeNull();
+      // Route would return 400 NO_SUBSCRIPTION here
+    });
+
+    it('paying org has active subscription for portal', async () => {
+      const { org, customerId } = await createOrg();
+      await db.insert(subscriptions).values({
+        organizationId: org.id,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: `sub_${uid()}`,
+        status: 'active',
+        billingInterval: 'monthly',
+      });
+
+      const sub = await getOrgSubscription(org.id);
+      expect(sub).toBeTruthy();
+      expect(sub!.status).toBe('active');
+      // Route would proceed to createPortalSession here
     });
   });
 });
