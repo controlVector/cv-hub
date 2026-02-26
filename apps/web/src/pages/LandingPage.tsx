@@ -79,12 +79,14 @@ export default function LandingPage() {
                 Blog
               </Button>
             )}
-            <Button
-              onClick={() => navigate('/pricing')}
-              sx={{ color: colors.orange, fontWeight: 600 }}
-            >
-              Pricing
-            </Button>
+            {brand.features.pricing && (
+              <Button
+                onClick={() => navigate('/pricing')}
+                sx={{ color: colors.orange, fontWeight: 600 }}
+              >
+                Pricing
+              </Button>
+            )}
             <Button
               variant="outlined"
               startIcon={<LoginIcon />}
@@ -168,24 +170,26 @@ export default function LandingPage() {
                 Read the Technical Case
               </Button>
             )}
-            <Button
-              variant="outlined"
-              size="large"
-              onClick={() => navigate('/pricing')}
-              sx={{
-                borderColor: extendedColors.border,
-                color: extendedColors.text,
-                px: 4,
-                py: 1.5,
-                fontSize: '1rem',
-                '&:hover': {
-                  borderColor: colors.orange,
-                  backgroundColor: 'rgba(245, 166, 35, 0.1)',
-                },
-              }}
-            >
-              View Pricing
-            </Button>
+            {brand.features.pricing && (
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={() => navigate('/pricing')}
+                sx={{
+                  borderColor: extendedColors.border,
+                  color: extendedColors.text,
+                  px: 4,
+                  py: 1.5,
+                  fontSize: '1rem',
+                  '&:hover': {
+                    borderColor: colors.orange,
+                    backgroundColor: 'rgba(245, 166, 35, 0.1)',
+                  },
+                }}
+              >
+                View Pricing
+              </Button>
+            )}
             <Button
               variant="outlined"
               size="large"
@@ -282,9 +286,11 @@ export default function LandingPage() {
                   Blog
                 </Button>
               )}
-              <Button size="small" onClick={() => navigate('/pricing')} sx={{ color: colors.textMuted }}>
-                Pricing
-              </Button>
+              {brand.features.pricing && (
+                <Button size="small" onClick={() => navigate('/pricing')} sx={{ color: colors.textMuted }}>
+                  Pricing
+                </Button>
+              )}
               {brand.features.research && (
                 <Button size="small" onClick={() => navigate('/research')} sx={{ color: colors.textMuted }}>
                   Research

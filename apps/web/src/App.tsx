@@ -104,8 +104,8 @@ function App() {
               {/* Device authorization (CLI auth) */}
               <Route path="/device" element={<DeviceAuthPage />} />
 
-              {/* Public pricing page */}
-              <Route path="/pricing" element={<PricingPage />} />
+              {/* Public pricing page (configurable per brand) */}
+              {brand.features.pricing && <Route path="/pricing" element={<PricingPage />} />}
 
               {/* Public blog pages (configurable per brand) */}
               {brand.features.blog && <Route path="/blog" element={<BlogList />} />}

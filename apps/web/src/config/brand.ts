@@ -29,5 +29,6 @@ export const brand = {
   features: {
     blog: import.meta.env.VITE_BRAND_ENABLE_BLOG !== 'false',
     research: import.meta.env.VITE_BRAND_ENABLE_RESEARCH !== 'false',
+    pricing: import.meta.env.VITE_BRAND_ENABLE_PRICING !== 'false',
   },
 };

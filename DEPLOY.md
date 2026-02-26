@@ -5,10 +5,10 @@
 This codebase deploys to **two separate brands on two separate infrastructures**.
 Deploying with the wrong brand configuration is a **production incident**.
 
-| Brand | Domain | Infrastructure | Color | Blog | Research |
-|-------|--------|---------------|-------|------|----------|
-| **ControlVector** | `controlvector.io` | DigitalOcean Kubernetes | Orange `#f97316` | Enabled | Enabled |
-| **ControlFab** | `controlfab.ai` | AWS ECS + S3/CloudFront | Purple `#8b5cf6` | Disabled | Disabled |
+| Brand | Domain | Infrastructure | Color | Blog | Research | Pricing |
+|-------|--------|---------------|-------|------|----------|---------|
+| **ControlVector** | `controlvector.io` | DigitalOcean Kubernetes | Orange `#f97316` | Enabled | Enabled | Enabled |
+| **ControlFab** | `controlfab.ai` | AWS ECS + S3/CloudFront | Purple `#8b5cf6` | Disabled | Disabled | Disabled |
 
 **Before deploying, always confirm which brand you are targeting.**
 
@@ -43,6 +43,7 @@ VITE_BRAND_COLOR_BG="#0f172a"
 VITE_BRAND_COLOR_BG_LIGHT="#1e293b"
 VITE_BRAND_ENABLE_BLOG="false"
 VITE_BRAND_ENABLE_RESEARCH="false"
+VITE_BRAND_ENABLE_PRICING="false"
 
 # API URLs for web build
 VITE_API_URL="https://api.hub.controlfab.ai/api"
@@ -76,6 +77,7 @@ VITE_BRAND_COLOR_BG="#0f172a"
 VITE_BRAND_COLOR_BG_LIGHT="#1e293b"
 VITE_BRAND_ENABLE_BLOG="true"
 VITE_BRAND_ENABLE_RESEARCH="true"
+VITE_BRAND_ENABLE_PRICING="true"
 
 # API URLs for web build
 VITE_API_URL="https://api.hub.controlvector.io/api"
@@ -176,6 +178,7 @@ VITE_BRAND_COLOR_BG="#0f172a" \
 VITE_BRAND_COLOR_BG_LIGHT="#1e293b" \
 VITE_BRAND_ENABLE_BLOG="false" \
 VITE_BRAND_ENABLE_RESEARCH="false" \
+VITE_BRAND_ENABLE_PRICING="false" \
 pnpm --filter web build
 
 # Verify branding before pushing (ALWAYS CHECK)
@@ -263,6 +266,7 @@ docker build -t registry.digitalocean.com/cv-hub-registry/web:latest \
   --build-arg VITE_BRAND_COLOR_BG_LIGHT="#1e293b" \
   --build-arg VITE_BRAND_ENABLE_BLOG="true" \
   --build-arg VITE_BRAND_ENABLE_RESEARCH="true" \
+  --build-arg VITE_BRAND_ENABLE_PRICING="true" \
   -f Dockerfile.web .
 docker push registry.digitalocean.com/cv-hub-registry/web:latest
 ```
@@ -344,7 +348,7 @@ Database URL and secrets are stored in AWS Secrets Manager (`controlfab/producti
 ## Common Mistakes to Avoid
 
 1. **Building web without VITE_BRAND_* vars** — all defaults are ControlVector. You MUST export every variable.
-2. **Forgetting VITE_BRAND_ENABLE_BLOG/RESEARCH** — ControlFab must have these set to `false`.
+2. **Forgetting VITE_BRAND_ENABLE_BLOG/RESEARCH/PRICING** — ControlFab must have these set to `false`.
 3. **Not invalidating CloudFront** — old assets will serve from cache for up to a year.
 4. **Wrong ALLOWED_ORIGINS** — must match the web domain for that brand, not the other brand.
 5. **Assuming CI/CD handles branding** — the GitHub Actions CI/CD has no repo variables set. Until that's fixed, branding must be set manually in every deploy.
