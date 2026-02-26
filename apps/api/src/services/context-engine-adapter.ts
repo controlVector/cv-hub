@@ -92,6 +92,7 @@ export async function queryGraph(
 // ── Callers (wraps find_callers MCP tool) ─────────────────────────────
 // Uses flat RETURN columns instead of gm.getCallers() which returns raw
 // compact-format node arrays that don't have named properties.
+// TODO: migrate to GraphManager once compact-format parsing is fixed
 
 export async function findCallers(
   repoId: string,
@@ -113,6 +114,7 @@ export async function findCallers(
 }
 
 // ── Callees (wraps find_callees MCP tool) ─────────────────────────────
+// TODO: migrate to GraphManager once compact-format parsing is fixed
 
 export async function findCallees(
   repoId: string,
@@ -165,6 +167,7 @@ export async function getImpactAnalysis(
 }
 
 // ── File dependents (wraps graph /file route) ─────────────────────────
+// TODO: migrate to gm.getFileDependents() once compact-format parsing is fixed
 
 export async function getFileDependents(
   repoId: string,
@@ -184,6 +187,7 @@ export async function getFileDependents(
 }
 
 // ── File dependencies (wraps graph /file route) ───────────────────────
+// TODO: migrate to gm.getFileDependencies() once compact-format parsing is fixed
 
 export async function getFileDependencies(
   repoId: string,
@@ -203,6 +207,7 @@ export async function getFileDependencies(
 }
 
 // ── File co-change partners (via query_graph — no dedicated MCP tool) ─
+// TODO: migrate to GraphManager once co-change query is exposed as a method
 
 export async function getFileCoChangePartners(
   repoId: string,
@@ -250,36 +255,24 @@ export async function getSessionKnowledgeByFiles(
 ): Promise<AdapterSessionKnowledgeResult[]> {
   if (filePaths.length === 0) return [];
 
-  // Find SK nodes whose filesTouched overlap with the given paths.
-  // ANY() checks list overlap. Exclude the current session to avoid echo.
-  const excludeClause = excludeSessionId
-    ? `AND sk.sessionId <> $excludeSessionId`
-    : '';
-
-  const results = await queryGraph(
-    repoId,
-    `MATCH (sk:SessionKnowledge)
-     WHERE ANY(f IN sk.filesTouched WHERE f IN $filePaths)
-       ${excludeClause}
-     RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
-            sk.timestamp AS timestamp, sk.summary AS summary,
-            sk.concern AS concern, sk.filesTouched AS filesTouched
-     ORDER BY sk.timestamp DESC
-     LIMIT $limit`,
-    { filePaths, excludeSessionId: excludeSessionId || '', limit },
-  );
-
-  return results.map((r: any) => ({
-    sessionId: r.sessionId || '',
-    turnNumber: r.turnNumber || 0,
-    timestamp: r.timestamp || 0,
-    summary: r.summary || '',
-    concern: r.concern || '',
-    filesTouched: r.filesTouched || [],
-  }));
+  try {
+    const gm = await getGraphManager(repoId);
+    const results = await gm.getSessionKnowledgeByFiles(filePaths, excludeSessionId, limit);
+    return results.map(sk => ({
+      sessionId: sk.sessionId,
+      turnNumber: sk.turnNumber,
+      timestamp: sk.timestamp,
+      summary: sk.summary,
+      concern: sk.concern,
+      filesTouched: sk.filesTouched,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // ── Scoped file summaries (via query_graph — concern-filtered) ────────
+// NOTE: concern-filtered file summaries are a CV-Hub-specific join. No GraphManager method for this.
 
 export async function getScopedFileSummaries(
   repoId: string,

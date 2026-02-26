@@ -587,6 +587,84 @@ export class GraphManager {
     };
   }
 
+  /**
+   * Find SessionKnowledge nodes whose filesTouched overlap with given paths
+   */
+  async getSessionKnowledgeByFiles(
+    filePaths: string[],
+    excludeSessionId?: string | null,
+    limit = 10,
+  ): Promise<SessionKnowledgeNode[]> {
+    if (filePaths.length === 0) return [];
+
+    const excludeClause = excludeSessionId
+      ? 'AND sk.sessionId <> $excludeSessionId'
+      : '';
+
+    const results = await this.query(
+      `MATCH (sk:SessionKnowledge)
+       WHERE ANY(f IN sk.filesTouched WHERE f IN $filePaths)
+         ${excludeClause}
+       RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
+              sk.timestamp AS timestamp, sk.summary AS summary,
+              sk.concern AS concern, sk.source AS source,
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced
+       ORDER BY sk.timestamp DESC
+       LIMIT $limit`,
+      { filePaths, excludeSessionId: excludeSessionId || '', limit },
+    );
+
+    return results.map((r: any) => ({
+      sessionId: r.sessionId || '',
+      turnNumber: r.turnNumber || 0,
+      timestamp: r.timestamp || 0,
+      summary: r.summary || '',
+      concern: r.concern || '',
+      source: r.source || '',
+      filesTouched: r.filesTouched || [],
+      symbolsReferenced: r.symbolsReferenced || [],
+    }));
+  }
+
+  /**
+   * Find SessionKnowledge nodes whose symbolsReferenced overlap with given names
+   */
+  async getSessionKnowledgeBySymbols(
+    qualifiedNames: string[],
+    excludeSessionId?: string | null,
+    limit = 10,
+  ): Promise<SessionKnowledgeNode[]> {
+    if (qualifiedNames.length === 0) return [];
+
+    const excludeClause = excludeSessionId
+      ? 'AND sk.sessionId <> $excludeSessionId'
+      : '';
+
+    const results = await this.query(
+      `MATCH (sk:SessionKnowledge)
+       WHERE ANY(s IN sk.symbolsReferenced WHERE s IN $qualifiedNames)
+         ${excludeClause}
+       RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
+              sk.timestamp AS timestamp, sk.summary AS summary,
+              sk.concern AS concern, sk.source AS source,
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced
+       ORDER BY sk.timestamp DESC
+       LIMIT $limit`,
+      { qualifiedNames, excludeSessionId: excludeSessionId || '', limit },
+    );
+
+    return results.map((r: any) => ({
+      sessionId: r.sessionId || '',
+      turnNumber: r.turnNumber || 0,
+      timestamp: r.timestamp || 0,
+      summary: r.summary || '',
+      concern: r.concern || '',
+      source: r.source || '',
+      filesTouched: r.filesTouched || [],
+      symbolsReferenced: r.symbolsReferenced || [],
+    }));
+  }
+
   // ========== Query Operations ==========
 
   /**

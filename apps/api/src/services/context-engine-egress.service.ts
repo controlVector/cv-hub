@@ -100,6 +100,8 @@ export async function processEgress(input: EgressInput): Promise<EgressResult> {
   const gm = await getGraphManager(repositoryId);
 
   // ── Step 1: Extract file references from transcript ────────────────
+  // NOTE: Bulk fetch of all file paths for transcript validation — CV-Hub enrichment,
+  // not a SK operation. Uses raw Cypher via queryGraph (no GraphManager method for this).
 
   const knownFiles = await queryGraph(
     repositoryId,
@@ -125,6 +127,8 @@ export async function processEgress(input: EgressInput): Promise<EgressResult> {
   const allFiles = uniqueStrings([...filesTouched, ...transcriptFilePaths]);
 
   // ── Step 2: Extract symbol references from transcript ──────────────
+  // NOTE: Bulk fetch of all symbol names for transcript resolution — CV-Hub enrichment,
+  // not a SK operation. Uses raw Cypher via queryGraph (no GraphManager method for this).
 
   const knownSymbols = await queryGraph(
     repositoryId,
@@ -234,6 +238,9 @@ export async function processEgress(input: EgressInput): Promise<EgressResult> {
   }
 
   // ── Step 7: Enrich file summaries ──────────────────────────────────
+  // NOTE: File summary enrichment is a CV-Hub concern. Uses raw Cypher for SET because
+  // GraphManager.upsertFileNode() expects a full FileNode (would overwrite other fields).
+  // TODO: Add GraphManager.updateFileSummary(path, summary) if this pattern repeats.
 
   FILE_DESC_RE.lastIndex = 0;
   let dm: RegExpExecArray | null;
