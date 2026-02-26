@@ -77,6 +77,23 @@ export interface ModuleNode {
   symbolCount: number;
 }
 
+export interface SessionKnowledgeNode {
+  sessionId: string;
+  turnNumber: number;
+  timestamp: number;
+  summary: string;
+  concern: string;
+  source: string;
+  filesTouched: string[];
+  symbolsReferenced: string[];
+}
+
+export interface AboutEdge {
+  role: 'touched' | 'referenced';
+}
+
+export interface FollowsEdge {}
+
 // Edge Types
 export interface ImportsEdge {
   line: number;
@@ -132,6 +149,7 @@ export interface GraphStats {
   commitCount: number;
   moduleCount: number;
   relationshipCount: number;
+  sessionKnowledgeCount?: number;
   nodesByLabel?: Record<string, number>;
   relationshipsByType?: Record<string, number>;
 }
@@ -168,7 +186,7 @@ export interface VizNode {
 export interface VizEdge {
   source: string;
   target: string;
-  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES';
+  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES' | 'ABOUT' | 'FOLLOWS';
   label?: string;
   weight?: number;
 }

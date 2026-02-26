@@ -12,6 +12,8 @@ import type {
   SymbolNode,
   CommitNode,
   ModuleNode,
+  SessionKnowledgeNode,
+  AboutEdge,
   ImportsEdge,
   DefinesEdge,
   CallsEdge,
@@ -142,6 +144,10 @@ export class GraphManager {
       ['Commit', 'sha'],
       ['Commit', 'author'],
       ['Commit', 'timestamp'],
+
+      // SessionKnowledge indexes
+      ['SessionKnowledge', 'sessionId'],
+      ['SessionKnowledge', 'timestamp'],
     ];
 
     for (const [label, property] of indexes) {
@@ -483,6 +489,102 @@ export class GraphManager {
       symbolQualifiedName,
       ...edge
     });
+  }
+
+  // ========== SessionKnowledge Operations ==========
+
+  async upsertSessionKnowledgeNode(sk: SessionKnowledgeNode): Promise<void> {
+    const cypher = `
+      MERGE (sk:SessionKnowledge {sessionId: $sessionId, turnNumber: $turnNumber})
+      SET sk.timestamp = $timestamp,
+          sk.summary = $summary,
+          sk.concern = $concern,
+          sk.source = $source,
+          sk.filesTouched = $filesTouched,
+          sk.symbolsReferenced = $symbolsReferenced,
+          sk.updatedAt = $updatedAt
+      RETURN sk
+    `;
+
+    await this.query(cypher, {
+      ...sk,
+      updatedAt: Date.now(),
+    });
+  }
+
+  async createAboutFileEdge(
+    sessionId: string,
+    turnNumber: number,
+    filePath: string,
+    edge: AboutEdge,
+  ): Promise<void> {
+    const cypher = `
+      MATCH (sk:SessionKnowledge {sessionId: $sessionId, turnNumber: $turnNumber})
+      MATCH (f:File {path: $filePath})
+      MERGE (sk)-[r:ABOUT]->(f)
+      SET r.role = $role
+      RETURN r
+    `;
+
+    await this.query(cypher, { sessionId, turnNumber, filePath, role: edge.role });
+  }
+
+  async createAboutSymbolEdge(
+    sessionId: string,
+    turnNumber: number,
+    qualifiedName: string,
+    edge: AboutEdge,
+  ): Promise<void> {
+    const cypher = `
+      MATCH (sk:SessionKnowledge {sessionId: $sessionId, turnNumber: $turnNumber})
+      MATCH (s:Symbol {qualifiedName: $qualifiedName})
+      MERGE (sk)-[r:ABOUT]->(s)
+      SET r.role = $role
+      RETURN r
+    `;
+
+    await this.query(cypher, { sessionId, turnNumber, qualifiedName, role: edge.role });
+  }
+
+  async createFollowsEdge(
+    sessionId: string,
+    currentTurn: number,
+    previousTurn: number,
+  ): Promise<void> {
+    const cypher = `
+      MATCH (curr:SessionKnowledge {sessionId: $sessionId, turnNumber: $currentTurn})
+      MATCH (prev:SessionKnowledge {sessionId: $sessionId, turnNumber: $previousTurn})
+      MERGE (curr)-[r:FOLLOWS]->(prev)
+      RETURN r
+    `;
+
+    await this.query(cypher, { sessionId, currentTurn, previousTurn });
+  }
+
+  async getSessionKnowledgeNode(
+    sessionId: string,
+    turnNumber: number,
+  ): Promise<SessionKnowledgeNode | null> {
+    const result = await this.query(
+      `MATCH (sk:SessionKnowledge {sessionId: $sessionId, turnNumber: $turnNumber})
+       RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
+              sk.timestamp AS timestamp, sk.summary AS summary,
+              sk.concern AS concern, sk.source AS source,
+              sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced`,
+      { sessionId, turnNumber },
+    );
+    if (result.length === 0) return null;
+    const r = result[0] as any;
+    return {
+      sessionId: r.sessionId,
+      turnNumber: r.turnNumber,
+      timestamp: r.timestamp,
+      summary: r.summary || '',
+      concern: r.concern || '',
+      source: r.source || '',
+      filesTouched: r.filesTouched || [],
+      symbolsReferenced: r.symbolsReferenced || [],
+    };
   }
 
   // ========== Query Operations ==========
@@ -1034,6 +1136,7 @@ export class GraphManager {
       classCount,
       commitCount,
       moduleCount,
+      sessionKnowledgeCount,
       relationshipCount
     ] = await Promise.all([
       this.query('MATCH (f:File) RETURN count(f) as count'),
@@ -1042,6 +1145,7 @@ export class GraphManager {
       this.query('MATCH (c:Class) RETURN count(c) as count'),
       this.query('MATCH (c:Commit) RETURN count(c) as count'),
       this.query('MATCH (m:Module) RETURN count(m) as count'),
+      this.query('MATCH (sk:SessionKnowledge) RETURN count(sk) as count'),
       this.query('MATCH ()-[r]->() RETURN count(r) as count')
     ]);
 
@@ -1052,6 +1156,7 @@ export class GraphManager {
       classCount: classCount[0]?.count || 0,
       commitCount: commitCount[0]?.count || 0,
       moduleCount: moduleCount[0]?.count || 0,
+      sessionKnowledgeCount: sessionKnowledgeCount[0]?.count || 0,
       relationshipCount: relationshipCount[0]?.count || 0
     };
   }

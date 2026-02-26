@@ -38,6 +38,7 @@ export interface VectorPoint {
     symbolKind?: string;
     chunkType: string;
     graphNodeId?: string; // Link to FalkorDB node
+    sessionId?: string;
   };
 }
 

@@ -20,6 +20,7 @@ import {
   findCallers,
   findCallees,
   getScopedFileSummaries,
+  getSessionKnowledgeByFiles,
 } from './context-engine-adapter';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -314,6 +315,60 @@ async function fetchScopedSummaryViaAdapter(
   }));
 }
 
+// ── Session knowledge expansion (egress pull-side) ───────────────────
+
+async function expandSessionKnowledgeViaAdapter(
+  repoId: string,
+  filesTouched: string[],
+  currentSessionId: string | null,
+  concern: ContextConcern,
+  limit: number,
+): Promise<RankedContextItem[]> {
+  if (filesTouched.length === 0) return [];
+
+  const skNodes = await getSessionKnowledgeByFiles(
+    repoId,
+    filesTouched,
+    currentSessionId,
+    limit,
+  );
+
+  if (skNodes.length === 0) return [];
+
+  const now = Date.now();
+  const ONE_DAY = 86400000;
+
+  return skNodes.map(sk => {
+    // Recency: 1.0 for <1h old, decays toward 0.1 over 7 days
+    const ageMs = Math.max(0, now - sk.timestamp);
+    const ageDays = ageMs / ONE_DAY;
+    const recencyScore = Math.max(0.1, 1.0 - ageDays / 7);
+
+    // Concern match: boost if the SK concern matches the current concern
+    const concernMatch = sk.concern === concern ? 1.0 : 0.3;
+
+    // Structural: based on file overlap count
+    const overlapCount = sk.filesTouched.filter(f => filesTouched.includes(f)).length;
+    const structuralRelevance = Math.min(1.0, overlapCount / Math.max(1, filesTouched.length));
+
+    const score = computeScore({ structuralRelevance, recencyScore, concernMatch }, concern);
+
+    const sessionLabel = sk.sessionId.slice(0, 8);
+    return {
+      type: 'summary' as const,
+      source: 'graph' as const,
+      relevanceScore: score,
+      content: `**Session ${sessionLabel} turn ${sk.turnNumber}** — ${sk.summary}`,
+      metadata: {
+        sessionId: sk.sessionId,
+        turnNumber: sk.turnNumber,
+        timestamp: sk.timestamp,
+        source: 'session_knowledge',
+      },
+    };
+  });
+}
+
 // ── Format helpers ────────────────────────────────────────────────────
 
 function formatContextMarkdown(
@@ -517,9 +572,10 @@ export async function generateTurnContext(
   const existingFiles = new Set(session.injectedFiles || []);
   const existingSymbols = new Set(session.injectedSymbols || []);
 
-  const [fileItems, symbolItems] = await Promise.all([
+  const [fileItems, symbolItems, skItems] = await Promise.all([
     expandFilesViaAdapter(repoId, signal.files_touched, activeConcern, compactionDetected ? 15 : 8),
     expandSymbolsViaAdapter(repoId, signal.symbols_referenced, activeConcern, compactionDetected ? 10 : 5),
+    expandSessionKnowledgeViaAdapter(repoId, signal.files_touched, signal.session_id, activeConcern, 5),
   ]);
 
   // Deduplicate against already-injected
@@ -535,6 +591,11 @@ export async function generateTurnContext(
     if (!existingSymbols.has(qn)) {
       allItems.push(item);
     }
+  }
+
+  // Add session knowledge from previous sessions
+  for (const item of skItems) {
+    allItems.push(item);
   }
 
   // Compaction recovery: re-expand checkpoint files
@@ -640,12 +701,13 @@ export async function getFocusedContext(
   const concern = params.concern || 'codebase';
   const maxTokens = params.max_tokens || 2000;
 
-  const [fileItems, symbolItems] = await Promise.all([
+  const [fileItems, symbolItems, skItems] = await Promise.all([
     expandFilesViaAdapter(repoId, params.files || [], concern, 15),
     expandSymbolsViaAdapter(repoId, params.symbols || [], concern, 10),
+    expandSessionKnowledgeViaAdapter(repoId, params.files || [], null, concern, 5),
   ]);
 
-  const allItems = [...fileItems, ...symbolItems];
+  const allItems = [...fileItems, ...symbolItems, ...skItems];
   allItems.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
   const selected: RankedContextItem[] = [];

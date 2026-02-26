@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Claude Code hook: Stop (context engine turn injection)
+# Claude Code hook: Stop (context engine turn injection + egress)
 # Fires after each response cycle. Calls the context engine /turn endpoint
 # with recently touched files. If new context is available, outputs to stdout
 # so Claude Code picks it up as supplemental context.
+# After the /turn call, fires an async /egress call to push session knowledge
+# back into the graph.
 set -euo pipefail
 
 if [[ -z "${CV_HUB_API:-}" || -z "${CV_HUB_PAT:-}" || -z "${CV_HUB_REPO:-}" || -z "${CV_HUB_SESSION_ID:-}" ]]; then
@@ -12,10 +14,31 @@ fi
 owner="${CV_HUB_REPO%%/*}"
 repoSlug="${CV_HUB_REPO##*/}"
 
-# Read hook input from stdin (Stop hook receives tool_name, tool_input, etc.)
+# Read hook input from stdin (Stop hook receives session_id, transcript_path, last_assistant_message, etc.)
 input=$(cat)
 
-# Extract files touched from recent git changes
+# ── Turn counter ──────────────────────────────────────────────────────
+turn_file="/tmp/cv-connect-turn-${CV_HUB_SESSION_ID}"
+if [[ -f "$turn_file" ]]; then
+  turn_number=$(( $(cat "$turn_file") + 1 ))
+else
+  turn_number=1
+fi
+echo "$turn_number" > "$turn_file"
+
+# ── Extract last assistant message from hook input ────────────────────
+transcript_segment=$(python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    msg = d.get('last_assistant_message', '')
+    # Cap at 2000 chars for egress
+    print(msg[:2000])
+except:
+    print('')
+" <<< "$input" 2>/dev/null || true)
+
+# ── Extract files touched from recent git changes ────────────────────
 files_json="[]"
 if git rev-parse --git-dir >/dev/null 2>&1; then
   # Get files changed in the working tree (unstaged + staged)
@@ -29,17 +52,14 @@ print(json.dumps(files))
   fi
 fi
 
-# Build turn payload
-# Use a rough token estimate (we don't know the real number — the hook input
-# doesn't include it directly, so we pass 0 and let the server compare
-# against its stored lastTokenEst)
+# ── Pull: call /turn for context injection ────────────────────────────
 payload=$(python3 -c "
 import json
 print(json.dumps({
     'session_id': '${CV_HUB_SESSION_ID}',
     'files_touched': ${files_json},
     'symbols_referenced': [],
-    'turn_count': 0,
+    'turn_count': ${turn_number},
     'estimated_tokens_used': 0,
     'concern': 'codebase'
 }))
@@ -62,4 +82,30 @@ if md.strip():
 
 if [[ -n "$ctx_md" ]]; then
   echo "$ctx_md"
+fi
+
+# ── Push: fire-and-forget /egress call ────────────────────────────────
+# Runs in background so it doesn't block Claude Code's response cycle.
+if [[ -n "$transcript_segment" ]]; then
+  egress_payload=$(python3 -c "
+import json, sys
+segment = sys.stdin.read()
+print(json.dumps({
+    'session_id': '${CV_HUB_SESSION_ID}',
+    'turn_number': ${turn_number},
+    'transcript_segment': segment,
+    'files_touched': ${files_json},
+    'symbols_referenced': [],
+    'concern': 'codebase'
+}))
+" <<< "$transcript_segment" 2>/dev/null || true)
+
+  if [[ -n "$egress_payload" ]]; then
+    curl -sf -X POST \
+      -H "Authorization: Bearer ${CV_HUB_PAT}" \
+      -H "Content-Type: application/json" \
+      -d "$egress_payload" \
+      "${CV_HUB_API}/api/v1/repos/${owner}/${repoSlug}/context-engine/egress" \
+      >/dev/null 2>&1 &
+  fi
 fi

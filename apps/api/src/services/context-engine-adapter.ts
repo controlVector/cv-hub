@@ -231,6 +231,54 @@ export async function getFileCoChangePartners(
   }));
 }
 
+// ── Session knowledge by file overlap (egress pull-side) ──────────────
+
+export interface AdapterSessionKnowledgeResult {
+  sessionId: string;
+  turnNumber: number;
+  timestamp: number;
+  summary: string;
+  concern: string;
+  filesTouched: string[];
+}
+
+export async function getSessionKnowledgeByFiles(
+  repoId: string,
+  filePaths: string[],
+  excludeSessionId: string | null,
+  limit = 5,
+): Promise<AdapterSessionKnowledgeResult[]> {
+  if (filePaths.length === 0) return [];
+
+  // Find SK nodes whose filesTouched overlap with the given paths.
+  // ANY() checks list overlap. Exclude the current session to avoid echo.
+  const excludeClause = excludeSessionId
+    ? `AND sk.sessionId <> $excludeSessionId`
+    : '';
+
+  const results = await queryGraph(
+    repoId,
+    `MATCH (sk:SessionKnowledge)
+     WHERE ANY(f IN sk.filesTouched WHERE f IN $filePaths)
+       ${excludeClause}
+     RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
+            sk.timestamp AS timestamp, sk.summary AS summary,
+            sk.concern AS concern, sk.filesTouched AS filesTouched
+     ORDER BY sk.timestamp DESC
+     LIMIT $limit`,
+    { filePaths, excludeSessionId: excludeSessionId || '', limit },
+  );
+
+  return results.map((r: any) => ({
+    sessionId: r.sessionId || '',
+    turnNumber: r.turnNumber || 0,
+    timestamp: r.timestamp || 0,
+    summary: r.summary || '',
+    concern: r.concern || '',
+    filesTouched: r.filesTouched || [],
+  }));
+}
+
 // ── Scoped file summaries (via query_graph — concern-filtered) ────────
 
 export async function getScopedFileSummaries(

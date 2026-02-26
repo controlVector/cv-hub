@@ -19,6 +19,7 @@ import {
   saveCheckpoint,
   type ContextConcern,
 } from '../services/context-engine.service';
+import { processEgress } from '../services/context-engine-egress.service';
 import type { AppEnv } from '../app';
 
 const contextEngineRoutes = new Hono<AppEnv>();
@@ -177,6 +178,58 @@ contextEngineRoutes.post(
       return c.json({
         success: true,
         data: { checkpoint_saved: true },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── POST /egress — Push session knowledge to graph ───────────────────
+
+const egressSchema = z.object({
+  session_id: z.string().min(1).max(128),
+  turn_number: z.number().int().min(1),
+  transcript_segment: z.string().min(1).max(50000),
+  files_touched: z.array(z.string()).default([]),
+  symbols_referenced: z.array(z.string()).default([]),
+  concern: concernEnum.default('codebase'),
+});
+
+contextEngineRoutes.post(
+  '/:owner/:repo/context-engine/egress',
+  requireAuth,
+  zValidator('json', egressSchema),
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId')!;
+    const body = c.req.valid('json');
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const result = await processEgress({
+        sessionId: body.session_id,
+        turnNumber: body.turn_number,
+        transcriptSegment: body.transcript_segment,
+        filesTouched: body.files_touched,
+        symbolsReferenced: body.symbols_referenced,
+        concern: body.concern,
+        repositoryId: repository.id,
+      });
+
+      return c.json({
+        success: true,
+        data: {
+          knowledge_node_id: result.knowledgeNodeId,
+          file_summaries_updated: result.fileSummariesUpdated,
+          symbol_summaries_updated: result.symbolSummariesUpdated,
+          edges_created: result.edgesCreated,
+          vector_stored: result.vectorStored,
+        },
       });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);
