@@ -21,6 +21,11 @@ import {
   getUserOrganizations,
   getOrganizationApps,
   transferAppToOrganization,
+  createInvite,
+  listPendingInvites,
+  cancelInvite,
+  acceptInviteByToken,
+  getInviteByToken,
 } from '../services/organization.service';
 import { listApps } from '../services/app-store.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
@@ -154,6 +159,32 @@ orgRoutes.get('/my/list', requireAuth, async (c) => {
   const orgs = await getUserOrganizations(userId);
 
   return c.json({ organizations: orgs });
+});
+
+// POST /api/v1/orgs/invites/accept/:token - Accept invite by token
+orgRoutes.post('/invites/accept/:token', requireAuth, async (c) => {
+  const token = c.req.param('token');
+  const userId = c.get('userId')!;
+  const meta = getRequestMeta(c);
+
+  // Get user email for verification
+  const { getUserById } = await import('../services/user.service');
+  const user = await getUserById(userId);
+  if (!user) throw new NotFoundError('User');
+
+  const member = await acceptInviteByToken(token, userId, user.email);
+
+  await logAuditEvent({
+    userId,
+    action: 'organization.invitation_accepted' as AuditAction,
+    resource: 'organization_member',
+    resourceId: member.id,
+    details: { organizationId: member.organizationId },
+    status: 'success',
+    ...meta,
+  });
+
+  return c.json({ member });
 });
 
 // POST /api/v1/orgs - Create organization
@@ -441,6 +472,90 @@ orgRoutes.post('/:slug/accept', requireAuth, async (c) => {
   });
 
   return c.json({ member });
+});
+
+// ============================================================================
+// Invite Management APIs (admin only)
+// ============================================================================
+
+// POST /api/v1/orgs/:slug/invites - Create email invite
+const createInviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['admin', 'member']).optional(),
+});
+
+orgRoutes.post('/:slug/invites', requireAuth, zValidator('json', createInviteSchema), async (c) => {
+  const slug = c.req.param('slug');
+  const currentUserId = c.get('userId')!;
+  const input = c.req.valid('json');
+  const meta = getRequestMeta(c);
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) throw new NotFoundError('Organization');
+
+  await requireOrgAdmin(c, org.id);
+
+  // Enforce tier limits
+  const memberCheck = await checkOrgMemberLimit(org.id);
+  if (!memberCheck.allowed) {
+    throw new TierLimitError('members', memberCheck.current, memberCheck.limit, memberCheck.tierName);
+  }
+
+  const invite = await createInvite(org.id, input.email, input.role || 'member', currentUserId);
+
+  await logAuditEvent({
+    userId: currentUserId,
+    action: 'organization.invite_created' as AuditAction,
+    resource: 'org_invite',
+    resourceId: invite.id,
+    details: { organizationId: org.id, email: input.email, role: input.role || 'member' },
+    status: 'success',
+    ...meta,
+  });
+
+  return c.json({ invite }, 201);
+});
+
+// GET /api/v1/orgs/:slug/invites - List pending invites
+orgRoutes.get('/:slug/invites', requireAuth, async (c) => {
+  const slug = c.req.param('slug');
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) throw new NotFoundError('Organization');
+
+  await requireOrgAdmin(c, org.id);
+
+  const invites = await listPendingInvites(org.id);
+
+  return c.json({ invites });
+});
+
+// DELETE /api/v1/orgs/:slug/invites/:inviteId - Cancel invite
+orgRoutes.delete('/:slug/invites/:inviteId', requireAuth, async (c) => {
+  const slug = c.req.param('slug');
+  const inviteId = c.req.param('inviteId');
+  const currentUserId = c.get('userId');
+  const meta = getRequestMeta(c);
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) throw new NotFoundError('Organization');
+
+  await requireOrgAdmin(c, org.id);
+
+  const cancelled = await cancelInvite(org.id, inviteId);
+  if (!cancelled) throw new NotFoundError('Invite');
+
+  await logAuditEvent({
+    userId: currentUserId,
+    action: 'organization.invite_cancelled' as AuditAction,
+    resource: 'org_invite',
+    resourceId: inviteId,
+    details: { organizationId: org.id },
+    status: 'success',
+    ...meta,
+  });
+
+  return c.json({ success: true });
 });
 
 // ============================================================================
