@@ -4,14 +4,24 @@
 # Reads session JSON from stdin, writes CV_HUB_EXECUTOR_ID to $CLAUDE_ENV_FILE.
 set -euo pipefail
 
-CRED_FILE="${HOME}/.config/cv-hub/credentials"
-
-# Load credentials — silently exit if not configured
-if [[ ! -f "$CRED_FILE" ]]; then
+# Check multiple credential locations (works under sudo or normal user)
+CRED_FILE=""
+for candidate in "${CLAUDE_PROJECT_DIR:-.}/.claude/cv-hub.credentials" \
+                 "/home/schmotz/.config/cv-hub/credentials" \
+                 "/root/.config/cv-hub/credentials" \
+                 "${HOME}/.config/cv-hub/credentials"; do
+  if [[ -f "$candidate" ]]; then
+    CRED_FILE="$candidate"
+    break
+  fi
+done
+if [[ -z "$CRED_FILE" ]]; then
   exit 0
 fi
 # shellcheck source=/dev/null
+set -a
 source "$CRED_FILE"
+set +a
 
 if [[ -z "${CV_HUB_PAT:-}" || -z "${CV_HUB_API:-}" ]]; then
   exit 0
