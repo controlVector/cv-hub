@@ -15,6 +15,7 @@ const NODE_COLORS: Record<string, string> = {
   symbol: '#10b981',
   module: '#f59e0b',
   commit: '#8b5cf6',
+  session_knowledge: '#06b6d4',
 };
 
 const EDGE_COLORS: Record<string, string> = {
@@ -25,6 +26,8 @@ const EDGE_COLORS: Record<string, string> = {
   CONTAINS: '#6366f1',
   MODIFIES: '#f43f5e',
   TOUCHES: '#f97316',
+  ABOUT: '#06b6d4',
+  FOLLOWS: '#f59e0b',
 };
 
 // Heatmap color interpolation
@@ -192,7 +195,12 @@ export function GraphCanvas({
       .join('line')
       .attr('stroke', (d) => EDGE_COLORS[d.edgeType] || '#475569')
       .attr('stroke-opacity', 0.4)
-      .attr('stroke-width', 1);
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', (d) =>
+        d.edgeType === 'ABOUT' ? '6,3' :
+        d.edgeType === 'FOLLOWS' ? '2,3' :
+        null
+      );
 
     // Draw nodes
     const nodeGroup = g.append('g').attr('class', 'nodes');
@@ -210,7 +218,21 @@ export function GraphCanvas({
       const el = d3.select(this);
       const color = nodeColors.get(d.data.id) || NODE_COLORS[d.type] || '#64748b';
 
-      if (d.data.type === 'module' || d.data.kind === 'class') {
+      if (d.data.type === 'session_knowledge') {
+        // Hexagon for session_knowledge nodes
+        const r = d.radius;
+        const hexPoints = d3.range(6).map((i) => {
+          const angle = (Math.PI / 3) * i - Math.PI / 2;
+          return `${r * Math.cos(angle)},${r * Math.sin(angle)}`;
+        }).join(' ');
+        el.append('polygon')
+          .attr('class', 'node-shape')
+          .attr('points', hexPoints)
+          .attr('fill', color)
+          .attr('stroke', 'none')
+          .attr('stroke-width', 0)
+          .attr('opacity', 0.85);
+      } else if (d.data.type === 'module' || d.data.kind === 'class') {
         el.append('rect')
           .attr('class', 'node-shape')
           .attr('width', d.radius * 2)

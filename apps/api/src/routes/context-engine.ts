@@ -9,10 +9,11 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { db } from '../db';
-import { repositories } from '../db/schema';
-import { eq } from 'drizzle-orm';
-import { requireAuth } from '../middleware/auth';
+import { repositories, contextEngineSessions } from '../db/schema';
+import { eq, desc, and, gte, count, sql } from 'drizzle-orm';
+import { requireAuth, optionalAuth } from '../middleware/auth';
 import { canUserAccessRepo } from '../services/repository.service';
+import { getGraphManager } from '../services/graph';
 import {
   initSessionContext,
   generateTurnContext,
@@ -229,6 +230,367 @@ contextEngineRoutes.post(
           symbol_summaries_updated: result.symbolSummariesUpdated,
           edges_created: result.edgesCreated,
           vector_stored: result.vectorStored,
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /sessions — List context engine sessions ──────────────────────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/sessions',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
+    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
+    const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const [sessions, totalResult] = await Promise.all([
+        db.query.contextEngineSessions.findMany({
+          where: eq(contextEngineSessions.repositoryId, repository.id),
+          orderBy: [desc(contextEngineSessions.lastActivityAt)],
+          limit,
+          offset,
+        }),
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(eq(contextEngineSessions.repositoryId, repository.id)),
+      ]);
+
+      return c.json({
+        success: true,
+        data: {
+          sessions: sessions.map((s) => ({
+            sessionId: s.sessionId,
+            userId: s.userId,
+            activeConcern: s.activeConcern,
+            lastTurnCount: s.lastTurnCount,
+            lastTokenEst: s.lastTokenEst,
+            lastActivityAt: s.lastActivityAt,
+            createdAt: s.createdAt,
+          })),
+          pagination: { limit, offset, total: totalResult[0]?.total ?? 0 },
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /sessions/:sessionId/timeline — Session knowledge timeline ────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/sessions/:sessionId/timeline',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo, sessionId } = c.req.param();
+    const userId = c.get('userId') ?? null;
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const graph = await getGraphManager(repository.id);
+      const results = await graph.query(
+        `MATCH (sk:SessionKnowledge {sessionId: $sessionId})
+         RETURN sk.turnNumber AS turnNumber, sk.timestamp AS timestamp,
+                sk.summary AS summary, sk.concern AS concern,
+                sk.filesTouched AS filesTouched, sk.symbolsReferenced AS symbolsReferenced
+         ORDER BY sk.turnNumber ASC`,
+        { sessionId },
+      );
+
+      return c.json({
+        success: true,
+        data: {
+          sessionId,
+          turns: results.map((r: any) => ({
+            turnNumber: r.turnNumber ?? 0,
+            timestamp: r.timestamp ?? 0,
+            summary: r.summary || '',
+            concern: r.concern || '',
+            filesTouched: r.filesTouched || [],
+            symbolsReferenced: r.symbolsReferenced || [],
+          })),
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /knowledge — List all SessionKnowledge nodes ──────────────────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/knowledge',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
+    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
+    const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
+    const concern = c.req.query('concern');
+    const file = c.req.query('file');
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const graph = await getGraphManager(repository.id);
+
+      // Build WHERE clauses dynamically
+      const conditions: string[] = [];
+      const params: Record<string, any> = { limit, offset };
+
+      if (concern) {
+        conditions.push('sk.concern = $concern');
+        params.concern = concern;
+      }
+      if (file) {
+        conditions.push('$file IN sk.filesTouched');
+        params.file = file;
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const results = await graph.query(
+        `MATCH (sk:SessionKnowledge)
+         ${whereClause}
+         RETURN sk.sessionId AS sessionId, sk.turnNumber AS turnNumber,
+                sk.timestamp AS timestamp, sk.summary AS summary,
+                sk.concern AS concern, sk.filesTouched AS filesTouched,
+                sk.symbolsReferenced AS symbolsReferenced
+         ORDER BY sk.timestamp DESC
+         SKIP $offset LIMIT $limit`,
+        params,
+      );
+
+      return c.json({
+        success: true,
+        data: {
+          knowledge: results.map((r: any) => ({
+            sessionId: r.sessionId || '',
+            turnNumber: r.turnNumber ?? 0,
+            timestamp: r.timestamp ?? 0,
+            summary: r.summary || '',
+            concern: r.concern || '',
+            filesTouched: r.filesTouched || [],
+            symbolsReferenced: r.symbolsReferenced || [],
+          })),
+          pagination: { limit, offset, hasMore: results.length === limit },
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /stats — Aggregated context engine stats ──────────────────────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/stats',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      const graph = await getGraphManager(repository.id);
+
+      const [
+        totalSessionsResult,
+        activeSessionsResult,
+        skCountResult,
+        aboutCountResult,
+        followsCountResult,
+        topFilesResult,
+      ] = await Promise.all([
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(eq(contextEngineSessions.repositoryId, repository.id)),
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(
+            and(
+              eq(contextEngineSessions.repositoryId, repository.id),
+              gte(contextEngineSessions.lastActivityAt, twentyFourHoursAgo),
+            ),
+          ),
+        graph.query('MATCH (sk:SessionKnowledge) RETURN count(sk) AS cnt'),
+        graph.query('MATCH ()-[r:ABOUT]->() RETURN count(r) AS cnt'),
+        graph.query('MATCH ()-[r:FOLLOWS]->() RETURN count(r) AS cnt'),
+        graph.query(
+          `MATCH (sk:SessionKnowledge)
+           UNWIND sk.filesTouched AS f
+           WITH f, count(*) AS mentions
+           RETURN f AS file, mentions
+           ORDER BY mentions DESC
+           LIMIT 10`,
+        ),
+      ]);
+
+      return c.json({
+        success: true,
+        data: {
+          totalSessions: totalSessionsResult[0]?.total ?? 0,
+          activeSessions: activeSessionsResult[0]?.total ?? 0,
+          totalKnowledgeNodes: (skCountResult[0] as any)?.cnt ?? 0,
+          totalAboutEdges: (aboutCountResult[0] as any)?.cnt ?? 0,
+          totalFollowsEdges: (followsCountResult[0] as any)?.cnt ?? 0,
+          topFiles: topFilesResult.map((r: any) => ({
+            file: r.file || '',
+            mentions: r.mentions ?? 0,
+          })),
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /graph-data — VizData for knowledge graph visualization ───────
+
+contextEngineRoutes.get(
+  '/:owner/:repo/context-engine/graph-data',
+  optionalAuth,
+  async (c) => {
+    const { owner, repo } = c.req.param();
+    const userId = c.get('userId') ?? null;
+    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '300', 10) || 300, 1000));
+
+    const repository = await getRepository(owner, repo, userId);
+    if (!repository) {
+      return c.json({ error: 'Repository not found' }, 404);
+    }
+
+    try {
+      const graph = await getGraphManager(repository.id);
+
+      // Fetch SK nodes and their ABOUT targets (File/Symbol)
+      const aboutResults = await graph.query(
+        `MATCH (sk:SessionKnowledge)-[r:ABOUT]->(target)
+         RETURN sk.sessionId AS skSessionId, sk.turnNumber AS skTurnNumber,
+                sk.timestamp AS skTimestamp, sk.summary AS skSummary,
+                sk.concern AS skConcern,
+                labels(target) AS targetLabels,
+                target.path AS targetPath, target.qualifiedName AS targetQualifiedName,
+                target.name AS targetName, target.language AS targetLanguage,
+                target.kind AS targetKind, target.complexity AS targetComplexity,
+                target.summary AS targetSummary,
+                r.role AS aboutRole
+         LIMIT $limit`,
+        { limit },
+      );
+
+      // Fetch FOLLOWS edges between SK nodes
+      const followsResults = await graph.query(
+        `MATCH (sk1:SessionKnowledge)-[:FOLLOWS]->(sk2:SessionKnowledge)
+         RETURN sk1.sessionId AS fromSession, sk1.turnNumber AS fromTurn,
+                sk2.sessionId AS toSession, sk2.turnNumber AS toTurn
+         LIMIT $limit`,
+        { limit },
+      );
+
+      // Build deduplicated node and edge sets
+      const nodeMap = new Map<string, any>();
+      const edges: any[] = [];
+
+      for (const r of aboutResults as any[]) {
+        // SK node
+        const skId = `sk:${r.skSessionId}:${r.skTurnNumber}`;
+        if (!nodeMap.has(skId)) {
+          nodeMap.set(skId, {
+            id: skId,
+            label: `Turn ${r.skTurnNumber}`,
+            type: 'session_knowledge',
+            sessionId: r.skSessionId,
+            turnNumber: r.skTurnNumber,
+            concern: r.skConcern || '',
+            summary: r.skSummary || '',
+          });
+        }
+
+        // Target node (File or Symbol)
+        const labels: string[] = r.targetLabels || [];
+        const isFile = labels.includes('File');
+        const targetId = isFile
+          ? (r.targetPath || r.targetQualifiedName || 'unknown')
+          : (r.targetQualifiedName || r.targetPath || 'unknown');
+        if (!nodeMap.has(targetId)) {
+          nodeMap.set(targetId, {
+            id: targetId,
+            label: isFile
+              ? (r.targetPath?.split('/').pop() || r.targetPath || 'unknown')
+              : (r.targetName || targetId.split(':').pop() || 'unknown'),
+            type: isFile ? 'file' : 'symbol',
+            path: r.targetPath,
+            language: r.targetLanguage,
+            kind: r.targetKind,
+            complexity: r.targetComplexity || 0,
+            summary: r.targetSummary,
+          });
+        }
+
+        // ABOUT edge
+        edges.push({
+          source: skId,
+          target: targetId,
+          type: 'ABOUT',
+        });
+      }
+
+      // FOLLOWS edges
+      for (const r of followsResults as any[]) {
+        const fromId = `sk:${r.fromSession}:${r.fromTurn}`;
+        const toId = `sk:${r.toSession}:${r.toTurn}`;
+        if (nodeMap.has(fromId) && nodeMap.has(toId)) {
+          edges.push({
+            source: fromId,
+            target: toId,
+            type: 'FOLLOWS',
+          });
+        }
+      }
+
+      const nodes = Array.from(nodeMap.values());
+
+      return c.json({
+        success: true,
+        data: {
+          nodes,
+          edges,
+          meta: {
+            viewType: 'knowledge',
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            truncated: aboutResults.length >= limit,
+          },
         },
       });
     } catch (error: any) {

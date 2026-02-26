@@ -363,7 +363,7 @@ export interface GraphVisualizationData {
 export interface VizNode {
   id: string;
   label: string;
-  type: 'file' | 'symbol' | 'module' | 'commit';
+  type: 'file' | 'symbol' | 'module' | 'commit' | 'session_knowledge';
   path?: string;
   complexity?: number;
   linesOfCode?: number;
@@ -373,12 +373,15 @@ export interface VizNode {
   lastModifiedCommit?: string;
   lastModifiedTimestamp?: number;
   modificationCount?: number;
+  sessionId?: string;
+  turnNumber?: number;
+  concern?: string;
 }
 
 export interface VizEdge {
   source: string;
   target: string;
-  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES';
+  type: 'IMPORTS' | 'CALLS' | 'INHERITS' | 'DEFINES' | 'CONTAINS' | 'MODIFIES' | 'TOUCHES' | 'ABOUT' | 'FOLLOWS';
   label?: string;
   weight?: number;
 }

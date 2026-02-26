@@ -29,16 +29,18 @@ import {
   Refresh,
   Description,
   BubbleChart,
+  Psychology,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getArchitectureViz, getHeatmapViz, triggerGraphSync } from '../../services/repository';
+import { getContextEngineGraphData } from '../../services/context-engine';
 import type { VizData, VizNode } from '../../services/repository';
 import GraphCanvas, { type ColorMode } from './GraphCanvas';
 import NodeDetailPanel from './NodeDetailPanel';
 import ContextOverview from './ContextOverview';
 
-type ViewMode = 'dependencies' | 'calls' | 'modules' | 'complexity';
+type ViewMode = 'dependencies' | 'calls' | 'modules' | 'complexity' | 'knowledge';
 type ArchView = 'graph' | 'context';
 
 const VIEW_MODES: { value: ViewMode; label: string; icon: React.ReactNode; description: string }[] = [
@@ -46,6 +48,7 @@ const VIEW_MODES: { value: ViewMode; label: string; icon: React.ReactNode; descr
   { value: 'calls', label: 'Call Graph', icon: <DeviceHub sx={{ fontSize: 16 }} />, description: 'Function call relationships' },
   { value: 'modules', label: 'Modules', icon: <ViewModule sx={{ fontSize: 16 }} />, description: 'Directory/module hierarchy' },
   { value: 'complexity', label: 'Complexity', icon: <Whatshot sx={{ fontSize: 16 }} />, description: 'Complexity heatmap' },
+  { value: 'knowledge', label: 'Knowledge', icon: <Psychology sx={{ fontSize: 16 }} />, description: 'Session knowledge graph' },
 ];
 
 interface ArchitectureTabProps {
@@ -69,12 +72,23 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
     queryParams.symbol = callSymbol;
   }
 
-  // Fetch viz data
-  const { data: vizData, isLoading, isError: vizError, error: vizErrorDetail, refetch } = useQuery({
+  // Fetch viz data (standard views)
+  const { data: vizData, isLoading: isLoadingViz, isError: vizError, error: vizErrorDetail, refetch } = useQuery({
     queryKey: ['architectureViz', owner, repo, viewMode, JSON.stringify(queryParams)],
-    queryFn: () => getArchitectureViz(owner, repo, viewMode, queryParams),
+    queryFn: () => getArchitectureViz(owner, repo, viewMode as 'dependencies' | 'calls' | 'modules' | 'complexity', queryParams),
     staleTime: 60000,
+    enabled: viewMode !== 'knowledge',
   });
+
+  // Fetch knowledge graph data (knowledge view)
+  const { data: knowledgeVizData, isLoading: isLoadingKnowledge } = useQuery({
+    queryKey: ['knowledgeViz', owner, repo],
+    queryFn: () => getContextEngineGraphData(owner, repo),
+    staleTime: 60000,
+    enabled: viewMode === 'knowledge',
+  });
+
+  const isLoading = viewMode === 'knowledge' ? isLoadingKnowledge : isLoadingViz;
 
   // Fetch heatmap overlay data when a heatmap color mode is active
   const { data: heatmapData } = useQuery({
@@ -85,14 +99,15 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
   });
 
   // Merge heatmap data into viz data when active (memoized)
+  const activeVizData = viewMode === 'knowledge' ? knowledgeVizData : vizData;
   const displayData = useMemo<VizData | null>(() => {
-    if (!vizData) return null;
-    if (colorMode === 'default' || !heatmapData) return vizData;
+    if (!activeVizData) return null;
+    if (colorMode === 'default' || !heatmapData) return activeVizData;
 
     const heatmapMap = new Map(heatmapData.nodes.map(n => [n.id, n]));
     return {
-      ...vizData,
-      nodes: vizData.nodes.map(n => {
+      ...activeVizData,
+      nodes: activeVizData.nodes.map(n => {
         const heatNode = heatmapMap.get(n.id);
         if (heatNode) {
           return {
@@ -105,7 +120,7 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
         return n;
       }),
     };
-  }, [vizData, colorMode, heatmapData]);
+  }, [activeVizData, colorMode, heatmapData]);
 
   const handleNodeSelect = useCallback((node: VizNode | null) => {
     setSelectedNode(node);
@@ -288,15 +303,15 @@ export function ArchitectureTab({ owner, repo }: ArchitectureTabProps) {
         <Box sx={{ flex: 1 }} />
 
         {/* Stats */}
-        {vizData && (
+        {activeVizData && (
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Chip
-              label={`${vizData.meta.nodeCount} nodes`}
+              label={`${activeVizData.meta.nodeCount} nodes`}
               size="small"
               sx={{ fontSize: '0.7rem', height: 22 }}
             />
             <Chip
-              label={`${vizData.meta.edgeCount} edges`}
+              label={`${activeVizData.meta.edgeCount} edges`}
               size="small"
               sx={{ fontSize: '0.7rem', height: 22 }}
             />

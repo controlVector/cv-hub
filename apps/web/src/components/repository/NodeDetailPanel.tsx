@@ -188,13 +188,39 @@ export function NodeDetailPanel({
           )}
         </Box>
 
+        {/* Session Knowledge Details */}
+        {node.type === 'session_knowledge' && (
+          <Box sx={{ mb: 2 }}>
+            {node.sessionId && (
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" sx={{ color: colors.textMuted }}>Session ID</Typography>
+                <Typography variant="body2" sx={{ fontSize: '0.75rem', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {node.sessionId}
+                </Typography>
+              </Box>
+            )}
+            {node.turnNumber != null && (
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" sx={{ color: colors.textMuted }}>Turn Number</Typography>
+                <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>{node.turnNumber}</Typography>
+              </Box>
+            )}
+            {node.concern && (
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" sx={{ color: colors.textMuted }}>Concern</Typography>
+                <Chip label={node.concern} size="small" sx={{ ml: 1, fontSize: '0.65rem', height: 18 }} />
+              </Box>
+            )}
+          </Box>
+        )}
+
         {/* AI Summary */}
         {node.summary && (
           <Box sx={{ mb: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
               <AIIcon sx={{ fontSize: 14, color: colors.orange }} />
               <Typography variant="caption" sx={{ color: colors.textMuted, fontWeight: 600 }}>
-                AI Summary
+                {node.type === 'session_knowledge' ? 'Knowledge Summary' : 'AI Summary'}
               </Typography>
             </Box>
             <Typography variant="body2" sx={{ fontSize: '0.8rem', lineHeight: 1.5 }}>

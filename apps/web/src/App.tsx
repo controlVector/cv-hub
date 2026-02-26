@@ -53,6 +53,9 @@ import BlogList from './pages/blog/BlogList';
 import BlogPost from './pages/blog/BlogPost';
 import ResearchPage from './pages/ResearchPage';
 import NewRepository from './pages/NewRepository';
+import ContextEngineDashboard from './pages/ContextEngineDashboard';
+import ContextEngineSessionDetail from './pages/ContextEngineSessionDetail';
+import KnowledgeFeed from './pages/KnowledgeFeed';
 import NotFoundPage from './pages/NotFoundPage';
 import DeviceAuthPage from './pages/DeviceAuthPage';
 
@@ -133,6 +136,10 @@ function App() {
                 <Route path="repositories/:owner/:repo/pipelines/:slug" element={<PipelineRunsPage />} />
                 <Route path="repositories/:owner/:repo/pipelines/:slug/edit" element={<PipelineEditorPage />} />
                 <Route path="repositories/:owner/:repo/pipelines/:slug/runs/:number" element={<RunDetailPage />} />
+                {/* Context Engine Routes */}
+                <Route path="repositories/:owner/:repo/context-engine" element={<ContextEngineDashboard />} />
+                <Route path="repositories/:owner/:repo/context-engine/sessions/:sessionId" element={<ContextEngineSessionDetail />} />
+                <Route path="repositories/:owner/:repo/context-engine/knowledge" element={<KnowledgeFeed />} />
                 <Route path="repositories/:owner/:repo/*" element={<RepositoryDetail />} />
                 <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="pull-requests" element={<PullRequests />} />

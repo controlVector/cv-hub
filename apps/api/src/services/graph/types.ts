@@ -171,7 +171,7 @@ export interface SymbolUsage {
 export interface VizNode {
   id: string;
   label: string;
-  type: 'file' | 'symbol' | 'module' | 'commit';
+  type: 'file' | 'symbol' | 'module' | 'commit' | 'session_knowledge';
   path?: string;
   complexity?: number;
   linesOfCode?: number;
@@ -181,6 +181,9 @@ export interface VizNode {
   lastModifiedCommit?: string;
   lastModifiedTimestamp?: number;
   modificationCount?: number;
+  sessionId?: string;
+  turnNumber?: number;
+  concern?: string;
 }
 
 export interface VizEdge {
@@ -195,7 +198,7 @@ export interface VizData {
   nodes: VizNode[];
   edges: VizEdge[];
   meta: {
-    viewType: 'dependencies' | 'calls' | 'modules' | 'complexity' | 'heatmap';
+    viewType: 'dependencies' | 'calls' | 'modules' | 'complexity' | 'heatmap' | 'knowledge';
     nodeCount: number;
     edgeCount: number;
     truncated: boolean;
