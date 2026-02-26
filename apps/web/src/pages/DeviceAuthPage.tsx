@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { brand } from '../config/brand';
 import {
   Box,
   Container,
@@ -275,7 +276,7 @@ export default function DeviceAuthPage() {
                   {deviceStatus.client_name}
                 </Typography>
                 <Typography variant="body2" sx={{ color: colors.textMuted }}>
-                  wants to access your ControlVector Hub account
+                  wants to access your {brand.appName} account
                 </Typography>
               </Box>
 

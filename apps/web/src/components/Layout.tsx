@@ -40,6 +40,7 @@ import {
   Link as LinkIcon,
   Tune as ConfigIcon,
   Flag as FlagIcon,
+  Psychology as ContextEngineIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -52,6 +53,7 @@ const drawerWidth = 260;
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Repositories', icon: <RepoIcon />, path: '/dashboard/repositories' },
+  { text: 'Context Engine', icon: <ContextEngineIcon />, path: '/dashboard/context-engine' },
   { text: 'Pull Requests', icon: <PRIcon />, path: '/dashboard/pull-requests' },
   { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },
   { text: 'Config', icon: <ConfigIcon />, path: '/dashboard/config' },

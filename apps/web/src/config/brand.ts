@@ -2,6 +2,9 @@
  * Brand configuration for the Web app
  * Reads VITE_BRAND_* environment variables (baked at build time).
  * Defaults to ControlVector branding if no env vars are set.
+ *
+ * Feature flags (VITE_BRAND_ENABLE_*) control which sections are visible.
+ * Set to 'true' to enable, anything else (or unset) to disable.
  */
 
 const domain = import.meta.env.VITE_BRAND_DOMAIN || 'controlvector.io';
@@ -22,5 +25,9 @@ export const brand = {
     accent: import.meta.env.VITE_BRAND_COLOR_ACCENT || '#fb923c',
     bg: import.meta.env.VITE_BRAND_COLOR_BG || '#0f172a',
     bgLight: import.meta.env.VITE_BRAND_COLOR_BG_LIGHT || '#1e293b',
+  },
+  features: {
+    blog: import.meta.env.VITE_BRAND_ENABLE_BLOG !== 'false',
+    research: import.meta.env.VITE_BRAND_ENABLE_RESEARCH !== 'false',
   },
 };

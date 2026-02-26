@@ -61,6 +61,35 @@ export interface CEStats {
   topFiles: Array<{ file: string; mentions: number }>;
 }
 
+// Global (cross-repo) types
+
+export interface CEGlobalStats {
+  totalSessions: number;
+  activeSessions: number;
+  totalKnowledgeNodes: number;
+  totalAboutEdges: number;
+  totalFollowsEdges: number;
+  repoCount: number;
+}
+
+export interface CEGlobalSession {
+  sessionId: string;
+  repositoryId: string;
+  repoName: string;
+  repoSlug: string;
+  repoOwner: string;
+  activeConcern: string;
+  lastTurnCount: number;
+  lastTokenEst: number;
+  lastActivityAt: string;
+  createdAt: string;
+}
+
+export interface CEGlobalSessionsResponse {
+  sessions: CEGlobalSession[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
 // API Functions
 
 export async function getContextEngineSessions(
@@ -124,5 +153,22 @@ export async function getContextEngineGraphData(
   const response = await api.get(
     `/v1/repos/${owner}/${repo}/context-engine/graph-data?${query.toString()}`,
   );
+  return response.data.data;
+}
+
+// Global (cross-repo) API Functions
+
+export async function getGlobalContextEngineStats(): Promise<CEGlobalStats> {
+  const response = await api.get('/v1/context-engine/stats');
+  return response.data.data;
+}
+
+export async function getGlobalContextEngineSessions(
+  params?: { limit?: number; offset?: number },
+): Promise<CEGlobalSessionsResponse> {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', params.limit.toString());
+  if (params?.offset) query.set('offset', params.offset.toString());
+  const response = await api.get(`/v1/context-engine/sessions?${query.toString()}`);
   return response.data.data;
 }

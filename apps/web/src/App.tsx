@@ -52,10 +52,12 @@ import { FlagsDashboard, FlagEditor } from './pages/flags';
 import BlogList from './pages/blog/BlogList';
 import BlogPost from './pages/blog/BlogPost';
 import ResearchPage from './pages/ResearchPage';
+import { brand } from './config/brand';
 import NewRepository from './pages/NewRepository';
 import ContextEngineDashboard from './pages/ContextEngineDashboard';
 import ContextEngineSessionDetail from './pages/ContextEngineSessionDetail';
 import KnowledgeFeed from './pages/KnowledgeFeed';
+import GlobalContextEngineDashboard from './pages/GlobalContextEngineDashboard';
 import NotFoundPage from './pages/NotFoundPage';
 import DeviceAuthPage from './pages/DeviceAuthPage';
 
@@ -105,12 +107,12 @@ function App() {
               {/* Public pricing page */}
               <Route path="/pricing" element={<PricingPage />} />
 
-              {/* Public blog pages */}
-              <Route path="/blog" element={<BlogList />} />
-              <Route path="/blog/:slug" element={<BlogPost />} />
+              {/* Public blog pages (configurable per brand) */}
+              {brand.features.blog && <Route path="/blog" element={<BlogList />} />}
+              {brand.features.blog && <Route path="/blog/:slug" element={<BlogPost />} />}
 
-              {/* Public research page */}
-              <Route path="/research" element={<ResearchPage />} />
+              {/* Public research page (configurable per brand) */}
+              {brand.features.research && <Route path="/research" element={<ResearchPage />} />}
 
               {/* Top-level 404 catch-all */}
               <Route path="*" element={<NotFoundPage />} />
@@ -141,6 +143,8 @@ function App() {
                 <Route path="repositories/:owner/:repo/context-engine/sessions/:sessionId" element={<ContextEngineSessionDetail />} />
                 <Route path="repositories/:owner/:repo/context-engine/knowledge" element={<KnowledgeFeed />} />
                 <Route path="repositories/:owner/:repo/*" element={<RepositoryDetail />} />
+                {/* Global Context Engine Dashboard */}
+                <Route path="context-engine" element={<GlobalContextEngineDashboard />} />
                 <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="pull-requests" element={<PullRequests />} />
                 <Route path="graph" element={<KnowledgeGraph />} />

@@ -71,12 +71,14 @@ export default function LandingPage() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              onClick={() => navigate('/blog')}
-              sx={{ color: colors.orange, fontWeight: 600 }}
-            >
-              Blog
-            </Button>
+            {brand.features.blog && (
+              <Button
+                onClick={() => navigate('/blog')}
+                sx={{ color: colors.orange, fontWeight: 600 }}
+              >
+                Blog
+              </Button>
+            )}
             <Button
               onClick={() => navigate('/pricing')}
               sx={{ color: colors.orange, fontWeight: 600 }}
@@ -147,23 +149,25 @@ export default function LandingPage() {
             Metadata is not understanding. CV-Git captures why your code exists - not just what conversation produced it.
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<ReadIcon />}
-              onClick={() => navigate('/blog/metadata-is-not-understanding')}
-              sx={{
-                backgroundColor: colors.orange,
-                px: 4,
-                py: 1.5,
-                fontSize: '1rem',
-                '&:hover': {
-                  backgroundColor: extendedColors.orangeHover,
-                },
-              }}
-            >
-              Read the Technical Case
-            </Button>
+            {brand.features.blog && (
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<ReadIcon />}
+                onClick={() => navigate('/blog/metadata-is-not-understanding')}
+                sx={{
+                  backgroundColor: colors.orange,
+                  px: 4,
+                  py: 1.5,
+                  fontSize: '1rem',
+                  '&:hover': {
+                    backgroundColor: extendedColors.orangeHover,
+                  },
+                }}
+              >
+                Read the Technical Case
+              </Button>
+            )}
             <Button
               variant="outlined"
               size="large"
@@ -242,22 +246,24 @@ export default function LandingPage() {
             borderTop: `1px solid ${extendedColors.border}`,
           }}
         >
-          <Typography variant="body1" sx={{ color: colors.textMuted, mb: 1 }}>
-            The Context Manifold paper is available at{' '}
-            <Link
-              href="/research"
-              sx={{ color: colors.orange, cursor: 'pointer' }}
-            >
-              controlvector.io/research
-            </Link>
-          </Typography>
+          {brand.features.research && (
+            <Typography variant="body1" sx={{ color: colors.textMuted, mb: 1 }}>
+              The Context Manifold paper is available at{' '}
+              <Link
+                href="/research"
+                sx={{ color: colors.orange, cursor: 'pointer' }}
+              >
+                {brand.domain}/research
+              </Link>
+            </Typography>
+          )}
           <Typography variant="body1" sx={{ color: colors.textMuted }}>
             Questions?{' '}
             <Link
-              href="mailto:schmotz@controlvector.io"
+              href={`mailto:${brand.contactEmail}`}
               sx={{ color: colors.orange }}
             >
-              schmotz@controlvector.io
+              {brand.contactEmail}
             </Link>
           </Typography>
         </Box>
@@ -271,15 +277,19 @@ export default function LandingPage() {
               &copy; {new Date().getFullYear()} {brand.companyName}. All rights reserved.
             </Typography>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button size="small" onClick={() => navigate('/blog')} sx={{ color: colors.textMuted }}>
-                Blog
-              </Button>
+              {brand.features.blog && (
+                <Button size="small" onClick={() => navigate('/blog')} sx={{ color: colors.textMuted }}>
+                  Blog
+                </Button>
+              )}
               <Button size="small" onClick={() => navigate('/pricing')} sx={{ color: colors.textMuted }}>
                 Pricing
               </Button>
-              <Button size="small" onClick={() => navigate('/research')} sx={{ color: colors.textMuted }}>
-                Research
-              </Button>
+              {brand.features.research && (
+                <Button size="small" onClick={() => navigate('/research')} sx={{ color: colors.textMuted }}>
+                  Research
+                </Button>
+              )}
             </Box>
           </Box>
         </Container>

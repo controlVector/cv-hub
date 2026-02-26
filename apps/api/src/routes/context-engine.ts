@@ -599,4 +599,146 @@ contextEngineRoutes.get(
   },
 );
 
-export { contextEngineRoutes };
+// ══════════════════════════════════════════════════════════════════════
+// Global (non-repo-scoped) Context Engine Routes
+// Base path: /api/v1/context-engine
+// ══════════════════════════════════════════════════════════════════════
+
+const globalContextEngineRoutes = new Hono<AppEnv>();
+
+// ── GET /stats — Aggregate stats across all user-accessible repos ─────
+
+globalContextEngineRoutes.get(
+  '/context-engine/stats',
+  requireAuth,
+  async (c) => {
+    const userId = c.get('userId')!;
+
+    try {
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      // Aggregate from Postgres across all repos the user has sessions for
+      const [totalResult, activeResult] = await Promise.all([
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(eq(contextEngineSessions.userId, userId)),
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(
+            and(
+              eq(contextEngineSessions.userId, userId),
+              gte(contextEngineSessions.lastActivityAt, twentyFourHoursAgo),
+            ),
+          ),
+      ]);
+
+      // Get distinct repos the user has CE sessions for
+      const repoRows = await db
+        .selectDistinctOn([contextEngineSessions.repositoryId], {
+          repositoryId: contextEngineSessions.repositoryId,
+        })
+        .from(contextEngineSessions)
+        .where(eq(contextEngineSessions.userId, userId));
+
+      // Aggregate FalkorDB stats across repos (capped at 20 to avoid N+1 overload)
+      let totalKnowledgeNodes = 0;
+      let totalAboutEdges = 0;
+      let totalFollowsEdges = 0;
+      const repoIds = repoRows.map(r => r.repositoryId).slice(0, 20);
+
+      for (const repoId of repoIds) {
+        try {
+          const graph = await getGraphManager(repoId);
+          const [skResult, aboutResult, followsResult] = await Promise.all([
+            graph.query('MATCH (sk:SessionKnowledge) RETURN count(sk) AS cnt'),
+            graph.query('MATCH ()-[r:ABOUT]->() RETURN count(r) AS cnt'),
+            graph.query('MATCH ()-[r:FOLLOWS]->() RETURN count(r) AS cnt'),
+          ]);
+          totalKnowledgeNodes += (skResult[0] as any)?.cnt ?? 0;
+          totalAboutEdges += (aboutResult[0] as any)?.cnt ?? 0;
+          totalFollowsEdges += (followsResult[0] as any)?.cnt ?? 0;
+        } catch {
+          // Skip repos with no graph or connection issues
+        }
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          totalSessions: totalResult[0]?.total ?? 0,
+          activeSessions: activeResult[0]?.total ?? 0,
+          totalKnowledgeNodes,
+          totalAboutEdges,
+          totalFollowsEdges,
+          repoCount: repoRows.length,
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+// ── GET /sessions — Cross-repo session list ───────────────────────────
+
+globalContextEngineRoutes.get(
+  '/context-engine/sessions',
+  requireAuth,
+  async (c) => {
+    const userId = c.get('userId')!;
+    const limit = Math.max(1, Math.min(parseInt(c.req.query('limit') || '20', 10) || 20, 100));
+    const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10) || 0);
+
+    try {
+      const [sessions, totalResult] = await Promise.all([
+        db.query.contextEngineSessions.findMany({
+          where: eq(contextEngineSessions.userId, userId),
+          orderBy: [desc(contextEngineSessions.lastActivityAt)],
+          limit,
+          offset,
+          with: {
+            repository: {
+              columns: { id: true, name: true, slug: true },
+              with: {
+                organization: { columns: { slug: true } },
+                owner: { columns: { username: true } },
+              },
+            },
+          },
+        }),
+        db.select({ total: count() })
+          .from(contextEngineSessions)
+          .where(eq(contextEngineSessions.userId, userId)),
+      ]);
+
+      return c.json({
+        success: true,
+        data: {
+          sessions: sessions.map((s) => {
+            const ownerSlug = (s.repository as any)?.organization?.slug
+              || (s.repository as any)?.owner?.username
+              || '';
+            return {
+              sessionId: s.sessionId,
+              repositoryId: s.repositoryId,
+              repoName: (s.repository as any)?.name || '',
+              repoSlug: (s.repository as any)?.slug || '',
+              repoOwner: ownerSlug,
+              activeConcern: s.activeConcern,
+              lastTurnCount: s.lastTurnCount,
+              lastTokenEst: s.lastTokenEst,
+              lastActivityAt: s.lastActivityAt,
+              createdAt: s.createdAt,
+            };
+          }),
+          pagination: { limit, offset, total: totalResult[0]?.total ?? 0 },
+        },
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  },
+);
+
+export { contextEngineRoutes, globalContextEngineRoutes };
