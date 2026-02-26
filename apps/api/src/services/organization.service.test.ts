@@ -10,8 +10,14 @@ import {
   isOrgAdmin,
   isOrgOwner,
   removeOrganizationMember,
+  updateMemberRole,
   listOrganizations,
   getUserOrganizations,
+  createInvite,
+  listPendingInvites,
+  cancelInvite,
+  acceptInviteByToken,
+  getInviteByToken,
 } from './organization.service';
 import { createUser } from './user.service';
 import { truncateAllTables } from '../test/test-db';
@@ -351,6 +357,215 @@ describe('OrganizationService', () => {
     it('returns empty array for user with no organizations', async () => {
       const orgs = await getUserOrganizations(secondUserId);
       expect(orgs).toEqual([]);
+    });
+  });
+
+  // ========================================================================
+  // Invite System Tests
+  // ========================================================================
+
+  describe('createInvite', () => {
+    it('creates an invite with a token', async () => {
+      const org = await createOrganization({ slug: 'invite-create-org', name: 'Invite Org' }, testUserId);
+
+      const invite = await createInvite(org.id, 'newuser@example.com', 'member', testUserId);
+
+      expect(invite.id).toBeDefined();
+      expect(invite.token).toBeDefined();
+      expect(invite.token.length).toBeGreaterThan(10);
+      expect(invite.email).toBe('newuser@example.com');
+      expect(invite.role).toBe('member');
+      expect(invite.organizationId).toBe(org.id);
+      expect(invite.invitedBy).toBe(testUserId);
+      expect(invite.expiresAt).toBeDefined();
+      expect(invite.acceptedAt).toBeNull();
+    });
+
+    it('rejects duplicate pending invite for same email+org', async () => {
+      const org = await createOrganization({ slug: 'dup-invite-org', name: 'Dup Invite' }, testUserId);
+
+      await createInvite(org.id, 'dup@example.com', 'member', testUserId);
+
+      await expect(
+        createInvite(org.id, 'dup@example.com', 'member', testUserId)
+      ).rejects.toThrow('pending invite already exists');
+    });
+
+    it('rejects owner role', async () => {
+      const org = await createOrganization({ slug: 'owner-invite-org', name: 'Owner Invite' }, testUserId);
+
+      await expect(
+        createInvite(org.id, 'owner@example.com', 'owner', testUserId)
+      ).rejects.toThrow('Cannot invite as owner');
+    });
+
+    it('normalizes email to lowercase', async () => {
+      const org = await createOrganization({ slug: 'case-invite-org', name: 'Case Invite' }, testUserId);
+
+      const invite = await createInvite(org.id, 'UPPER@EXAMPLE.COM', 'member', testUserId);
+
+      expect(invite.email).toBe('upper@example.com');
+    });
+  });
+
+  describe('listPendingInvites', () => {
+    it('returns only non-expired non-accepted invites', async () => {
+      const org = await createOrganization({ slug: 'list-invite-org', name: 'List Invite' }, testUserId);
+
+      await createInvite(org.id, 'pending1@example.com', 'member', testUserId);
+      await createInvite(org.id, 'pending2@example.com', 'admin', testUserId);
+
+      const invites = await listPendingInvites(org.id);
+
+      expect(invites.length).toBe(2);
+      expect(invites.every(i => i.acceptedAt === null)).toBe(true);
+    });
+
+    it('returns empty for org with no invites', async () => {
+      const org = await createOrganization({ slug: 'empty-invite-org', name: 'Empty' }, testUserId);
+
+      const invites = await listPendingInvites(org.id);
+      expect(invites).toEqual([]);
+    });
+  });
+
+  describe('cancelInvite', () => {
+    it('removes an invite', async () => {
+      const org = await createOrganization({ slug: 'cancel-invite-org', name: 'Cancel Invite' }, testUserId);
+      const invite = await createInvite(org.id, 'cancel@example.com', 'member', testUserId);
+
+      const cancelled = await cancelInvite(org.id, invite.id);
+      expect(cancelled).toBe(true);
+
+      const remaining = await listPendingInvites(org.id);
+      expect(remaining.length).toBe(0);
+    });
+
+    it('returns false for non-existent invite', async () => {
+      const org = await createOrganization({ slug: 'nocancel-org', name: 'No Cancel' }, testUserId);
+
+      const cancelled = await cancelInvite(org.id, '00000000-0000-0000-0000-000000000000');
+      expect(cancelled).toBe(false);
+    });
+  });
+
+  describe('acceptInviteByToken', () => {
+    it('creates membership and marks invite accepted', async () => {
+      const org = await createOrganization({ slug: 'accept-org', name: 'Accept Org' }, testUserId);
+      const invite = await createInvite(org.id, 'second@example.com', 'admin', testUserId);
+
+      const member = await acceptInviteByToken(invite.token, secondUserId, 'second@example.com');
+
+      expect(member.organizationId).toBe(org.id);
+      expect(member.userId).toBe(secondUserId);
+      expect(member.role).toBe('admin');
+      expect(member.acceptedAt).toBeDefined();
+
+      // Invite should be marked accepted
+      const updated = await getInviteByToken(invite.token);
+      expect(updated!.acceptedAt).not.toBeNull();
+    });
+
+    it('rejects expired token', async () => {
+      const org = await createOrganization({ slug: 'expired-org', name: 'Expired Org' }, testUserId);
+      const invite = await createInvite(org.id, 'second@example.com', 'member', testUserId);
+
+      // Manually expire the invite via direct DB update
+      const { db } = await import('../db');
+      const { orgInvites } = await import('../db/schema');
+      const { eq } = await import('drizzle-orm');
+      await db.update(orgInvites)
+        .set({ expiresAt: new Date('2020-01-01') })
+        .where(eq(orgInvites.id, invite.id));
+
+      await expect(
+        acceptInviteByToken(invite.token, secondUserId, 'second@example.com')
+      ).rejects.toThrow('expired');
+    });
+
+    it('rejects already-accepted token', async () => {
+      const org = await createOrganization({ slug: 'double-accept-org', name: 'Double Accept' }, testUserId);
+      const invite = await createInvite(org.id, 'second@example.com', 'member', testUserId);
+
+      await acceptInviteByToken(invite.token, secondUserId, 'second@example.com');
+
+      // Create another user to try accepting the same token
+      const thirdUser = await createUser({
+        email: 'third@example.com',
+        username: 'thirduser',
+        password: 'password123',
+      });
+
+      await expect(
+        acceptInviteByToken(invite.token, thirdUser.id, 'second@example.com')
+      ).rejects.toThrow('already been accepted');
+    });
+
+    it('rejects mismatched email', async () => {
+      const org = await createOrganization({ slug: 'mismatch-org', name: 'Mismatch Org' }, testUserId);
+      const invite = await createInvite(org.id, 'invited@example.com', 'member', testUserId);
+
+      await expect(
+        acceptInviteByToken(invite.token, secondUserId, 'wrong@example.com')
+      ).rejects.toThrow('does not match');
+    });
+  });
+
+  // ========================================================================
+  // Last-Owner Protection Tests
+  // ========================================================================
+
+  describe('removeOrganizationMember - last owner protection', () => {
+    it('blocks removing the last owner', async () => {
+      const org = await createOrganization({ slug: 'last-owner-rm-org', name: 'Last Owner Remove' }, testUserId);
+
+      await expect(
+        removeOrganizationMember(org.id, testUserId)
+      ).rejects.toThrow('Cannot remove the last owner');
+    });
+
+    it('allows removing an owner when another owner exists', async () => {
+      const org = await createOrganization({ slug: 'multi-owner-rm-org', name: 'Multi Owner Remove' }, testUserId);
+      await addOrganizationMember(org.id, secondUserId, 'owner');
+
+      const removed = await removeOrganizationMember(org.id, testUserId);
+      expect(removed).toBe(true);
+
+      // secondUserId should still be owner
+      const role = await getUserOrgRole(org.id, secondUserId);
+      expect(role).toBe('owner');
+    });
+  });
+
+  describe('updateMemberRole - last owner protection', () => {
+    it('blocks demoting the last owner', async () => {
+      const org = await createOrganization({ slug: 'last-owner-demote-org', name: 'Last Owner Demote' }, testUserId);
+
+      await expect(
+        updateMemberRole(org.id, testUserId, 'admin')
+      ).rejects.toThrow('Cannot demote the last owner');
+    });
+
+    it('allows demoting an owner when another owner exists', async () => {
+      const org = await createOrganization({ slug: 'multi-owner-demote-org', name: 'Multi Owner Demote' }, testUserId);
+      await addOrganizationMember(org.id, secondUserId, 'owner');
+
+      const updated = await updateMemberRole(org.id, testUserId, 'admin');
+      expect(updated).not.toBeNull();
+      expect(updated!.role).toBe('admin');
+
+      // secondUserId should still be owner
+      const role = await getUserOrgRole(org.id, secondUserId);
+      expect(role).toBe('owner');
+    });
+
+    it('allows role changes that do not affect owners', async () => {
+      const org = await createOrganization({ slug: 'role-change-org', name: 'Role Change' }, testUserId);
+      await addOrganizationMember(org.id, secondUserId, 'member');
+
+      const updated = await updateMemberRole(org.id, secondUserId, 'admin');
+      expect(updated).not.toBeNull();
+      expect(updated!.role).toBe('admin');
     });
   });
 });
