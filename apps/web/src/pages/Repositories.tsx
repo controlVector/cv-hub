@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Card,
@@ -26,7 +25,8 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
-import { listRepositories, type RepositoryListItem } from '../services/repository';
+import { useRepositories } from '../hooks/api';
+import type { RepositoryListItem } from '../services/repository';
 
 const getLanguageColor = (lang: string) => {
   const langColors: Record<string, string> = {
@@ -80,14 +80,10 @@ export default function Repositories() {
 
   const visibilityFilter = tabValue === 1 ? 'public' : tabValue === 2 ? 'private' : undefined;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['repositories', debouncedSearch, visibilityFilter],
-    queryFn: () =>
-      listRepositories({
-        search: debouncedSearch || undefined,
-        visibility: visibilityFilter,
-        limit: 100,
-      }),
+  const { data, isLoading, error } = useRepositories({
+    search: debouncedSearch || undefined,
+    visibility: visibilityFilter,
+    limit: 100,
   });
 
   const repos = data?.repositories || [];
