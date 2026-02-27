@@ -42,6 +42,7 @@ import {
   Flag as FlagIcon,
   Psychology as ContextEngineIcon,
   ViewKanban as BoardIcon,
+  Shield as SafetyIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -60,6 +61,7 @@ const menuItems = [
   { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },
   { text: 'Config', icon: <ConfigIcon />, path: '/dashboard/config' },
   { text: 'Feature Flags', icon: <FlagIcon />, path: '/dashboard/flags' },
+  { text: 'Safety', icon: <SafetyIcon />, path: '/dashboard/safety' },
   { text: 'Knowledge Graph', icon: <GraphIcon />, path: '/dashboard/graph' },
   { text: 'Search', icon: <SearchIcon />, path: '/dashboard/search' },
   { text: 'App Store', icon: <StoreIcon />, path: '/apps' },

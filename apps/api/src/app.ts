@@ -45,6 +45,7 @@ import { mcpOAuthRoutes } from './routes/mcp-oauth';
 import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
 import { taskRoutes } from './routes/tasks';
+import { safetyRoutes } from './routes/safety';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
 import { mcpGateway } from './routes/mcp-gateway';
 import { errorHandler } from './utils/errors';
@@ -200,6 +201,9 @@ app.route('/api/v1/executors', executorRoutes);
 
 // Task Board API (user-facing task management)
 app.route('/api/v1/tasks', taskRoutes);
+
+// Safety Analysis API (CV-Safe)
+app.route('/api/v1/repos', safetyRoutes);
 
 // Context Engine API (knowledge-graph-driven context injection for Claude Code)
 app.route('/api/v1/repos', contextEngineRoutes);

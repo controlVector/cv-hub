@@ -8,3 +8,4 @@ export { registerSearchTools } from './search';
 export { registerSyncTools } from './sync';
 export { registerExecutorRelayTools } from './executor-relay';
 export { registerContextEngineTools } from './context-engine';
+export { registerSafetyTools } from './safety';

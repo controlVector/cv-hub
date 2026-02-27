@@ -15,6 +15,7 @@ import { registerCICDToolsOnMcp } from './tools/ci-cd';
 import { registerExecutorRelayTools } from './tools/executor-relay';
 import { registerContextTools } from './tools/context';
 import { registerContextEngineTools } from './tools/context-engine';
+import { registerSafetyTools } from './tools/safety';
 
 /**
  * Create a fully-configured MCP server for a specific user session.
@@ -47,6 +48,9 @@ export function createMcpServer(userId: string, scopes: string[]): McpServer {
 
   // Phase 5: Context engine tools (graph-driven context injection)
   registerContextEngineTools(server, userId, scopes);
+
+  // Phase 6: Safety analysis tools (CV-Safe)
+  registerSafetyTools(server, userId, scopes);
 
   return server;
 }
