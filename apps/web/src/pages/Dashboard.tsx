@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Button,
@@ -29,50 +28,8 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
-import { api } from '../lib/api';
+import { useDashboardStats } from '../hooks/api';
 import type { AIInsight, ActivityItem } from '../types';
-
-interface BillingInfo {
-  orgId: string;
-  orgSlug: string;
-  orgName: string;
-  tierName: string;
-  tierDisplayName: string;
-  isFreeTier: boolean;
-  usage: {
-    repos: number;
-    members: number;
-  };
-  limits: {
-    repositories: number | null;
-    teamMembers: number | null;
-    storageGb: number | null;
-    environments: number | null;
-    buildMinutes: number | null;
-  };
-}
-
-interface DashboardStats {
-  stats: {
-    repositories: number;
-    pullRequests: number;
-    openIssues: number;
-  };
-  recentRepositories: {
-    id: string;
-    name: string;
-    slug: string;
-    fullName: string;
-    description: string | null;
-    visibility: string;
-    starCount: number;
-    openIssueCount: number;
-    openPrCount: number;
-    graphSyncStatus: string;
-    updatedAt: string;
-  }[];
-  billing: BillingInfo | null;
-}
 
 // Placeholder data for AI insights (will be populated from graph analysis)
 const aiInsights: AIInsight[] = [];
@@ -137,14 +94,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   // Fetch dashboard stats from API
-  const { data: dashboardData, isLoading } = useQuery<DashboardStats>({
-    queryKey: ['dashboard-stats'],
-    queryFn: async () => {
-      const response = await api.get('/v1/dashboard/stats');
-      return response.data;
-    },
-    staleTime: 30000, // Cache for 30 seconds
-  });
+  const { data: dashboardData, isLoading } = useDashboardStats();
 
   const stats = [
     { label: 'Repositories', value: dashboardData?.stats.repositories ?? 0, icon: <RepoIcon />, change: '' },
