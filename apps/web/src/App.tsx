@@ -58,6 +58,7 @@ import ContextEngineDashboard from './pages/ContextEngineDashboard';
 import ContextEngineSessionDetail from './pages/ContextEngineSessionDetail';
 import KnowledgeFeed from './pages/KnowledgeFeed';
 import GlobalContextEngineDashboard from './pages/GlobalContextEngineDashboard';
+import BoardPage from './pages/BoardPage';
 import NotFoundPage from './pages/NotFoundPage';
 import DeviceAuthPage from './pages/DeviceAuthPage';
 
@@ -145,6 +146,7 @@ function App() {
                 <Route path="repositories/:owner/:repo/*" element={<RepositoryDetail />} />
                 {/* Global Context Engine Dashboard */}
                 <Route path="context-engine" element={<GlobalContextEngineDashboard />} />
+                <Route path="board" element={<BoardPage />} />
                 <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="pull-requests" element={<PullRequests />} />
                 <Route path="graph" element={<KnowledgeGraph />} />

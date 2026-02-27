@@ -41,6 +41,7 @@ import {
   Tune as ConfigIcon,
   Flag as FlagIcon,
   Psychology as ContextEngineIcon,
+  ViewKanban as BoardIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -53,6 +54,7 @@ const drawerWidth = 260;
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Repositories', icon: <RepoIcon />, path: '/dashboard/repositories' },
+  { text: 'Board', icon: <BoardIcon />, path: '/dashboard/board' },
   { text: 'Context Engine', icon: <ContextEngineIcon />, path: '/dashboard/context-engine' },
   { text: 'Pull Requests', icon: <PRIcon />, path: '/dashboard/pull-requests' },
   { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },

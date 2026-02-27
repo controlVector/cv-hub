@@ -126,6 +126,38 @@ export async function cancelAgentTask(
   return updated;
 }
 
+export async function updateAgentTaskStatus(
+  taskId: string,
+  userId: string,
+  status: 'pending' | 'queued' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled',
+): Promise<AgentTask | null> {
+  const task = await getAgentTask(taskId, userId);
+  if (!task) return null;
+
+  const now = new Date();
+  const updates: Partial<{
+    status: typeof status;
+    startedAt: Date;
+    completedAt: Date;
+    updatedAt: Date;
+  }> = { status, updatedAt: now };
+
+  if (status === 'running' && !task.startedAt) {
+    updates.startedAt = now;
+  }
+  if (['completed', 'failed', 'cancelled'].includes(status)) {
+    updates.completedAt = now;
+  }
+
+  const [updated] = await db
+    .update(agentTasks)
+    .set(updates)
+    .where(eq(agentTasks.id, taskId))
+    .returning();
+
+  return updated;
+}
+
 // ==================== Executor-facing operations ====================
 
 /**

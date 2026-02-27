@@ -44,6 +44,7 @@ import { cliApiRoutes } from './routes/cli-api';
 import { mcpOAuthRoutes } from './routes/mcp-oauth';
 import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
+import { taskRoutes } from './routes/tasks';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
 import { mcpGateway } from './routes/mcp-gateway';
 import { errorHandler } from './utils/errors';
@@ -196,6 +197,9 @@ app.route('/mcp', mcpRoutes);
 
 // Executor API (Claude Code agents register, poll, submit results)
 app.route('/api/v1/executors', executorRoutes);
+
+// Task Board API (user-facing task management)
+app.route('/api/v1/tasks', taskRoutes);
 
 // Context Engine API (knowledge-graph-driven context injection for Claude Code)
 app.route('/api/v1/repos', contextEngineRoutes);
