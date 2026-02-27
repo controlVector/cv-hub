@@ -47,8 +47,8 @@ type McpEnv = {
 // ── Rate limiter ──────────────────────────────────────────────────────
 
 const mcpRateLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxRequests: 200,
+  windowMs: 60 * 1000,   // 1 minute
+  maxRequests: 100,       // 100 req/min per user
 });
 
 // ── Auth middleware ────────────────────────────────────────────────────

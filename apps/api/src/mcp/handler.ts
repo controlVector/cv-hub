@@ -13,6 +13,32 @@ import type {
 } from './types';
 import { MCP_VERSION, JSON_RPC_ERRORS } from './types';
 
+// ── Response truncation ──────────────────────────────────────────────
+
+const MAX_RESPONSE_CHARS = 4000;
+
+/**
+ * Truncate MCP tool response content to stay within token-friendly limits.
+ * Preserves the first MAX_RESPONSE_CHARS of each text content block.
+ */
+export function truncateToolResponse(result: MCPToolResult): MCPToolResult {
+  if (!result.content || result.content.length === 0) return result;
+
+  const truncated = result.content.map((block) => {
+    if (block.type === 'text' && block.text.length > MAX_RESPONSE_CHARS) {
+      return {
+        ...block,
+        text:
+          block.text.slice(0, MAX_RESPONSE_CHARS) +
+          '\n\n… (truncated — response exceeded 4 000 chars)',
+      };
+    }
+    return block;
+  });
+
+  return { ...result, content: truncated };
+}
+
 // Tool registry — populated by A.4 (tool handlers)
 type ToolHandler = (
   args: Record<string, unknown>,
@@ -181,7 +207,8 @@ async function handleToolsCall(
   }
 
   try {
-    return await entry.handler(params.arguments || {}, ctx);
+    const result = await entry.handler(params.arguments || {}, ctx);
+    return truncateToolResponse(result);
   } catch (error: any) {
     return {
       content: [
