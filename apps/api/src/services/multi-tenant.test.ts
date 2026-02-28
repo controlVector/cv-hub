@@ -32,10 +32,24 @@ import {
 } from './agent-task.service';
 import { createToken, validateToken, revokeToken, listTokens } from './pat.service';
 import { getOrgTierInfo, getOrgUsage, checkOrgRepoLimit } from './tier-limits.service';
-import { truncateAllTables } from '../test/test-db';
+import { sql } from 'drizzle-orm';
+import { db } from '../db';
 
 let seq = 0;
 function uid() { return `mt_${Date.now()}_${++seq}`; }
+
+/** Truncate all tables using the app db pool (same pool as services). */
+async function cleanDb() {
+  const tables = await db.execute(sql`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
+  `);
+  if (tables.rows.length === 0) return;
+  const names = (tables.rows as { tablename: string }[])
+    .map(r => `"${r.tablename}"`).join(', ');
+  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
+}
 
 // Shared test state — set up fresh in each beforeEach
 let alice: { id: string; email: string };
@@ -47,7 +61,7 @@ let bob: { id: string; email: string };
 
 describe('Organization Isolation', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     alice = await createUser({ email: `alice_${u}@test.com`, username: `alice_${u}`, password: 'pass123' });
     bob = await createUser({ email: `bob_${u}@test.com`, username: `bob_${u}`, password: 'pass123' });
@@ -98,7 +112,7 @@ describe('Organization Isolation', () => {
 
 describe('Repository Isolation', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     alice = await createUser({ email: `alice_${u}@test.com`, username: `alice_${u}`, password: 'pass123' });
     bob = await createUser({ email: `bob_${u}@test.com`, username: `bob_${u}`, password: 'pass123' });
@@ -166,7 +180,7 @@ describe('Repository Isolation', () => {
 
 describe('Task Isolation', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     alice = await createUser({ email: `alice_${u}@test.com`, username: `alice_${u}`, password: 'pass123' });
     bob = await createUser({ email: `bob_${u}@test.com`, username: `bob_${u}`, password: 'pass123' });
@@ -206,7 +220,7 @@ describe('Task Isolation', () => {
 
 describe('PAT Isolation', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     alice = await createUser({ email: `alice_${u}@test.com`, username: `alice_${u}`, password: 'pass123' });
     bob = await createUser({ email: `bob_${u}@test.com`, username: `bob_${u}`, password: 'pass123' });
@@ -267,7 +281,7 @@ describe('PAT Isolation', () => {
 
 describe('Billing Isolation', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     alice = await createUser({ email: `alice_${u}@test.com`, username: `alice_${u}`, password: 'pass123' });
     bob = await createUser({ email: `bob_${u}@test.com`, username: `bob_${u}`, password: 'pass123' });

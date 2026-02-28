@@ -33,10 +33,24 @@ import {
   cancelAgentTask,
 } from './agent-task.service';
 import { createToken, validateToken, listTokens, revokeToken } from './pat.service';
-import { truncateAllTables } from '../test/test-db';
+import { sql } from 'drizzle-orm';
+import { db } from '../db';
 
 let seq = 0;
 function uid() { return `ct_${Date.now()}_${++seq}`; }
+
+/** Truncate all tables using the app db pool (same pool as services). */
+async function cleanDb() {
+  const tables = await db.execute(sql`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
+  `);
+  if (tables.rows.length === 0) return;
+  const names = (tables.rows as { tablename: string }[])
+    .map(r => `"${r.tablename}"`).join(', ');
+  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
+}
 
 // ---------------------------------------------------------------------------
 // 4a. User / Auth Contracts
@@ -44,7 +58,7 @@ function uid() { return `ct_${Date.now()}_${++seq}`; }
 
 describe('User / Auth Response Contracts', () => {
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
   });
 
   it('createUser returns full AuthenticatedUser shape', async () => {
@@ -100,7 +114,7 @@ describe('Organization Response Contracts', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `org_${u}@test.com`, username: `org_${u}`, password: 'pass123' });
     userId = user.id;
@@ -207,7 +221,7 @@ describe('Repository Response Contracts', () => {
   let orgId: string;
 
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `repo_${u}@test.com`, username: `repo_${u}`, password: 'pass123' });
     userId = user.id;
@@ -295,7 +309,7 @@ describe('Task Response Contracts', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `task_${u}@test.com`, username: `task_${u}`, password: 'pass123' });
     userId = user.id;
@@ -424,7 +438,7 @@ describe('PAT Response Contracts', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await truncateAllTables();
+    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `pat_${u}@test.com`, username: `pat_${u}`, password: 'pass123' });
     userId = user.id;

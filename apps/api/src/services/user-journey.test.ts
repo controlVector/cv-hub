@@ -5,16 +5,13 @@
  * 1b. Task Board Lifecycle — create task, status transitions, listing
  * 1c. PAT Lifecycle — create, validate, revoke
  *
- * Uses `db` from '../db' directly for all data setup (same pool as services).
+ * Uses createUser from user.service (same db pool as all services).
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { db } from '../db';
-import {
-  users,
-  passwordCredentials,
-} from '../db/schema';
-import { authenticateUser } from './user.service';
+import { createUser, authenticateUser } from './user.service';
 import {
   createOrganization,
   getUserOrganizations,
@@ -41,38 +38,20 @@ import { createToken, validateToken, revokeToken } from './pat.service';
 let seq = 0;
 function uid() { return `s8j_${Date.now()}_${++seq}`; }
 
-/** Ensure all pending pool operations are flushed. */
-async function sync() {
-  await db.execute(/* sql */`SELECT 1`);
-}
-
-/** Create a user + password credential using the app db pool directly. */
-async function createUser(
-  overrides: { username: string; email: string; displayName?: string },
-  password: string,
-) {
-  const argon2 = await import('argon2');
-  const passwordHash = await argon2.hash(password);
-
-  const [user] = await db
-    .insert(users)
-    .values({
-      username: overrides.username,
-      email: overrides.email,
-      displayName: overrides.displayName ?? overrides.username,
-      emailVerified: true,
-    })
-    .returning();
-
-  await db.insert(passwordCredentials).values({
-    userId: user.id,
-    passwordHash,
-  });
-
-  // Sync to ensure writes are visible to all pool connections
-  await sync();
-
-  return user;
+/**
+ * Truncate all tables using the app db pool (same pool as services).
+ * This avoids cross-pool visibility issues with getTestDb().
+ */
+async function cleanDb() {
+  const tables = await db.execute(sql`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
+  `);
+  if (tables.rows.length === 0) return;
+  const names = (tables.rows as { tablename: string }[])
+    .map(r => `"${r.tablename}"`).join(', ');
+  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
 }
 
 // ---------------------------------------------------------------------------
@@ -80,18 +59,19 @@ async function createUser(
 // ---------------------------------------------------------------------------
 
 describe('New User Onboarding Journey', () => {
-  beforeAll(async () => {
-    await sync();
+  beforeEach(async () => {
+    await cleanDb();
   });
 
   it('completes the full onboarding lifecycle', async () => {
     const u = uid();
 
     // 1. Register user A
-    const userA = await createUser(
-      { username: `alice_${u}`, email: `alice_${u}@test.com`, displayName: 'Alice' },
-      'password123',
-    );
+    const userA = await createUser({
+      username: `alice_${u}`,
+      email: `alice_${u}@test.com`,
+      password: 'password123',
+    });
     expect(userA.id).toBeTruthy();
 
     // 2. Login (authenticate) user A
@@ -129,10 +109,11 @@ describe('New User Onboarding Journey', () => {
     expect(repos.length).toBeGreaterThanOrEqual(1);
 
     // 8. Create user B for invite flow
-    const userB = await createUser(
-      { username: `bob_${u}`, email: `bob_${u}@test.com`, displayName: 'Bob' },
-      'password456',
-    );
+    const userB = await createUser({
+      username: `bob_${u}`,
+      email: `bob_${u}@test.com`,
+      password: 'password456',
+    });
 
     // 9. Invite user B
     const invite = await createInvite(org.id, `bob_${u}@test.com`, 'member', userA.id);
@@ -171,13 +152,18 @@ describe('New User Onboarding Journey', () => {
 // ---------------------------------------------------------------------------
 
 describe('Task Board Lifecycle', () => {
+  beforeEach(async () => {
+    await cleanDb();
+  });
+
   it('manages tasks through full board lifecycle', async () => {
     const u = uid();
 
-    const user = await createUser(
-      { username: `taskuser_${u}`, email: `taskuser_${u}@test.com` },
-      'pass123',
-    );
+    const user = await createUser({
+      username: `taskuser_${u}`,
+      email: `taskuser_${u}@test.com`,
+      password: 'pass123',
+    });
 
     // 1. Create tasks in different categories
     const task1 = await createAgentTask({
@@ -242,13 +228,18 @@ describe('Task Board Lifecycle', () => {
 // ---------------------------------------------------------------------------
 
 describe('PAT Lifecycle', () => {
+  beforeEach(async () => {
+    await cleanDb();
+  });
+
   it('creates, validates, and revokes a PAT', async () => {
     const u = uid();
 
-    const user = await createUser(
-      { username: `patuser_${u}`, email: `patuser_${u}@test.com` },
-      'pass123',
-    );
+    const user = await createUser({
+      username: `patuser_${u}`,
+      email: `patuser_${u}@test.com`,
+      password: 'pass123',
+    });
 
     // 1. Create PAT
     const { token, tokenInfo } = await createToken({
