@@ -31,7 +31,7 @@ import {
 } from './release.service';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -43,7 +43,7 @@ async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}
 }
 
 async function createTestRepo(userId: string) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const slug = `test-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const [repo] = await db.insert(repositories).values({
     userId,
@@ -483,7 +483,7 @@ describe('ReleaseService', () => {
       expect(mockStorage.delete).toHaveBeenCalledWith(asset.storageKey);
 
       // Verify removed from DB
-      const db = getTestDb();
+      const db = await getTestDb();
       const found = await db.query.repoReleaseAssets.findFirst({
         where: eq(repoReleaseAssets.id, asset.id),
       });
@@ -515,7 +515,7 @@ describe('ReleaseService', () => {
       expect(mockStorage.getUrl).toHaveBeenCalledWith(asset.storageKey);
 
       // Verify download count incremented
-      const db = getTestDb();
+      const db = await getTestDb();
       const [updated] = await db.select()
         .from(repoReleaseAssets)
         .where(eq(repoReleaseAssets.id, asset.id));

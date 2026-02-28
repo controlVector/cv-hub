@@ -38,7 +38,7 @@ describe('UserService', () => {
       const user = await createUser(input);
 
       // Verify password credential was created
-      const db = getTestDb();
+      const db = await getTestDb();
       const [credential] = await db
         .select()
         .from(passwordCredentials)
@@ -105,7 +105,7 @@ describe('UserService', () => {
       });
 
       // Check that verification token was set in database
-      const db = getTestDb();
+      const db = await getTestDb();
       const [dbUser] = await db
         .select()
         .from(users)

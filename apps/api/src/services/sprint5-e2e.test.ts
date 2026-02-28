@@ -135,12 +135,13 @@ async function createRepo(orgId: string, name?: string) {
   return repo;
 }
 
-async function registerExecutor(_userId: string, _name?: string) {
-  // agent_executors table is minimal (id + created_at) in the current migration.
-  // Drizzle schema has extra columns not yet migrated, so use raw SQL.
+async function registerExecutor(userId: string, name?: string) {
   const { sql } = await import('drizzle-orm');
+  const executorName = name || `executor-${uid()}`;
   const result = await db.execute(
-    sql`INSERT INTO agent_executors DEFAULT VALUES RETURNING id, created_at`,
+    sql`INSERT INTO agent_executors (user_id, name, type, status)
+        VALUES (${userId}, ${executorName}, 'claude_code', 'online')
+        RETURNING id, created_at`,
   );
   return { id: (result.rows[0] as any).id as string };
 }

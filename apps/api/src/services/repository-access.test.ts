@@ -15,7 +15,7 @@ import * as schema from '../db/schema';
 
 describe('Repository Access', () => {
   beforeAll(async () => {
-    const db = getTestDb();
+    const db = await getTestDb();
     await db.execute(/* sql */`SELECT 1`);
   });
 
@@ -24,7 +24,7 @@ describe('Repository Access', () => {
   });
 
   async function createSetup() {
-    const db = getTestDb();
+    const db = await getTestDb();
 
     // Create two users
     const userA = await createTestUserWithPassword({
@@ -103,7 +103,7 @@ describe('Repository Access', () => {
     });
 
     it('returns repos the user is a direct member of', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       const { userB, personalRepo } = await createSetup();
 
       // Add userB as a direct member of userA's personal repo

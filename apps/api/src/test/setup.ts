@@ -40,8 +40,7 @@ vi.mock('../services/email.service', () => ({
 beforeAll(async () => {
   // Verify database connection
   try {
-    const db = getTestDb();
-    // Simple query to verify connection using sql template
+    const db = await getTestDb();
     const { sql } = await import('drizzle-orm');
     await db.execute(sql`SELECT 1`);
     console.log('✓ Test database connection established');
@@ -56,11 +55,7 @@ beforeAll(async () => {
 
 // After each test: clean up data for isolation
 afterEach(async () => {
-  // Truncate tables after each test for isolation
-  // This is slower but safer than transactions for complex tests
   await truncateAllTables();
-
-  // Clear all mocks
   vi.clearAllMocks();
 });
 
@@ -72,9 +67,3 @@ afterAll(async () => {
 
 // Export test utilities for convenience
 export * from './test-db';
-
-// Type augmentation for Vitest globals
-declare global {
-  // eslint-disable-next-line no-var
-  var testDb: ReturnType<typeof getTestDb>;
-}

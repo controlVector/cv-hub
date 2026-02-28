@@ -18,24 +18,9 @@ import {
 } from './organization.service';
 import { createToken, validateToken, revokeToken } from './pat.service';
 import { createRepository, canUserAccessRepo } from './repository.service';
-import { sql } from 'drizzle-orm';
-import { db } from '../db';
 
 let seq = 0;
 function uid() { return `err_${Date.now()}_${++seq}`; }
-
-/** Truncate all tables using the app db pool (same pool as services). */
-async function cleanDb() {
-  const tables = await db.execute(sql`
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public'
-    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
-  `);
-  if (tables.rows.length === 0) return;
-  const names = (tables.rows as { tablename: string }[])
-    .map(r => `"${r.tablename}"`).join(', ');
-  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
-}
 
 // ---------------------------------------------------------------------------
 // 3a. Auth Errors
@@ -45,7 +30,6 @@ describe('Auth Error States', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `auth_${u}@test.com`, username: `auth_${u}`, password: 'correct_pass123' });
     userId = user.id;
@@ -88,10 +72,6 @@ describe('Auth Error States', () => {
 // ---------------------------------------------------------------------------
 
 describe('Validation Error States', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it('rejects duplicate email on registration', async () => {
     const u = uid();
     await createUser({ email: `dup_${u}@test.com`, username: `dup1_${u}`, password: 'pass123' });
@@ -135,7 +115,6 @@ describe('Organization Edge Cases', () => {
   let orgId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const owner = await createUser({ email: `owner_${u}@test.com`, username: `owner_${u}`, password: 'pass123' });
     ownerId = owner.id;
@@ -217,10 +196,6 @@ describe('Organization Edge Cases', () => {
 // ---------------------------------------------------------------------------
 
 describe('Concurrency Edge Cases', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it('double-revoking a PAT fails on second attempt', async () => {
     const u = uid();
     const user = await createUser({ email: `rev_${u}@test.com`, username: `rev_${u}`, password: 'pass123' });

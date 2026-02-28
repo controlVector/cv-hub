@@ -1,51 +1,53 @@
-import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
 import * as schema from '../db/schema';
 
-// Get test database URL from environment or use default
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/cv_hub_test';
+// ---------------------------------------------------------------------------
+// Unified DB pool for tests
+//
+// Previously, test-db.ts created its OWN pg.Pool, separate from the app's
+// pool in ../db/index.ts. Two pools hitting the same database caused FK
+// constraint races: truncation on Pool A wasn't always visible to Pool B.
+//
+// Fix: lazily resolve the app's `db` instance via dynamic import.
+// Dynamic import is necessary because setup.ts sets process.env.DATABASE_URL
+// AFTER its static imports resolve (ES module hoisting), but db/index.ts
+// needs that env var. By the time getTestDb() is called (in beforeAll),
+// the env var is set and the app pool initialises correctly.
+// ---------------------------------------------------------------------------
 
-let pool: Pool | null = null;
-let testDb: NodePgDatabase<typeof schema> | null = null;
+let _db: NodePgDatabase<typeof schema> | null = null;
 
-/**
- * Get or create the test database connection
- */
-export function getTestDb(): NodePgDatabase<typeof schema> {
-  if (!testDb) {
-    pool = new Pool({
-      connectionString: TEST_DATABASE_URL,
-      max: 5, // Limit connections for test environment
-    });
-
-    testDb = drizzle(pool, { schema });
+async function resolveDb(): Promise<NodePgDatabase<typeof schema>> {
+  if (!_db) {
+    const mod = await import('../db');
+    _db = mod.db;
   }
-
-  return testDb;
+  return _db;
 }
 
 /**
- * Close the test database connection
+ * Get the shared database instance (same pool services use).
+ */
+export async function getTestDb(): Promise<NodePgDatabase<typeof schema>> {
+  return resolveDb();
+}
+
+/**
+ * Close the test database connection.
+ * No-op: the app pool manages its own lifecycle via process exit.
  */
 export async function closeTestDb(): Promise<void> {
-  if (pool) {
-    await pool.end();
-    pool = null;
-    testDb = null;
-  }
+  // Nothing to do — we reuse the app pool.
 }
 
 /**
- * Truncate all tables in the database (for test isolation)
- * This is faster than dropping and recreating tables
+ * Truncate all tables in the database (for test isolation).
+ * Uses the app's db pool to avoid cross-pool visibility issues.
  */
 export async function truncateAllTables(): Promise<void> {
-  const db = getTestDb();
+  const db = await resolveDb();
 
-  // Get all table names except migrations
   const tables = await db.execute(sql`
     SELECT tablename
     FROM pg_tables
@@ -58,7 +60,6 @@ export async function truncateAllTables(): Promise<void> {
     return;
   }
 
-  // Truncate all tables with cascade
   const tableNames = (tables.rows as { tablename: string }[])
     .map((row) => `"${row.tablename}"`)
     .join(', ');
@@ -66,30 +67,25 @@ export async function truncateAllTables(): Promise<void> {
 }
 
 /**
- * Run a function within a transaction that gets rolled back
- * Useful for tests that need complete isolation
+ * Run a function within a transaction that gets rolled back.
+ * Placeholder for more advanced transaction-based isolation.
  */
 export async function withTransaction<T>(
   fn: (tx: NodePgDatabase<typeof schema>) => Promise<T>
 ): Promise<T> {
-  const db = getTestDb();
-
-  // Note: Drizzle doesn't have built-in transaction rollback for tests,
-  // so we use truncate approach instead. This is a placeholder for
-  // more advanced transaction-based isolation if needed.
+  const db = await resolveDb();
   return await fn(db);
 }
 
 /**
- * Seed basic test data that many tests need
+ * Seed basic test data that many tests need.
  */
 export async function seedBasicTestData(): Promise<{
   testUser: typeof schema.users.$inferSelect;
   testOrg: typeof schema.organizations.$inferSelect;
 }> {
-  const db = getTestDb();
+  const db = await resolveDb();
 
-  // Create a test user
   const [testUser] = await db
     .insert(schema.users)
     .values({
@@ -100,7 +96,6 @@ export async function seedBasicTestData(): Promise<{
     })
     .returning();
 
-  // Create a test organization
   const [testOrg] = await db
     .insert(schema.organizations)
     .values({
@@ -111,7 +106,6 @@ export async function seedBasicTestData(): Promise<{
     })
     .returning();
 
-  // Add user to organization as owner
   await db.insert(schema.organizationMembers).values({
     organizationId: testOrg.id,
     userId: testUser.id,
@@ -122,15 +116,14 @@ export async function seedBasicTestData(): Promise<{
 }
 
 /**
- * Create a test user with password credentials
+ * Create a test user with password credentials.
  */
 export async function createTestUserWithPassword(
   overrides: Partial<typeof schema.users.$inferInsert> = {},
   password: string = 'testpassword123'
 ): Promise<typeof schema.users.$inferSelect> {
-  const db = getTestDb();
+  const db = await resolveDb();
 
-  // Import argon2 dynamically to avoid issues if not installed
   const argon2 = await import('argon2');
   const passwordHash = await argon2.hash(password);
 
@@ -147,7 +140,6 @@ export async function createTestUserWithPassword(
     .values(defaultUser)
     .returning();
 
-  // Create password credentials
   await db.insert(schema.passwordCredentials).values({
     userId: user.id,
     passwordHash,
@@ -157,12 +149,12 @@ export async function createTestUserWithPassword(
 }
 
 /**
- * Create a test organization
+ * Create a test organization.
  */
 export async function createTestOrganization(
   overrides: Partial<typeof schema.organizations.$inferInsert> = {}
 ): Promise<typeof schema.organizations.$inferSelect> {
-  const db = getTestDb();
+  const db = await resolveDb();
 
   const defaultOrg = {
     slug: `test-org-${Date.now()}`,

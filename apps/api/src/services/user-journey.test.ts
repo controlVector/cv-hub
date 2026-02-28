@@ -8,9 +8,7 @@
  * Uses createUser from user.service (same db pool as all services).
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { sql } from 'drizzle-orm';
-import { db } from '../db';
+import { describe, it, expect } from 'vitest';
 import { createUser, authenticateUser } from './user.service';
 import {
   createOrganization,
@@ -38,31 +36,11 @@ import { createToken, validateToken, revokeToken } from './pat.service';
 let seq = 0;
 function uid() { return `s8j_${Date.now()}_${++seq}`; }
 
-/**
- * Truncate all tables using the app db pool (same pool as services).
- * This avoids cross-pool visibility issues with getTestDb().
- */
-async function cleanDb() {
-  const tables = await db.execute(sql`
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public'
-    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
-  `);
-  if (tables.rows.length === 0) return;
-  const names = (tables.rows as { tablename: string }[])
-    .map(r => `"${r.tablename}"`).join(', ');
-  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
-}
-
 // ---------------------------------------------------------------------------
 // 1a. New User Onboarding
 // ---------------------------------------------------------------------------
 
 describe('New User Onboarding Journey', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it('completes the full onboarding lifecycle', async () => {
     const u = uid();
 
@@ -152,10 +130,6 @@ describe('New User Onboarding Journey', () => {
 // ---------------------------------------------------------------------------
 
 describe('Task Board Lifecycle', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it('manages tasks through full board lifecycle', async () => {
     const u = uid();
 
@@ -228,10 +202,6 @@ describe('Task Board Lifecycle', () => {
 // ---------------------------------------------------------------------------
 
 describe('PAT Lifecycle', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it('creates, validates, and revokes a PAT', async () => {
     const u = uid();
 

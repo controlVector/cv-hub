@@ -10,7 +10,7 @@ import { users, repositories, repositoryMembers, organizations, organizationMemb
 import { eq } from 'drizzle-orm';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -22,7 +22,7 @@ async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}
 }
 
 async function createTestRepo(userId: string, overrides: Partial<typeof repositories.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const slug = overrides.slug || `test-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const [repo] = await db.insert(repositories).values({
     userId,
@@ -92,7 +92,7 @@ describe('Repository Archive/Transfer Service', () => {
     });
 
     it('blocks writes for member when archived', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       const writer = await createTestUser({ username: 'writer', email: 'writer@example.com' });
       await db.insert(repositoryMembers).values({
         repositoryId: repo.id,
@@ -120,7 +120,7 @@ describe('Repository Archive/Transfer Service', () => {
     });
 
     it('transfers to an organization', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       const [org] = await db.insert(organizations).values({
         name: 'Test Org',
         slug: 'test-org',

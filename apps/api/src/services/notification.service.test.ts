@@ -15,7 +15,7 @@ import { users, notificationPreferences } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -66,7 +66,7 @@ describe('NotificationService', () => {
     });
 
     it('skips notification when user has disabled the type', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       await db.insert(notificationPreferences).values({
         userId: user.id,
         type: 'pr_review',
@@ -85,7 +85,7 @@ describe('NotificationService', () => {
     });
 
     it('creates notification when preference is enabled', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       await db.insert(notificationPreferences).values({
         userId: user.id,
         type: 'pr_review',
@@ -161,7 +161,7 @@ describe('NotificationService', () => {
     });
 
     it('respects disabled preferences in bulk', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       await db.insert(notificationPreferences).values({
         userId: user.id,
         type: 'pr_merged',

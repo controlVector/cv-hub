@@ -12,7 +12,7 @@ import { getTestDb, truncateAllTables } from '../test/test-db';
 import { users, repositories, repositoryMembers } from '../db/schema';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -24,7 +24,7 @@ async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}
 }
 
 async function createTestRepo(userId: string, overrides: Partial<typeof repositories.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const slug = overrides.slug || `test-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const [repo] = await db.insert(repositories).values({
     userId,

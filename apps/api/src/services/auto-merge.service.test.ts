@@ -25,7 +25,7 @@ import { mergePullRequest } from './pr.service';
 import { checkRequiredStatuses } from './commit-status.service';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -37,7 +37,7 @@ async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}
 }
 
 async function createTestRepo(userId: string, overrides: Partial<typeof repositories.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const slug = overrides.slug || `test-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const [repo] = await db.insert(repositories).values({
     userId,
@@ -51,7 +51,7 @@ async function createTestRepo(userId: string, overrides: Partial<typeof reposito
 }
 
 async function createTestPR(repoId: string, authorId: string, overrides: Partial<typeof pullRequests.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [pr] = await db.insert(pullRequests).values({
     repositoryId: repoId,
     number: Math.floor(Math.random() * 10000),
@@ -109,7 +109,7 @@ describe('AutoMergeService', () => {
     });
 
     it('throws for closed PR', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
       const closedPR = await createTestPR(repo.id, user.id, { state: 'closed' });
 
       await expect(
@@ -221,7 +221,7 @@ describe('AutoMergeService', () => {
     });
 
     it('does not merge when status checks fail', async () => {
-      const db = getTestDb();
+      const db = await getTestDb();
 
       // Create a branch with protection rules
       await db.insert(branches).values({

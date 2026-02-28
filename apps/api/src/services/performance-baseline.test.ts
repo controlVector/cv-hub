@@ -33,24 +33,9 @@ import {
   updateAgentTaskStatus,
 } from './agent-task.service';
 import { createToken, validateToken, revokeToken, listTokens } from './pat.service';
-import { sql } from 'drizzle-orm';
-import { db } from '../db';
 
 let seq = 0;
 function uid() { return `perf_${Date.now()}_${++seq}`; }
-
-/** Truncate all tables using the app db pool (same pool as services). */
-async function cleanDb() {
-  const tables = await db.execute(sql`
-    SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public'
-    AND tablename NOT IN ('drizzle_migrations', '__drizzle_migrations')
-  `);
-  if (tables.rows.length === 0) return;
-  const names = (tables.rows as { tablename: string }[])
-    .map(r => `"${r.tablename}"`).join(', ');
-  await db.execute(sql.raw(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`));
-}
 
 /** Time a function, return [result, durationMs]. */
 async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
@@ -85,10 +70,6 @@ const LIMITS = {
 // ---------------------------------------------------------------------------
 
 describe('Performance: User Operations', () => {
-  beforeEach(async () => {
-    await cleanDb();
-  });
-
   it(`creates a user within ${LIMITS.userCreate}ms`, async () => {
     const u = uid();
     const [user, ms] = await timed(() =>
@@ -119,7 +100,6 @@ describe('Performance: Organization Operations', () => {
   let userEmail: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     userEmail = `org_${u}@test.com`;
     const user = await createUser({ email: userEmail, username: `org_${u}`, password: 'pass123' });
@@ -166,7 +146,6 @@ describe('Performance: Repository Operations', () => {
   let orgId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `repo_${u}@test.com`, username: `repo_${u}`, password: 'pass123' });
     userId = user.id;
@@ -219,7 +198,6 @@ describe('Performance: Task Operations', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `task_${u}@test.com`, username: `task_${u}`, password: 'pass123' });
     userId = user.id;
@@ -259,7 +237,6 @@ describe('Performance: PAT Operations', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `pat_${u}@test.com`, username: `pat_${u}`, password: 'pass123' });
     userId = user.id;
@@ -298,7 +275,6 @@ describe('Performance: Bulk Operations', () => {
   let orgId: string;
 
   beforeEach(async () => {
-    await cleanDb();
     const u = uid();
     const user = await createUser({ email: `bulk_${u}@test.com`, username: `bulk_${u}`, password: 'pass123' });
     userId = user.id;

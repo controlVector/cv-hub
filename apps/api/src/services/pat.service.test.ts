@@ -22,7 +22,7 @@ import * as schema from '../db/schema';
 
 describe('PAT Service', () => {
   beforeAll(async () => {
-    const db = getTestDb();
+    const db = await getTestDb();
     await db.execute(/* sql */`SELECT 1`);
   });
 
@@ -31,7 +31,7 @@ describe('PAT Service', () => {
   });
 
   async function createUserAndOrg() {
-    const db = getTestDb();
+    const db = await getTestDb();
     const user = await createTestUserWithPassword({
       username: `pat_user_${Date.now()}`,
       email: `pat_${Date.now()}@example.com`,

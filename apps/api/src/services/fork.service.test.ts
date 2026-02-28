@@ -16,7 +16,7 @@ vi.mock('./git/git-backend.service', () => ({
 import { forkRepository, listForks } from './fork.service';
 
 async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const [user] = await db.insert(users).values({
     username: `testuser_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     email: `test_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@example.com`,
@@ -28,7 +28,7 @@ async function createTestUser(overrides: Partial<typeof users.$inferInsert> = {}
 }
 
 async function createTestRepo(userId: string, overrides: Partial<typeof repositories.$inferInsert> = {}) {
-  const db = getTestDb();
+  const db = await getTestDb();
   const slug = overrides.slug || `test-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const [repo] = await db.insert(repositories).values({
     userId,
@@ -89,7 +89,7 @@ describe('ForkService', () => {
 
     it('adds the forking user as admin member', async () => {
       const result = await forkRepository(sourceRepo.id, targetUser.id);
-      const db = getTestDb();
+      const db = await getTestDb();
 
       const members = await db.query.repositoryMembers.findMany({
         where: eq(repositoryMembers.repositoryId, result.repository.id),
@@ -102,7 +102,7 @@ describe('ForkService', () => {
 
     it('syncs branches and tags from source', async () => {
       const result = await forkRepository(sourceRepo.id, targetUser.id);
-      const db = getTestDb();
+      const db = await getTestDb();
 
       const forkBranches = await db.query.branches.findMany({
         where: eq(branches.repositoryId, result.repository.id),
@@ -120,7 +120,7 @@ describe('ForkService', () => {
 
     it('sets default branch correctly', async () => {
       const result = await forkRepository(sourceRepo.id, targetUser.id);
-      const db = getTestDb();
+      const db = await getTestDb();
 
       const defaultBranch = await db.query.branches.findFirst({
         where: eq(branches.repositoryId, result.repository.id),
@@ -136,7 +136,7 @@ describe('ForkService', () => {
 
     it('increments fork count on source repository', async () => {
       await forkRepository(sourceRepo.id, targetUser.id);
-      const db = getTestDb();
+      const db = await getTestDb();
 
       const [updated] = await db.select()
         .from(repositories)
