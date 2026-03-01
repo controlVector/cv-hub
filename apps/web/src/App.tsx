@@ -60,6 +60,7 @@ import KnowledgeFeed from './pages/KnowledgeFeed';
 import GlobalContextEngineDashboard from './pages/GlobalContextEngineDashboard';
 import BoardPage from './pages/BoardPage';
 import SafetyDashboard from './pages/SafetyDashboard';
+import ExecutorsPage from './pages/ExecutorsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import DeviceAuthPage from './pages/DeviceAuthPage';
 
@@ -148,6 +149,7 @@ function App() {
                 {/* Global Context Engine Dashboard */}
                 <Route path="context-engine" element={<GlobalContextEngineDashboard />} />
                 <Route path="board" element={<BoardPage />} />
+                <Route path="executors" element={<ExecutorsPage />} />
                 <Route path="safety" element={<SafetyDashboard />} />
                 <Route path="ai-assistant" element={<AIAssistant />} />
                 <Route path="pull-requests" element={<PullRequests />} />

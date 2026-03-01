@@ -43,6 +43,7 @@ import {
   Psychology as ContextEngineIcon,
   ViewKanban as BoardIcon,
   Shield as SafetyIcon,
+  Computer as ComputerIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -56,6 +57,7 @@ const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Repositories', icon: <RepoIcon />, path: '/dashboard/repositories' },
   { text: 'Board', icon: <BoardIcon />, path: '/dashboard/board' },
+  { text: 'Machines', icon: <ComputerIcon />, path: '/dashboard/executors' },
   { text: 'Context Engine', icon: <ContextEngineIcon />, path: '/dashboard/context-engine' },
   { text: 'Pull Requests', icon: <PRIcon />, path: '/dashboard/pull-requests' },
   { text: 'AI Assistant', icon: <AIIcon />, path: '/dashboard/ai-assistant' },
