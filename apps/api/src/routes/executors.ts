@@ -39,6 +39,7 @@ function getUserId(c: any): string {
 
 const registerSchema = z.object({
   name: z.string().min(1).max(100),
+  machine_name: z.string().min(1).max(100).optional(),
   type: z.enum(['claude_code', 'cv_git', 'custom']).optional(),
   capabilities: z
     .object({
@@ -50,6 +51,8 @@ const registerSchema = z.object({
     .passthrough()
     .optional(),
   workspace_root: z.string().optional(),
+  repos: z.array(z.string()).optional(),
+  organization_id: z.string().uuid().optional(),
   repository_id: z.string().uuid().optional(),
 });
 
@@ -60,9 +63,12 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
   const { executor, registrationToken } = await registerExecutor({
     userId,
     name: body.name,
+    machineName: body.machine_name,
     type: body.type,
     capabilities: body.capabilities,
     workspaceRoot: body.workspace_root,
+    repos: body.repos,
+    organizationId: body.organization_id,
     repositoryId: body.repository_id,
   });
 
@@ -71,8 +77,10 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
       executor: {
         id: executor.id,
         name: executor.name,
+        machine_name: executor.machineName,
         type: executor.type,
         status: executor.status,
+        repos: executor.repos,
         created_at: executor.createdAt,
       },
       registration_token: registrationToken,
@@ -95,9 +103,12 @@ executors.get('/', async (c) => {
     executors: list.map((e) => ({
       id: e.id,
       name: e.name,
+      machine_name: e.machineName,
       type: e.type,
       status: e.status,
+      repos: e.repos,
       workspace_root: e.workspaceRoot,
+      organization_id: e.organizationId,
       repository_id: e.repositoryId,
       last_heartbeat_at: e.lastHeartbeatAt,
       last_task_at: e.lastTaskAt,
@@ -122,10 +133,13 @@ executors.get('/:id', async (c) => {
     executor: {
       id: executor.id,
       name: executor.name,
+      machine_name: executor.machineName,
       type: executor.type,
       status: executor.status,
       capabilities: executor.capabilities,
+      repos: executor.repos,
       workspace_root: executor.workspaceRoot,
+      organization_id: executor.organizationId,
       repository_id: executor.repositoryId,
       last_heartbeat_at: executor.lastHeartbeatAt,
       last_task_at: executor.lastTaskAt,

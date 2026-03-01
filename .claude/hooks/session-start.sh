@@ -41,13 +41,32 @@ fi
 # ── API path: register executor + inject context ─────────────────────
 if [[ -n "${CV_HUB_PAT:-}" && -n "${CV_HUB_API:-}" ]]; then
   hostname=$(hostname -s 2>/dev/null || echo "unknown")
-  executor_name="claude-code:${hostname}:${session_id:0:8}"
+  machine_name="${CV_HUB_MACHINE_NAME:-$hostname}"
+  executor_name="claude-code:${machine_name}:${session_id:0:8}"
+
+  # Detect repos from git remotes in workspace
+  repos_json="[]"
+  if [[ -d "$cwd/.git" ]] || git -C "$cwd" rev-parse --git-dir >/dev/null 2>&1; then
+    repo_slug="${repo_name##*/}"
+    if [[ -n "$repo_slug" ]]; then
+      repos_json="[\"${repo_slug}\"]"
+    fi
+  fi
+
+  # Resolve organization ID if available
+  org_id_field=""
+  if [[ -n "${CV_HUB_ORG_ID:-}" ]]; then
+    org_id_field="\"organization_id\": \"${CV_HUB_ORG_ID}\","
+  fi
 
   payload=$(cat <<EOFPAYLOAD
 {
   "name": "${executor_name}",
+  "machine_name": "${machine_name}",
   "type": "claude_code",
   "workspace_root": "${cwd}",
+  ${org_id_field}
+  "repos": ${repos_json},
   "capabilities": {
     "tools": ["bash", "read", "write", "edit", "glob", "grep"],
     "maxConcurrentTasks": 1
