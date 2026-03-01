@@ -15,6 +15,7 @@ import {
 import { relations } from 'drizzle-orm';
 import { users } from './users';
 import { repositories } from './repositories';
+import { organizations } from './organizations';
 import { oauthClients } from './oauth';
 
 // ============================================================================
@@ -177,11 +178,18 @@ export const agentExecutors = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
 
     name: varchar('name', { length: 100 }).notNull(),
+    machineName: varchar('machine_name', { length: 100 }),
     type: executorTypeEnum('type').default('claude_code').notNull(),
     status: executorStatusEnum('status').default('offline').notNull(),
 
     capabilities: jsonb('capabilities').$type<ExecutorCapabilities>(),
     workspaceRoot: text('workspace_root'),
+    repos: jsonb('repos').$type<string[]>(),
+
+    organizationId: uuid('organization_id').references(
+      () => organizations.id,
+      { onDelete: 'set null' },
+    ),
 
     repositoryId: uuid('repository_id').references(() => repositories.id, {
       onDelete: 'set null',
@@ -206,6 +214,8 @@ export const agentExecutors = pgTable(
     index('agent_executors_status_idx').on(table.status),
     index('agent_executors_type_idx').on(table.type),
     index('agent_executors_repo_idx').on(table.repositoryId),
+    index('agent_executors_org_idx').on(table.organizationId),
+    index('agent_executors_machine_name_idx').on(table.machineName),
   ]
 );
 
@@ -500,6 +510,46 @@ export const mcpSessions = pgTable(
 );
 
 // ============================================================================
+// Session Bindings (Link MCP Session ↔ Executor)
+// ============================================================================
+
+export const sessionBindings = pgTable(
+  'session_bindings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    mcpSessionId: uuid('mcp_session_id')
+      .notNull()
+      .references(() => mcpSessions.id, { onDelete: 'cascade' }),
+
+    executorId: uuid('executor_id')
+      .notNull()
+      .references(() => agentExecutors.id, { onDelete: 'cascade' }),
+
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+
+    boundAt: timestamp('bound_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    unboundAt: timestamp('unbound_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('session_bindings_mcp_session_idx').on(table.mcpSessionId),
+    index('session_bindings_executor_idx').on(table.executorId),
+    index('session_bindings_user_idx').on(table.userId),
+    uniqueIndex('session_bindings_active_unique')
+      .on(table.mcpSessionId)
+      .where(/* unbound_at IS NULL — enforced via partial unique in migration */),
+  ]
+);
+
+// ============================================================================
 // Relations
 // ============================================================================
 
@@ -510,11 +560,16 @@ export const agentExecutorsRelations = relations(
       fields: [agentExecutors.userId],
       references: [users.id],
     }),
+    organization: one(organizations, {
+      fields: [agentExecutors.organizationId],
+      references: [organizations.id],
+    }),
     repository: one(repositories, {
       fields: [agentExecutors.repositoryId],
       references: [repositories.id],
     }),
     tasks: many(agentTasks),
+    bindings: many(sessionBindings),
   })
 );
 
@@ -621,6 +676,28 @@ export const agentTasksRelations = relations(agentTasks, ({ one }) => ({
   }),
 }));
 
+export const sessionBindingsRelations = relations(
+  sessionBindings,
+  ({ one }) => ({
+    mcpSession: one(mcpSessions, {
+      fields: [sessionBindings.mcpSessionId],
+      references: [mcpSessions.id],
+    }),
+    executor: one(agentExecutors, {
+      fields: [sessionBindings.executorId],
+      references: [agentExecutors.id],
+    }),
+    user: one(users, {
+      fields: [sessionBindings.userId],
+      references: [users.id],
+    }),
+    organization: one(organizations, {
+      fields: [sessionBindings.organizationId],
+      references: [organizations.id],
+    }),
+  })
+);
+
 export const mcpSessionsRelations = relations(
   mcpSessions,
   ({ one, many }) => ({
@@ -633,6 +710,7 @@ export const mcpSessionsRelations = relations(
       references: [oauthClients.id],
     }),
     tasks: many(agentTasks),
+    bindings: many(sessionBindings),
   })
 );
 
@@ -660,3 +738,6 @@ export type NewAgentTask = typeof agentTasks.$inferInsert;
 
 export type McpSession = typeof mcpSessions.$inferSelect;
 export type NewMcpSession = typeof mcpSessions.$inferInsert;
+
+export type SessionBinding = typeof sessionBindings.$inferSelect;
+export type NewSessionBinding = typeof sessionBindings.$inferInsert;

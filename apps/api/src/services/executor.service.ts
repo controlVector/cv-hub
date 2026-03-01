@@ -12,9 +12,12 @@ import { generateSecureToken } from '../utils/crypto';
 export async function registerExecutor(params: {
   userId: string;
   name: string;
+  machineName?: string;
   type?: 'claude_code' | 'cv_git' | 'custom';
   capabilities?: ExecutorCapabilities;
   workspaceRoot?: string;
+  repos?: string[];
+  organizationId?: string;
   repositoryId?: string;
 }): Promise<{ executor: AgentExecutor; registrationToken: string }> {
   const registrationToken = generateSecureToken(32);
@@ -24,10 +27,13 @@ export async function registerExecutor(params: {
     .values({
       userId: params.userId,
       name: params.name,
+      machineName: params.machineName,
       type: params.type || 'claude_code',
       status: 'online',
       capabilities: params.capabilities,
       workspaceRoot: params.workspaceRoot,
+      repos: params.repos,
+      organizationId: params.organizationId,
       repositoryId: params.repositoryId,
       registrationToken,
       lastHeartbeatAt: new Date(),
