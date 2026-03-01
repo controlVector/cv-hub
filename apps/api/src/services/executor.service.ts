@@ -1,4 +1,4 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, ilike, sql } from 'drizzle-orm';
 import { db } from '../db';
 import {
   agentExecutors,
@@ -70,6 +70,34 @@ export async function listExecutors(
 ): Promise<AgentExecutor[]> {
   return db.query.agentExecutors.findMany({
     where: eq(agentExecutors.userId, userId),
+    orderBy: [desc(agentExecutors.lastHeartbeatAt)],
+  });
+}
+
+export async function findExecutorByMachineName(
+  userId: string,
+  machineName: string,
+): Promise<AgentExecutor | null> {
+  const executor = await db.query.agentExecutors.findFirst({
+    where: and(
+      eq(agentExecutors.userId, userId),
+      ilike(agentExecutors.machineName, machineName),
+    ),
+    orderBy: [desc(agentExecutors.lastHeartbeatAt)],
+  });
+  return executor ?? null;
+}
+
+export async function listExecutorsFiltered(
+  userId: string,
+  opts?: { status?: 'online' | 'offline' | 'all' },
+): Promise<AgentExecutor[]> {
+  const conditions = [eq(agentExecutors.userId, userId)];
+  if (opts?.status && opts.status !== 'all') {
+    conditions.push(eq(agentExecutors.status, opts.status));
+  }
+  return db.query.agentExecutors.findMany({
+    where: and(...conditions),
     orderBy: [desc(agentExecutors.lastHeartbeatAt)],
   });
 }
