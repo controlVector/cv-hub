@@ -79,8 +79,10 @@ app.use('*', cors({
   exposeHeaders: ['X-CSRF-Token', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Mcp-Session-Id'],
 }));
 
-// Serve static files (test OAuth client)
+// Serve static files
 app.use('/test-client.html', serveStatic({ path: './public/test-client.html' }));
+app.use('/favicon.png', serveStatic({ path: './public/favicon.png' }));
+app.use('/favicon.ico', serveStatic({ path: './public/favicon.png' }));
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
