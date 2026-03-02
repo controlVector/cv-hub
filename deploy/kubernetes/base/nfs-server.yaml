@@ -85,6 +85,8 @@ spec:
     metadata:
       labels:
         app: nfs-server
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/part-of: cv-hub
     spec:
       containers:
         - name: nfs-server
