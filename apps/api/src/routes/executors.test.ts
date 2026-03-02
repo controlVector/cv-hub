@@ -23,6 +23,10 @@ vi.mock('../services/executor.service', () => ({
   sweepStaleExecutors: vi.fn(),
 }));
 
+vi.mock('../services/repository.service', () => ({
+  getUserAccessibleRepositories: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('../services/agent-task.service', () => ({
   claimNextTask: vi.fn(),
   startTask: vi.fn(),
@@ -41,7 +45,8 @@ vi.mock('../middleware/auth', () => ({
 
 import { resolveOrganizationId, executorRoutes } from './executors';
 import { getUserOrgRole, getUserOrganizations } from '../services/organization.service';
-import { updateExecutorStatus, updateExecutor } from '../services/executor.service';
+import { updateExecutorStatus, updateExecutor, registerExecutor } from '../services/executor.service';
+import { getUserAccessibleRepositories } from '../services/repository.service';
 
 const mockGetUserOrgRole = vi.mocked(getUserOrgRole);
 const mockGetUserOrganizations = vi.mocked(getUserOrganizations);
@@ -237,5 +242,120 @@ describe('PATCH /:id (rename)', () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+// ============================================================================
+// POST / (registration) — repository_id resolution
+// ============================================================================
+
+const mockRegisterExecutor = vi.mocked(registerExecutor);
+const mockGetUserAccessibleRepositories = vi.mocked(getUserAccessibleRepositories);
+
+describe('POST / (registration with repo resolution)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: org resolution returns no org
+    mockGetUserOrganizations.mockResolvedValue([]);
+  });
+
+  it('should resolve repository_id from repos slug', async () => {
+    mockGetUserAccessibleRepositories.mockResolvedValue([
+      { id: 'repo-uuid-123', slug: 'cv-hub', name: 'cv-hub' } as any,
+    ]);
+    mockRegisterExecutor.mockResolvedValue({
+      executor: {
+        id: 'exec-1',
+        name: 'test',
+        machineName: 'z840',
+        type: 'claude_code',
+        status: 'online',
+        repos: ['cv-hub'],
+        organizationId: null,
+        repositoryId: 'repo-uuid-123',
+        createdAt: new Date(),
+      } as any,
+      registrationToken: 'tok-123',
+    });
+
+    const res = await executorRoutes.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'test',
+        machine_name: 'z840',
+        repos: ['cv-hub'],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(mockRegisterExecutor).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryId: 'repo-uuid-123' }),
+    );
+  });
+
+  it('should register without repository_id if repo not found', async () => {
+    mockGetUserAccessibleRepositories.mockResolvedValue([]);
+    mockRegisterExecutor.mockResolvedValue({
+      executor: {
+        id: 'exec-2',
+        name: 'test',
+        machineName: 'z840',
+        type: 'claude_code',
+        status: 'online',
+        repos: ['unknown-repo'],
+        organizationId: null,
+        repositoryId: null,
+        createdAt: new Date(),
+      } as any,
+      registrationToken: 'tok-456',
+    });
+
+    const res = await executorRoutes.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'test',
+        machine_name: 'z840',
+        repos: ['unknown-repo'],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(mockRegisterExecutor).toHaveBeenCalledWith(
+      expect.objectContaining({ repositoryId: undefined }),
+    );
+  });
+
+  it('should skip repo resolution if explicit repository_id provided', async () => {
+    mockRegisterExecutor.mockResolvedValue({
+      executor: {
+        id: 'exec-3',
+        name: 'test',
+        machineName: 'z840',
+        type: 'claude_code',
+        status: 'online',
+        repos: ['cv-hub'],
+        organizationId: null,
+        repositoryId: 'explicit-repo-id',
+        createdAt: new Date(),
+      } as any,
+      registrationToken: 'tok-789',
+    });
+
+    const res = await executorRoutes.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'test',
+        machine_name: 'z840',
+        repos: ['cv-hub'],
+        repository_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    // Should NOT call getUserAccessibleRepositories since explicit ID was given
+    expect(mockGetUserAccessibleRepositories).not.toHaveBeenCalled();
   });
 });

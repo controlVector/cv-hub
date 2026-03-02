@@ -20,6 +20,7 @@ import {
   failTask,
 } from '../services/agent-task.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
+import { getUserAccessibleRepositories } from '../services/repository.service';
 
 import type { AppEnv } from '../app';
 
@@ -123,6 +124,23 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
     return c.json({ error: orgResult.error }, 400);
   }
 
+  // Resolve repository_id from repos slug if not explicitly provided
+  let repositoryId = body.repository_id;
+  if (!repositoryId && body.repos?.length === 1) {
+    try {
+      const userRepos = await getUserAccessibleRepositories(userId, {
+        search: body.repos[0],
+        limit: 5,
+      });
+      const match = userRepos.find((r) => r.slug === body.repos![0]);
+      if (match) {
+        repositoryId = match.id;
+      }
+    } catch {
+      // Non-fatal — registration continues without repository_id
+    }
+  }
+
   const { executor, registrationToken } = await registerExecutor({
     userId,
     name: body.name,
@@ -132,7 +150,7 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
     workspaceRoot: body.workspace_root,
     repos: body.repos,
     organizationId: orgResult.orgId,
-    repositoryId: body.repository_id,
+    repositoryId,
   });
 
   return c.json(
@@ -145,6 +163,7 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
         status: executor.status,
         repos: executor.repos,
         organization_id: executor.organizationId,
+        repository_id: executor.repositoryId,
         created_at: executor.createdAt,
       },
       registration_token: registrationToken,
