@@ -42,11 +42,11 @@ if [[ -z "${CV_HUB_SESSION_ID:-}" ]]; then
   export CV_HUB_SESSION_ID
 fi
 
-# ── API path: unregister executor ────────────────────────────────────
+# ── API path: mark executor offline (preserves history, not delete) ───
 if [[ -n "${CV_HUB_EXECUTOR_ID:-}" && -n "${CV_HUB_API:-}" && -n "${CV_HUB_PAT:-}" ]]; then
-  curl -sf -X DELETE \
+  curl -sf -X POST \
     -H "Authorization: Bearer ${CV_HUB_PAT}" \
-    "${CV_HUB_API}/api/v1/executors/${CV_HUB_EXECUTOR_ID}" \
+    "${CV_HUB_API}/api/v1/executors/${CV_HUB_EXECUTOR_ID}/offline" \
     >/dev/null 2>&1 || true
 fi
 
