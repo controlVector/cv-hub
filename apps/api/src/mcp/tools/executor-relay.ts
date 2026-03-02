@@ -44,6 +44,8 @@ export function registerExecutorRelayTools(
         const data = executors.map((e) => ({
           id: e.id,
           name: e.name,
+          machine_name: e.machineName ?? null,
+          display_name: e.machineName || e.name,
           type: e.type,
           status: e.status,
           workspace_root: e.workspaceRoot,
