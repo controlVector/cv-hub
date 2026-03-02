@@ -33,6 +33,7 @@ import {
 } from '@mui/icons-material';
 import { colors } from '../../theme';
 import { useAuth } from '../../contexts/AuthContext';
+import { brand } from '../../config/brand';
 
 interface ConfigSet {
   id: string;
@@ -72,7 +73,7 @@ export default function ConfigDashboard() {
   ];
 
   const stores: ConfigStore[] = [
-    { id: '1', name: 'CV-Hub Store', type: 'builtin', isDefault: true, lastTestSuccess: true },
+    { id: '1', name: `${brand.shortName} Store`, type: 'builtin', isDefault: true, lastTestSuccess: true },
   ];
 
   const schemas: ConfigSchema[] = [

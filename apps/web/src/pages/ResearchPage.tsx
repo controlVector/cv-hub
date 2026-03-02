@@ -90,7 +90,7 @@ export default function ResearchPage() {
           Research
         </Typography>
         <Typography variant="body1" sx={{ color: colors.textMuted, mb: 5 }}>
-          Papers and technical foundations behind Control Vector.
+          Papers and technical foundations behind {brand.shortName}.
         </Typography>
 
         {/* Context Manifold Paper */}

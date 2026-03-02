@@ -16,6 +16,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ComputerIcon from '@mui/icons-material/Computer';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { api } from '../lib/api';
+import { brand } from '../config/brand';
 import { useState } from 'react';
 
 interface Executor {
@@ -85,7 +86,7 @@ export default function ExecutorsPage() {
             Connected Machines
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-            Claude Code instances registered via CV-Hub hooks
+            Claude Code instances registered via {brand.shortName} hooks
           </Typography>
         </Box>
         <Tooltip title="Refresh">
@@ -186,7 +187,7 @@ export default function ExecutorsPage() {
               How to connect a machine
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 0.5 }}>
-              1. Install CV-Git CLI: <code>npm install -g @controlVector/cv-git</code>
+              1. Install the CLI: <code>npm install -g @controlVector/cv-git</code>
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 0.5 }}>
               2. Authenticate: <code>cv auth login</code>
