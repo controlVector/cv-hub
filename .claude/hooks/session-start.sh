@@ -53,19 +53,12 @@ if [[ -n "${CV_HUB_PAT:-}" && -n "${CV_HUB_API:-}" ]]; then
     fi
   fi
 
-  # Resolve organization ID if available
-  org_id_field=""
-  if [[ -n "${CV_HUB_ORG_ID:-}" ]]; then
-    org_id_field="\"organization_id\": \"${CV_HUB_ORG_ID}\","
-  fi
-
   payload=$(cat <<EOFPAYLOAD
 {
   "name": "${executor_name}",
   "machine_name": "${machine_name}",
   "type": "claude_code",
   "workspace_root": "${cwd}",
-  ${org_id_field}
   "repos": ${repos_json},
   "capabilities": {
     "tools": ["bash", "read", "write", "edit", "glob", "grep"],

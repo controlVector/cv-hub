@@ -96,5 +96,10 @@ $ cv doctor
 CV_HUB_PAT=cv_pat_xxxxx
 CV_HUB_API=https://api.hub.controlvector.io
 CV_HUB_MACHINE_NAME=z840-primary    # human-readable executor name
-CV_HUB_ORG_ID=uuid-here             # optional: org for executor registration
 ```
+
+> **Note:** `CV_HUB_ORG_ID` is deprecated. The server now resolves the
+> organization automatically from the PAT's org scope or the user's org
+> membership. Old credentials files with `CV_HUB_ORG_ID` still work (the
+> variable is sourced but ignored by the hook). Minimal credentials:
+> `CV_HUB_PAT`, `CV_HUB_API`, and optionally `CV_HUB_MACHINE_NAME`.

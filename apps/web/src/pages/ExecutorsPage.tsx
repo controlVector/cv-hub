@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Card,
@@ -10,11 +10,18 @@ import {
   IconButton,
   Tooltip,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ComputerIcon from '@mui/icons-material/Computer';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { api } from '../lib/api';
 import { brand } from '../config/brand';
 import { useState } from 'react';
@@ -57,6 +64,18 @@ const setupCommand = 'npm install -g @controlVector/cv-git && cv auth login && c
 
 export default function ExecutorsPage() {
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Rename dialog state
+  const [renameTarget, setRenameTarget] = useState<Executor | null>(null);
+  const [renameName, setRenameName] = useState('');
+  const [renaming, setRenaming] = useState(false);
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<Executor | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery<{ executors: Executor[] }>({
     queryKey: ['executors'],
@@ -76,6 +95,50 @@ export default function ExecutorsPage() {
     navigator.clipboard.writeText(setupCommand);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRename = async () => {
+    if (!renameTarget || !renameName.trim()) return;
+    setRenaming(true);
+    setActionError(null);
+    try {
+      await api.patch(`/v1/executors/${renameTarget.id}`, {
+        name: renameName.trim(),
+        machine_name: renameName.trim(),
+      });
+      setRenameTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['executors'] });
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || 'Failed to rename executor');
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await api.delete(`/v1/executors/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['executors'] });
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || 'Failed to remove executor');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const openRename = (e: Executor) => {
+    setRenameName(e.machine_name || e.name);
+    setRenameTarget(e);
+    setActionError(null);
+  };
+
+  const openDelete = (e: Executor) => {
+    setDeleteTarget(e);
+    setActionError(null);
   };
 
   return (
@@ -159,7 +222,7 @@ export default function ExecutorsPage() {
               <Grid container spacing={2}>
                 {online.map((e) => (
                   <Grid size={{ xs: 12, md: 6, lg: 4 }} key={e.id}>
-                    <ExecutorCard executor={e} />
+                    <ExecutorCard executor={e} onRename={openRename} onDelete={openDelete} />
                   </Grid>
                 ))}
               </Grid>
@@ -174,7 +237,7 @@ export default function ExecutorsPage() {
               <Grid container spacing={2}>
                 {offline.map((e) => (
                   <Grid size={{ xs: 12, md: 6, lg: 4 }} key={e.id}>
-                    <ExecutorCard executor={e} />
+                    <ExecutorCard executor={e} onRename={openRename} onDelete={openDelete} />
                   </Grid>
                 ))}
               </Grid>
@@ -207,11 +270,58 @@ export default function ExecutorsPage() {
           </Card>
         </>
       )}
+
+      {/* Rename Dialog */}
+      <Dialog open={!!renameTarget} onClose={() => setRenameTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Rename Executor</DialogTitle>
+        <DialogContent>
+          {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+          <TextField
+            fullWidth
+            label="Machine Name"
+            value={renameName}
+            onChange={(e) => setRenameName(e.target.value)}
+            margin="normal"
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameTarget(null)}>Cancel</Button>
+          <Button onClick={handleRename} variant="contained" disabled={renaming || !renameName.trim()}>
+            {renaming ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Remove Executor</DialogTitle>
+        <DialogContent>
+          {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+          <Typography>
+            Remove <strong>{deleteTarget?.machine_name || deleteTarget?.name}</strong>? It will need to re-register on its next session.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained" disabled={deleting}>
+            {deleting ? 'Removing...' : 'Remove'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
 
-function ExecutorCard({ executor: e }: { executor: Executor }) {
+function ExecutorCard({
+  executor: e,
+  onRename,
+  onDelete,
+}: {
+  executor: Executor;
+  onRename: (e: Executor) => void;
+  onDelete: (e: Executor) => void;
+}) {
   const displayName = e.machine_name || e.name;
   const isOnline = e.status === 'online';
 
@@ -239,16 +349,28 @@ function ExecutorCard({ executor: e }: { executor: Executor }) {
           <Typography variant="subtitle1" sx={{ fontWeight: 600, flex: 1 }}>
             {displayName}
           </Typography>
-          <Chip
-            label={e.status}
-            size="small"
-            sx={{
-              bgcolor: `${statusColor(e.status)}22`,
-              color: statusColor(e.status),
-              fontWeight: 500,
-              fontSize: '0.75rem',
-            }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Tooltip title="Rename">
+              <IconButton size="small" onClick={() => onRename(e)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Remove">
+              <IconButton size="small" color="error" onClick={() => onDelete(e)}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Chip
+              label={e.status}
+              size="small"
+              sx={{
+                bgcolor: `${statusColor(e.status)}22`,
+                color: statusColor(e.status),
+                fontWeight: 500,
+                fontSize: '0.75rem',
+              }}
+            />
+          </Box>
         </Box>
 
         {e.repos && e.repos.length > 0 && (

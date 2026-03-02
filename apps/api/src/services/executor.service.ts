@@ -161,6 +161,31 @@ export async function markExecutorTaskComplete(
     .where(eq(agentExecutors.id, executorId));
 }
 
+// ==================== Update (rename) ====================
+
+export async function updateExecutor(
+  executorId: string,
+  userId: string,
+  updates: { name?: string; machineName?: string },
+): Promise<AgentExecutor | null> {
+  const setClause: Record<string, unknown> = { updatedAt: new Date() };
+  if (updates.name !== undefined) setClause.name = updates.name;
+  if (updates.machineName !== undefined) setClause.machineName = updates.machineName;
+
+  const [updated] = await db
+    .update(agentExecutors)
+    .set(setClause)
+    .where(
+      and(
+        eq(agentExecutors.id, executorId),
+        eq(agentExecutors.userId, userId),
+      ),
+    )
+    .returning();
+
+  return updated || null;
+}
+
 // ==================== Unregister ====================
 
 export async function unregisterExecutor(

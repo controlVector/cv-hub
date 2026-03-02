@@ -9,6 +9,7 @@ import {
   listExecutors,
   heartbeat,
   updateExecutorStatus,
+  updateExecutor,
   unregisterExecutor,
   markExecutorTaskComplete,
 } from '../services/executor.service';
@@ -18,6 +19,7 @@ import {
   completeTask,
   failTask,
 } from '../services/agent-task.service';
+import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 
 import type { AppEnv } from '../app';
 
@@ -31,6 +33,60 @@ function getUserId(c: any): string {
   const userId = c.get('userId');
   if (!userId) throw new Error('Not authenticated');
   return userId;
+}
+
+// ============================================================================
+// Org resolution: determine which org to attach an executor to
+// ============================================================================
+
+export type OrgResolutionResult =
+  | { orgId: string | undefined; error?: never }
+  | { orgId?: never; error: { message: string; organizations?: Array<{ id: string; name: string; slug: string }> } };
+
+/**
+ * Resolve the organization for an executor registration.
+ *
+ * Priority:
+ *  1. Explicit organization_id in request body → validate membership → use it
+ *  2. PAT is org-scoped → use patOrgId
+ *  3. User has exactly 1 org → auto-resolve
+ *  4. User has 0 orgs → undefined (no org)
+ *  5. User has 2+ orgs → error with org list
+ */
+export async function resolveOrganizationId(
+  userId: string,
+  explicitOrgId?: string,
+  patOrgId?: string,
+): Promise<OrgResolutionResult> {
+  // 1. Explicit org_id
+  if (explicitOrgId) {
+    const role = await getUserOrgRole(explicitOrgId, userId);
+    if (!role) {
+      return { error: { message: 'You are not a member of the specified organization' } };
+    }
+    return { orgId: explicitOrgId };
+  }
+
+  // 2. PAT org scope
+  if (patOrgId) {
+    return { orgId: patOrgId };
+  }
+
+  // 3-5. Look up user's orgs
+  const userOrgs = await getUserOrganizations(userId);
+  if (userOrgs.length === 0) {
+    return { orgId: undefined };
+  }
+  if (userOrgs.length === 1) {
+    return { orgId: userOrgs[0].id };
+  }
+  // 2+ orgs — ambiguous
+  return {
+    error: {
+      message: 'Multiple organizations found. Specify organization_id or use an org-scoped PAT.',
+      organizations: userOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug })),
+    },
+  };
 }
 
 // ============================================================================
@@ -59,6 +115,13 @@ const registerSchema = z.object({
 executors.post('/', zValidator('json', registerSchema), async (c) => {
   const userId = getUserId(c);
   const body = c.req.valid('json');
+  const patOrgId = c.get('patOrgId');
+
+  // Resolve org server-side
+  const orgResult = await resolveOrganizationId(userId, body.organization_id, patOrgId);
+  if (orgResult.error) {
+    return c.json({ error: orgResult.error }, 400);
+  }
 
   const { executor, registrationToken } = await registerExecutor({
     userId,
@@ -68,7 +131,7 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
     capabilities: body.capabilities,
     workspaceRoot: body.workspace_root,
     repos: body.repos,
-    organizationId: body.organization_id,
+    organizationId: orgResult.orgId,
     repositoryId: body.repository_id,
   });
 
@@ -81,6 +144,7 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
         type: executor.type,
         status: executor.status,
         repos: executor.repos,
+        organization_id: executor.organizationId,
         created_at: executor.createdAt,
       },
       registration_token: registrationToken,
@@ -144,6 +208,46 @@ executors.get('/:id', async (c) => {
       last_heartbeat_at: executor.lastHeartbeatAt,
       last_task_at: executor.lastTaskAt,
       created_at: executor.createdAt,
+      updated_at: executor.updatedAt,
+    },
+  });
+});
+
+// ============================================================================
+// PATCH /api/v1/executors/:id — Update executor (rename)
+// ============================================================================
+
+const updateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  machine_name: z.string().min(1).max(100).optional(),
+});
+
+executors.patch('/:id', zValidator('json', updateSchema), async (c) => {
+  const userId = getUserId(c);
+  const body = c.req.valid('json');
+
+  if (!body.name && !body.machine_name) {
+    return c.json({ error: { message: 'At least one of name or machine_name is required' } }, 400);
+  }
+
+  const executor = await updateExecutor(c.req.param('id'), userId, {
+    name: body.name,
+    machineName: body.machine_name,
+  });
+
+  if (!executor) {
+    return c.json({ error: 'Executor not found' }, 404);
+  }
+
+  return c.json({
+    executor: {
+      id: executor.id,
+      name: executor.name,
+      machine_name: executor.machineName,
+      type: executor.type,
+      status: executor.status,
+      repos: executor.repos,
+      organization_id: executor.organizationId,
       updated_at: executor.updatedAt,
     },
   });

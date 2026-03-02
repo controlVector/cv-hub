@@ -53,6 +53,9 @@ import { errorHandler } from './utils/errors';
 export type AppVariables = {
   userId?: string;
   sessionId?: string;
+  // PAT-derived context (set by auth middleware for org-scoped tokens)
+  patOrgId?: string;
+  tokenScopes?: string[];
   // Feature flags API key context
   flagOrgId?: string;
   flagEnv?: string;

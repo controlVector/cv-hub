@@ -26,6 +26,18 @@ import {
   Tab,
   InputAdornment,
   Tooltip,
+  FormControlLabel,
+  Checkbox,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
   Code as CodeIcon,
@@ -36,6 +48,7 @@ import {
   VisibilityOff as VisibilityOffIcon,
   Refresh as RefreshIcon,
   Edit as EditIcon,
+  VpnKey as KeyIcon,
 } from '@mui/icons-material';
 import { api } from '../../lib/api';
 
@@ -66,6 +79,24 @@ interface AuthorizedApp {
   grantedAt: string;
 }
 
+interface PatToken {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  scopes: string[];
+  organizationId: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  isExpired: boolean;
+  isRevoked: boolean;
+}
+
+interface ScopeInfo {
+  name: string;
+  description: string;
+}
+
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -80,6 +111,15 @@ function TabPanel(props: TabPanelProps) {
     </div>
   );
 }
+
+const EXPIRY_OPTIONS = [
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '60 days', days: 60 },
+  { label: '90 days', days: 90 },
+  { label: '1 year', days: 365 },
+  { label: 'No expiration', days: 0 },
+];
 
 export default function DeveloperPage() {
   const [tabValue, setTabValue] = useState(0);
@@ -106,6 +146,15 @@ export default function DeveloperPage() {
   const [editingClient, setEditingClient] = useState<OAuthClient | null>(null);
   const [updating, setUpdating] = useState(false);
 
+  // PAT state
+  const [tokens, setTokens] = useState<PatToken[]>([]);
+  const [availableScopes, setAvailableScopes] = useState<Record<string, ScopeInfo>>({});
+  const [createTokenDialogOpen, setCreateTokenDialogOpen] = useState(false);
+  const [creatingToken, setCreatingToken] = useState(false);
+  const [newToken, setNewToken] = useState({ name: '', scopes: [] as string[], expiresInDays: 30 });
+  const [createdToken, setCreatedToken] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
+
   const fetchClients = async () => {
     try {
       const res = await api.get('/oauth/clients');
@@ -124,8 +173,26 @@ export default function DeveloperPage() {
     }
   };
 
+  const fetchTokens = async () => {
+    try {
+      const res = await api.get('/user/tokens');
+      setTokens(res.data.tokens);
+    } catch (err) {
+      // Ignore — PAT tab may just be empty
+    }
+  };
+
+  const fetchScopes = async () => {
+    try {
+      const res = await api.get('/user/tokens/meta/scopes');
+      setAvailableScopes(res.data.scopes);
+    } catch (err) {
+      // Ignore
+    }
+  };
+
   useEffect(() => {
-    Promise.all([fetchClients(), fetchAuthorizedApps()]).finally(() => setLoading(false));
+    Promise.all([fetchClients(), fetchAuthorizedApps(), fetchTokens(), fetchScopes()]).finally(() => setLoading(false));
   }, []);
 
   const handleCreateClient = async () => {
@@ -224,6 +291,46 @@ export default function DeveloperPage() {
     }
   };
 
+  // PAT handlers
+  const handleCreateToken = async () => {
+    setCreatingToken(true);
+    setError(null);
+
+    try {
+      const res = await api.post('/user/tokens', {
+        name: newToken.name,
+        scopes: newToken.scopes,
+        ...(newToken.expiresInDays > 0 ? { expiresInDays: newToken.expiresInDays } : {}),
+      });
+
+      setCreatedToken(res.data.token);
+      await fetchTokens();
+      setNewToken({ name: '', scopes: [], expiresInDays: 30 });
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'Failed to create token');
+    } finally {
+      setCreatingToken(false);
+    }
+  };
+
+  const handleRevokeToken = async (tokenId: string) => {
+    if (!confirm('Revoke this token? It will stop working immediately.')) return;
+
+    try {
+      await api.delete(`/user/tokens/${tokenId}`);
+      await fetchTokens();
+    } catch (err) {
+      setError('Failed to revoke token');
+    }
+  };
+
+  const toggleScope = (scope: string) => {
+    setNewToken((prev) => ({
+      ...prev,
+      scopes: prev.scopes.includes(scope) ? prev.scopes.filter((s) => s !== scope) : [...prev.scopes, scope],
+    }));
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
@@ -272,6 +379,7 @@ export default function DeveloperPage() {
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
           <Tab label="OAuth Applications" />
           <Tab label="Authorized Apps" />
+          <Tab label="Personal Access Tokens" />
         </Tabs>
 
         <Box sx={{ p: 3 }}>
@@ -443,10 +551,109 @@ export default function DeveloperPage() {
               </List>
             )}
           </TabPanel>
+
+          {/* Personal Access Tokens Tab */}
+          <TabPanel value={tabValue} index={2}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Box>
+                <Typography variant="h6">Personal Access Tokens</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Tokens for API and git authentication. Treat them like passwords.
+                </Typography>
+              </Box>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => {
+                  setCreatedToken(null);
+                  setCreateTokenDialogOpen(true);
+                }}
+              >
+                Create Token
+              </Button>
+            </Box>
+
+            {tokens.length === 0 ? (
+              <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
+                <KeyIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                <Typography color="text.secondary">
+                  You haven't created any personal access tokens yet.
+                </Typography>
+                <Button
+                  sx={{ mt: 2 }}
+                  startIcon={<AddIcon />}
+                  onClick={() => setCreateTokenDialogOpen(true)}
+                >
+                  Create Your First Token
+                </Button>
+              </Paper>
+            ) : (
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Prefix</TableCell>
+                      <TableCell>Scopes</TableCell>
+                      <TableCell>Expires</TableCell>
+                      <TableCell>Last Used</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {tokens.map((t) => (
+                      <TableRow key={t.id} sx={{ opacity: t.isRevoked || t.isExpired ? 0.5 : 1 }}>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {t.name}
+                            </Typography>
+                            {t.isRevoked && <Chip label="Revoked" size="small" color="error" />}
+                            {t.isExpired && !t.isRevoked && <Chip label="Expired" size="small" color="warning" />}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                            {t.tokenPrefix}...
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {t.scopes.map((s) => (
+                              <Chip key={s} label={s} size="small" variant="outlined" sx={{ fontSize: '0.7rem', height: 22 }} />
+                            ))}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                            {t.expiresAt ? new Date(t.expiresAt).toLocaleDateString() : 'Never'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
+                            {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleDateString() : 'Never'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          {!t.isRevoked && (
+                            <Tooltip title="Revoke token">
+                              <IconButton size="small" color="error" onClick={() => handleRevokeToken(t.id)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </TabPanel>
         </Box>
       </Paper>
 
-      {/* Create/Show Secret Dialog */}
+      {/* Create/Show Secret Dialog (OAuth) */}
       <Dialog open={createDialogOpen} onClose={() => !createdClient && setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{createdClient ? 'Application Credentials' : 'Create OAuth Application'}</DialogTitle>
         <DialogContent>
@@ -580,7 +787,7 @@ export default function DeveloperPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog (OAuth) */}
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Edit Application</DialogTitle>
         <DialogContent>
@@ -657,6 +864,126 @@ export default function DeveloperPage() {
           <Button onClick={handleUpdateClient} variant="contained" disabled={updating}>
             {updating ? <CircularProgress size={20} /> : 'Save'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create Token Dialog (PAT) */}
+      <Dialog
+        open={createTokenDialogOpen}
+        onClose={() => !createdToken && setCreateTokenDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{createdToken ? 'Token Created' : 'Create Personal Access Token'}</DialogTitle>
+        <DialogContent>
+          {createdToken ? (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Copy your token now. You won't be able to see it again!
+              </Alert>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TextField
+                  fullWidth
+                  type={showToken ? 'text' : 'password'}
+                  value={createdToken}
+                  InputProps={{
+                    readOnly: true,
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => setShowToken(!showToken)}>
+                          {showToken ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  size="small"
+                />
+                <IconButton onClick={() => copyToClipboard(createdToken)}>
+                  <CopyIcon />
+                </IconButton>
+              </Box>
+            </>
+          ) : (
+            <>
+              <TextField
+                fullWidth
+                label="Token Name"
+                value={newToken.name}
+                onChange={(e) => setNewToken({ ...newToken, name: e.target.value })}
+                margin="normal"
+                required
+                placeholder="e.g. CI/CD Pipeline, Local Dev"
+              />
+
+              <FormControl fullWidth margin="normal" size="small">
+                <InputLabel>Expiration</InputLabel>
+                <Select
+                  value={newToken.expiresInDays}
+                  onChange={(e) => setNewToken({ ...newToken, expiresInDays: Number(e.target.value) })}
+                  label="Expiration"
+                >
+                  {EXPIRY_OPTIONS.map((opt) => (
+                    <MenuItem key={opt.days} value={opt.days}>
+                      {opt.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
+                Scopes *
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                {Object.entries(availableScopes).map(([scope, info]) => (
+                  <FormControlLabel
+                    key={scope}
+                    control={
+                      <Checkbox
+                        checked={newToken.scopes.includes(scope)}
+                        onChange={() => toggleScope(scope)}
+                        size="small"
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {info.name} <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>({scope})</Typography>
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {info.description}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                ))}
+              </Box>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {createdToken ? (
+            <Button
+              onClick={() => {
+                setCreateTokenDialogOpen(false);
+                setCreatedToken(null);
+                setShowToken(false);
+              }}
+              variant="contained"
+            >
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button onClick={() => setCreateTokenDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleCreateToken}
+                variant="contained"
+                disabled={creatingToken || !newToken.name || newToken.scopes.length === 0}
+              >
+                {creatingToken ? <CircularProgress size={20} /> : 'Create Token'}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
     </Container>
