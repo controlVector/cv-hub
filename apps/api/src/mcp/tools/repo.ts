@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -42,6 +43,7 @@ export function registerRepoTools(
       search: z.string().optional().describe('Filter by name/description'),
       limit: z.number().optional().describe('Max results (default 50)'),
     },
+    getAnnotations('list_repos'),
     async ({ search, limit }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -69,6 +71,7 @@ export function registerRepoTools(
       owner: z.string().describe('Repository owner (username or org)'),
       repo: z.string().describe('Repository slug'),
     },
+    getAnnotations('get_repo'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -107,6 +110,7 @@ export function registerRepoTools(
       path: z.string().describe('File path within the repository'),
       ref: z.string().optional().describe('Git ref (branch/tag/sha). Defaults to default branch'),
     },
+    getAnnotations('get_file'),
     async ({ owner, repo, path, ref }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -139,6 +143,7 @@ export function registerRepoTools(
       path: z.string().optional().describe('Directory path (empty for root)'),
       ref: z.string().optional().describe('Git ref (branch/tag/sha). Defaults to default branch'),
     },
+    getAnnotations('get_tree'),
     async ({ owner, repo, path, ref }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -170,6 +175,7 @@ export function registerRepoTools(
       owner: z.string().describe('Repository owner (username or org)'),
       repo: z.string().describe('Repository slug'),
     },
+    getAnnotations('list_branches'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -204,6 +210,7 @@ export function registerRepoTools(
       default_branch: z.string().optional().describe('Default branch name (default "main")'),
       org: z.string().optional().describe('Organization slug (creates under org instead of user)'),
     },
+    getAnnotations('create_repo'),
     async ({ name, description, is_private, default_branch, org }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
@@ -274,6 +281,7 @@ export function registerRepoTools(
       base: z.string().describe('Base ref (branch/tag/sha)'),
       head: z.string().describe('Head ref (branch/tag/sha)'),
     },
+    getAnnotations('get_diff'),
     async ({ owner, repo, base, head }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -316,6 +324,7 @@ export function registerRepoTools(
       repo: z.string().describe('Repository slug'),
       sha: z.string().describe('Commit SHA'),
     },
+    getAnnotations('get_commit'),
     async ({ owner, repo, sha }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -358,6 +367,7 @@ export function registerRepoTools(
       limit: z.number().optional().describe('Max commits (default 30)'),
       path: z.string().optional().describe('Filter to commits affecting this path'),
     },
+    getAnnotations('get_commit_history'),
     async ({ owner, repo, ref, limit, path }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };

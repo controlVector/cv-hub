@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -39,6 +40,7 @@ export function registerContextEngineTools(
       concern: z.enum(['codebase', 'deployment', 'compilation', 'business']).optional().describe('Focus area for scoring weights (default: codebase)'),
       max_tokens: z.number().optional().describe('Token budget for response (default: 2000)'),
     },
+    getAnnotations('get_focused_context'),
     async ({ owner, repo, files, symbols, concern, max_tokens }) => {
       if (!hasRead) {
         return { content: [{ type: 'text' as const, text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -90,6 +92,7 @@ export function registerContextEngineTools(
       target: z.string().describe('File path or symbol qualifiedName to analyze'),
       depth: z.number().min(1).max(5).optional().describe('How many hops to traverse for callers (default: 2)'),
     },
+    getAnnotations('get_impact_context'),
     async ({ owner, repo, target, depth }) => {
       if (!hasRead) {
         return { content: [{ type: 'text' as const, text: 'Insufficient scope: repo:read required' }], isError: true };

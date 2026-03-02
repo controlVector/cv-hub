@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -35,6 +36,7 @@ export function registerSafetyTools(
       repo: z.string().describe('Repository slug'),
       complexity_threshold: z.number().optional().describe('Min complexity to flag (default 10)'),
     },
+    getAnnotations('cv_safety_check'),
     async ({ owner, repo, complexity_threshold }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -110,6 +112,7 @@ export function registerSafetyTools(
       owner: z.string().describe('Repository owner'),
       repo: z.string().describe('Repository slug'),
     },
+    getAnnotations('cv_architecture_review'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };

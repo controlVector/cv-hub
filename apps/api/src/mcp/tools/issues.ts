@@ -10,6 +10,7 @@ import {
   canUserAccessRepo,
 } from '../../services/repository.service';
 import * as issueService from '../../services/issue.service';
+import { getAnnotations } from './annotations';
 
 async function resolveRepo(owner: string, repoSlug: string, userId: string) {
   const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
@@ -38,6 +39,7 @@ export function registerIssueTools(
       limit: z.number().optional().describe('Max results (default 30)'),
       search: z.string().optional().describe('Search issues by text'),
     },
+    getAnnotations('list_issues'),
     async ({ owner, repo, state, limit, search }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -79,6 +81,7 @@ export function registerIssueTools(
       repo: z.string().describe('Repository slug'),
       number: z.number().describe('Issue number'),
     },
+    getAnnotations('get_issue'),
     async ({ owner, repo, number }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -127,6 +130,7 @@ export function registerIssueTools(
       body: z.string().optional().describe('Issue body/description'),
       labels: z.array(z.string()).optional().describe('Labels to apply'),
     },
+    getAnnotations('create_issue'),
     async ({ owner, repo, title, body, labels }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
@@ -175,6 +179,7 @@ export function registerIssueTools(
       state: z.enum(['open', 'closed']).optional().describe('New state'),
       labels: z.array(z.string()).optional().describe('Replace labels'),
     },
+    getAnnotations('update_issue'),
     async ({ owner, repo, number, title, body, state, labels }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };

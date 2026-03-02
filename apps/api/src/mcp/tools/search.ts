@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -39,6 +40,7 @@ export function registerSearchTools(
       limit: z.number().optional().describe('Max results (default 10)'),
       language: z.string().optional().describe('Filter by language'),
     },
+    getAnnotations('search_code'),
     async ({ owner, repo, query, limit, language }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -114,6 +116,7 @@ export function registerSearchTools(
         .describe('Filter by symbol kind'),
       limit: z.number().optional().describe('Max results (default 20)'),
     },
+    getAnnotations('search_symbols'),
     async ({ owner, repo, name: symbolName, kind, limit }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };

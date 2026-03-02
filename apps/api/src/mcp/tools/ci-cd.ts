@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { getAnnotations } from './annotations';
 import { db } from '../../db';
 import { pipelines, pipelineRuns, pipelineJobs } from '../../db/schema/ci-cd';
 import { repositories } from '../../db/schema/repositories';
@@ -634,6 +635,7 @@ export function registerCICDToolsOnMcp(
       tool.name,
       tool.description,
       shape,
+      getAnnotations(tool.name),
       async (args: Record<string, any>) => {
         const result = await executeCICDTool(tool.name, args, { userId });
         if (result.success) {

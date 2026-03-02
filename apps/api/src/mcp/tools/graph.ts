@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -38,6 +39,7 @@ export function registerGraphTools(
       repo: z.string().describe('Repository slug'),
       cypher: z.string().describe('Cypher query (read-only — no CREATE/DELETE/SET/etc.)'),
     },
+    getAnnotations('query_graph'),
     async ({ owner, repo, cypher }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -68,6 +70,7 @@ export function registerGraphTools(
       repo: z.string().describe('Repository slug'),
       qualified_name: z.string().describe('Fully qualified symbol name'),
     },
+    getAnnotations('get_symbol'),
     async ({ owner, repo, qualified_name }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -98,6 +101,7 @@ export function registerGraphTools(
       repo: z.string().describe('Repository slug'),
       qualified_name: z.string().describe('Fully qualified name of the target symbol'),
     },
+    getAnnotations('find_callers'),
     async ({ owner, repo, qualified_name }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -125,6 +129,7 @@ export function registerGraphTools(
       repo: z.string().describe('Repository slug'),
       qualified_name: z.string().describe('Fully qualified name of the source symbol'),
     },
+    getAnnotations('find_callees'),
     async ({ owner, repo, qualified_name }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -154,6 +159,7 @@ export function registerGraphTools(
       to: z.string().describe('Target symbol name or qualified name'),
       max_depth: z.number().optional().describe('Max path depth (default 10)'),
     },
+    getAnnotations('find_call_paths'),
     async ({ owner, repo, from: fromSymbol, to: toSymbol, max_depth }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -180,6 +186,7 @@ export function registerGraphTools(
       owner: z.string().describe('Repository owner'),
       repo: z.string().describe('Repository slug'),
     },
+    getAnnotations('find_dead_code'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -214,6 +221,7 @@ export function registerGraphTools(
       repo: z.string().describe('Repository slug'),
       threshold: z.number().optional().describe('Min complexity to include (default 10)'),
     },
+    getAnnotations('complexity_hotspots'),
     async ({ owner, repo, threshold }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -247,6 +255,7 @@ export function registerGraphTools(
       owner: z.string().describe('Repository owner'),
       repo: z.string().describe('Repository slug'),
     },
+    getAnnotations('graph_stats'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };

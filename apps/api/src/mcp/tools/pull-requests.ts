@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -37,6 +38,7 @@ export function registerPullRequestTools(
       state: z.enum(['open', 'closed', 'merged', 'all']).optional().describe('Filter by state (default: open)'),
       limit: z.number().optional().describe('Max results (default 30)'),
     },
+    getAnnotations('list_pulls'),
     async ({ owner, repo, state, limit }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -79,6 +81,7 @@ export function registerPullRequestTools(
       repo: z.string().describe('Repository slug'),
       number: z.number().describe('Pull request number'),
     },
+    getAnnotations('get_pull'),
     async ({ owner, repo, number }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -131,6 +134,7 @@ export function registerPullRequestTools(
       base: z.string().describe('Target branch'),
       draft: z.boolean().optional().describe('Create as draft PR'),
     },
+    getAnnotations('create_pull'),
     async ({ owner, repo, title, body, head, base, draft }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
@@ -179,6 +183,7 @@ export function registerPullRequestTools(
       number: z.number().describe('Pull request number'),
       merge_method: z.enum(['merge', 'squash', 'rebase']).optional().describe('Merge strategy (default: merge)'),
     },
+    getAnnotations('merge_pull'),
     async ({ owner, repo, number, merge_method }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };

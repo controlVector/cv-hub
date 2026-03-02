@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -37,6 +38,7 @@ export function registerSyncTools(
       job_type: z.enum(['full', 'delta', 'incremental']).optional()
         .describe('Sync type: full (rebuild), delta (changes since last sync), incremental (single ref)'),
     },
+    getAnnotations('trigger_graph_sync'),
     async ({ owner, repo, job_type }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
@@ -87,6 +89,7 @@ export function registerSyncTools(
       repo: z.string().describe('Repository slug'),
       limit: z.number().optional().describe('Number of recent jobs to show (default 5)'),
     },
+    getAnnotations('get_sync_status'),
     async ({ owner, repo, limit }) => {
       if (!hasRead) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };

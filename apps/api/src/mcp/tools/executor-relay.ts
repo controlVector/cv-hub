@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import { listExecutors } from '../../services/executor.service';
 import {
   createAgentTask,
@@ -36,6 +37,7 @@ export function registerExecutorRelayTools(
     'list_executors',
     'List active Claude Code / CV-Git executor sessions registered by the current user',
     {},
+    getAnnotations('list_executors'),
     async () => {
       try {
         const executors = await listExecutors(userId);
@@ -82,6 +84,7 @@ export function registerExecutorRelayTools(
       }).passthrough().optional().describe('Structured task input'),
       timeout_minutes: z.number().optional().describe('Task timeout in minutes (default: 30)'),
     },
+    getAnnotations('create_task'),
     async (params) => {
       try {
         let repositoryId: string | undefined;
@@ -137,6 +140,7 @@ export function registerExecutorRelayTools(
       repo: z.string().optional().describe('Repository slug (for repo-scoped filter)'),
       limit: z.number().optional().describe('Max results (default: 20)'),
     },
+    getAnnotations('list_tasks'),
     async (params) => {
       try {
         let repositoryId: string | undefined;
@@ -186,6 +190,7 @@ export function registerExecutorRelayTools(
     {
       task_id: z.string().uuid().describe('Task ID'),
     },
+    getAnnotations('get_task_result'),
     async ({ task_id }) => {
       try {
         const task = await getAgentTask(task_id, userId);
@@ -231,6 +236,7 @@ export function registerExecutorRelayTools(
     {
       task_id: z.string().uuid().describe('Task ID to cancel'),
     },
+    getAnnotations('cancel_task'),
     async ({ task_id }) => {
       try {
         const task = await cancelAgentTask(task_id, userId);

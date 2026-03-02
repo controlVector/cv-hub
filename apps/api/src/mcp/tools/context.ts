@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { getAnnotations } from './annotations';
 import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
@@ -37,6 +38,7 @@ export function registerContextTools(
       owner: z.string().describe('Repository owner'),
       repo: z.string().describe('Repository name'),
     },
+    getAnnotations('get_repo_context'),
     async ({ owner, repo }) => {
       if (!hasRead) {
         return { content: [{ type: 'text' as const, text: 'Insufficient scope: repo:read required' }], isError: true };
@@ -81,6 +83,7 @@ export function registerContextTools(
       repo: z.string().describe('Repository name'),
       ref: z.string().optional().describe('Branch name or commit SHA (default: HEAD)'),
     },
+    getAnnotations('get_context_at_ref'),
     async ({ owner, repo, ref }) => {
       if (!hasRead) {
         return { content: [{ type: 'text' as const, text: 'Insufficient scope: repo:read required' }], isError: true };
