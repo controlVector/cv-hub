@@ -21,6 +21,7 @@ const READ_ONLY_TOOLS = [
   'search_code', 'search_symbols',
   'get_sync_status',
   'list_executors', 'list_tasks', 'get_task_result',
+  'check_active_tasks', 'get_task_prompts',
   'get_repo_context', 'get_context_at_ref',
   'get_focused_context', 'get_impact_context',
   'cv_safety_check', 'cv_architecture_review',
@@ -32,6 +33,7 @@ const DESTRUCTIVE_TOOLS = ['merge_pull', 'cancel_run', 'cancel_task', 'delete_pi
 const WRITE_TOOLS = [
   'create_repo', 'create_pull', 'create_issue', 'create_task',
   'trigger_pipeline', 'create_pipeline',
+  'respond_to_prompt',
 ];
 
 describe('toolAnnotations', () => {

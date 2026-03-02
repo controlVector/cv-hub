@@ -15,6 +15,11 @@ import {
   cancelAgentTask,
 } from '../../services/agent-task.service';
 import {
+  getTaskPrompts,
+  getPendingPrompts,
+  respondToPrompt,
+} from '../../services/task-prompt.service';
+import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
 } from '../../services/repository.service';
@@ -258,6 +263,133 @@ export function registerExecutorRelayTools(
         };
       } catch (err: any) {
         return { content: [{ type: 'text', text: `Error cancelling task: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── check_active_tasks ────────────────────────────────────────────
+  server.tool(
+    'check_active_tasks',
+    'Check all active tasks and surface any that need user input. Call this proactively to see if Claude Code instances need your attention.',
+    {},
+    getAnnotations('check_active_tasks'),
+    async () => {
+      try {
+        const tasks = await listAgentTasks({
+          userId,
+          status: ['assigned', 'running', 'waiting_for_input'],
+          limit: 20,
+        });
+
+        if (tasks.length === 0) {
+          return { content: [{ type: 'text', text: 'No active tasks.' }] };
+        }
+
+        const results = [];
+        for (const t of tasks) {
+          const entry: Record<string, unknown> = {
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            priority: t.priority,
+            executor_id: t.executorId,
+            started_at: t.startedAt?.toISOString() ?? null,
+          };
+
+          if (t.status === 'waiting_for_input') {
+            const pending = await getPendingPrompts(t.id);
+            entry.pending_prompts = pending.map((p) => ({
+              prompt_id: p.id,
+              type: p.promptType,
+              text: p.promptText,
+              options: p.options,
+              context: p.context,
+              created_at: p.createdAt.toISOString(),
+            }));
+          }
+
+          results.push(entry);
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── get_task_prompts ──────────────────────────────────────────────
+  server.tool(
+    'get_task_prompts',
+    'Get all prompts (questions/approvals) for a specific task. Shows what the executor has asked and any responses given.',
+    {
+      task_id: z.string().uuid().describe('Task ID'),
+    },
+    getAnnotations('get_task_prompts'),
+    async ({ task_id }) => {
+      try {
+        const task = await getAgentTask(task_id, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
+        }
+
+        const prompts = await getTaskPrompts(task_id);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              task_id: task.id,
+              task_title: task.title,
+              task_status: task.status,
+              prompts: prompts.map((p) => ({
+                id: p.id,
+                type: p.promptType,
+                text: p.promptText,
+                options: p.options,
+                context: p.context,
+                response: p.response,
+                responded_at: p.respondedAt?.toISOString() ?? null,
+                created_at: p.createdAt.toISOString(),
+              })),
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── respond_to_prompt ─────────────────────────────────────────────
+  server.tool(
+    'respond_to_prompt',
+    'Respond to a prompt from a Claude Code executor. The executor is waiting for your answer to continue working.',
+    {
+      prompt_id: z.string().uuid().describe('Prompt ID to respond to'),
+      response: z.string().describe('Your response to the prompt'),
+    },
+    getAnnotations('respond_to_prompt'),
+    async ({ prompt_id, response }) => {
+      try {
+        const updated = await respondToPrompt(prompt_id, response);
+        if (!updated) {
+          return { content: [{ type: 'text', text: 'Prompt not found or already answered' }], isError: true };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              prompt_id: updated.id,
+              task_id: updated.taskId,
+              response: updated.response,
+              responded_at: updated.respondedAt?.toISOString(),
+              message: 'Response sent. The executor will continue on its next poll cycle.',
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
       }
     },
   );

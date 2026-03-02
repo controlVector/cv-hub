@@ -45,6 +45,7 @@ import { mcpOAuthRoutes } from './routes/mcp-oauth';
 import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
 import { taskRoutes } from './routes/tasks';
+import { taskPromptRoutes } from './routes/task-prompts';
 import { safetyRoutes } from './routes/safety';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
 import { mcpGateway } from './routes/mcp-gateway';
@@ -206,6 +207,9 @@ app.route('/api/v1/executors', executorRoutes);
 
 // Task Board API (user-facing task management)
 app.route('/api/v1/tasks', taskRoutes);
+
+// Task Prompts API (bidirectional executor ↔ user communication)
+app.route('/api/v1/tasks', taskPromptRoutes);
 
 // Safety Analysis API (CV-Safe)
 app.route('/api/v1/repos', safetyRoutes);

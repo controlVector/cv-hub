@@ -109,6 +109,9 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   list_tasks: READ_ONLY,
   get_task_result: READ_ONLY,
   cancel_task: DESTRUCTIVE_IDEMPOTENT,
+  check_active_tasks: READ_ONLY,
+  get_task_prompts: READ_ONLY,
+  respond_to_prompt: WRITE_SAFE,
 
   // ── Context tools ──────────────────────────────────────
   get_repo_context: READ_ONLY,

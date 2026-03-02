@@ -27,9 +27,17 @@ export const agentTaskStatusEnum = pgEnum('agent_task_status', [
   'queued',
   'assigned',
   'running',
+  'waiting_for_input',
   'completed',
   'failed',
   'cancelled',
+]);
+
+export const taskPromptTypeEnum = pgEnum('task_prompt_type', [
+  'question',
+  'approval',
+  'choice',
+  'info',
 ]);
 
 export const agentTaskTypeEnum = pgEnum('agent_task_type', [
@@ -464,6 +472,47 @@ export const agentTasks = pgTable(
 );
 
 // ============================================================================
+// Task Prompts (Bidirectional Executor ↔ User Communication)
+// ============================================================================
+
+export interface TaskPromptOptions {
+  label: string;
+  description?: string;
+}
+
+export const taskPrompts = pgTable(
+  'task_prompts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => agentTasks.id, { onDelete: 'cascade' }),
+
+    promptType: taskPromptTypeEnum('prompt_type').default('question').notNull(),
+    promptText: text('prompt_text').notNull(),
+
+    options: jsonb('options').$type<TaskPromptOptions[] | string[]>(),
+    context: jsonb('context').$type<Record<string, unknown>>(),
+
+    response: text('response'),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('task_prompts_task_idx').on(table.taskId),
+    index('task_prompts_pending_idx').on(table.taskId),
+  ]
+);
+
+export type TaskPrompt = typeof taskPrompts.$inferSelect;
+export type NewTaskPrompt = typeof taskPrompts.$inferInsert;
+
+// ============================================================================
 // MCP Sessions (Streamable HTTP Session Tracking)
 // ============================================================================
 
@@ -649,7 +698,7 @@ export const contextBridgesRelations = relations(
   })
 );
 
-export const agentTasksRelations = relations(agentTasks, ({ one }) => ({
+export const agentTasksRelations = relations(agentTasks, ({ one, many }) => ({
   user: one(users, {
     fields: [agentTasks.userId],
     references: [users.id],
@@ -672,6 +721,14 @@ export const agentTasksRelations = relations(agentTasks, ({ one }) => ({
   }),
   parentTask: one(agentTasks, {
     fields: [agentTasks.parentTaskId],
+    references: [agentTasks.id],
+  }),
+  prompts: many(taskPrompts),
+}));
+
+export const taskPromptsRelations = relations(taskPrompts, ({ one }) => ({
+  task: one(agentTasks, {
+    fields: [taskPrompts.taskId],
     references: [agentTasks.id],
   }),
 }));
