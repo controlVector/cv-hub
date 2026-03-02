@@ -219,7 +219,7 @@ const oidcConfig = {
   userinfo_endpoint: `${env.API_URL}/oauth/userinfo`,
   revocation_endpoint: `${env.API_URL}/oauth/revoke`,
   introspection_endpoint: `${env.API_URL}/oauth/introspect`,
-  registration_endpoint: `${env.API_URL}/api/oauth/clients`,
+  registration_endpoint: `${env.API_URL}/oauth/register`,
   scopes_supported: [
     'openid', 'profile', 'email', 'offline_access',
     'repo:read', 'repo:write', 'repo:admin',
