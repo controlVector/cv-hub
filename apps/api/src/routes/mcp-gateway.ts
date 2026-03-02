@@ -1,7 +1,7 @@
 /**
  * MCP Gateway Route
  *
- * Handles MCP Streamable HTTP transport at POST /mcp.
+ * Primary MCP endpoint at /mcp — used by Claude.ai remote connectors.
  * Stateless — each request creates a fresh McpServer + transport.
  *
  * Auth: Bearer token (PAT → JWT → OAuth), same as CLI API.
@@ -20,11 +20,6 @@ import { createMcpServer } from '../mcp/server';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
-import { isStripeConfigured } from '../services/stripe.service';
-import { hasOrgMcpGatewayAccess } from '../services/addon.service';
-import { db } from '../db';
-import { organizationMembers } from '../db/schema';
-import { eq } from 'drizzle-orm';
 
 // Services for auth
 import * as patService from '../services/pat.service';
@@ -113,40 +108,6 @@ async function mcpAuth(c: any, next: () => Promise<void>) {
   return c.json({ error: 'Invalid or expired token' }, 401);
 }
 
-// ── Billing gate middleware ────────────────────────────────────────────
-
-async function requireMcpGatewayBilling(c: any, next: () => Promise<void>) {
-  // Skip billing gate in dev mode (Stripe not configured)
-  if (!isStripeConfigured()) {
-    return next();
-  }
-
-  const userId = c.get('userId');
-
-  // Get org IDs for this user (lightweight query)
-  const memberships = await db
-    .select({ organizationId: organizationMembers.organizationId })
-    .from(organizationMembers)
-    .where(eq(organizationMembers.userId, userId));
-
-  // Check if any org has MCP Gateway access
-  for (const { organizationId } of memberships) {
-    if (await hasOrgMcpGatewayAccess(organizationId)) {
-      return next();
-    }
-  }
-
-  // No access — return JSON-RPC error
-  return c.json({
-    jsonrpc: '2.0',
-    error: {
-      code: -32001,
-      message: 'MCP Gateway requires an active subscription. Upgrade to Pro or add the MCP Gateway add-on ($5/mo) in your organization settings.',
-    },
-    id: null,
-  }, 403);
-}
-
 // ── Route ─────────────────────────────────────────────────────────────
 
 export const mcpGateway = new Hono<McpEnv>();
@@ -154,11 +115,14 @@ export const mcpGateway = new Hono<McpEnv>();
 // Rate limiting
 mcpGateway.use('*', mcpRateLimiter as any);
 
-// Auth on all methods
-mcpGateway.use('*', mcpAuth as any);
-
-// Billing gate
-mcpGateway.use('*', requireMcpGatewayBilling as any);
+// Auth on all methods (except HEAD — needed for protocol version discovery)
+mcpGateway.use('*', async (c: any, next: () => Promise<void>) => {
+  // HEAD requests bypass auth for MCP protocol version discovery
+  if (c.req.method === 'HEAD') {
+    return next();
+  }
+  return mcpAuth(c, next);
+});
 
 // ── POST /mcp ─────────────────────────────────────────────────────────
 mcpGateway.post('/', async (c) => {
@@ -235,10 +199,18 @@ mcpGateway.post('/', async (c) => {
   return new Response(null);
 });
 
-// ── GET /mcp → 405 (no SSE in stateless mode) ────────────────────────
-mcpGateway.get('/', (c) =>
-  c.json({ error: 'Method not allowed. Use POST for MCP requests.' }, 405),
-);
+// ── GET /mcp — Handles both GET and HEAD ──────────────────────────────
+// HEAD: Protocol version discovery (no auth required).
+//       Claude.ai sends HEAD to discover server capabilities.
+// GET:  No SSE in stateless mode — return 405.
+// Hono routes HEAD through GET, so we handle both here.
+mcpGateway.get('/', (c) => {
+  if (c.req.method === 'HEAD') {
+    c.header('MCP-Protocol-Version', '2025-11-25');
+    return c.body(null, 200);
+  }
+  return c.json({ error: 'Method not allowed. Use POST for MCP requests.' }, 405);
+});
 
 // ── DELETE /mcp → 405 (no sessions in stateless mode) ─────────────────
 mcpGateway.delete('/', (c) =>
