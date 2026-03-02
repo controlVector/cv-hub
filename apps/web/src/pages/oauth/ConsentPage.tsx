@@ -94,7 +94,7 @@ export default function ConsentPage() {
     // Fetch client info
     const fetchClientInfo = async () => {
       try {
-        const res = await api.get(`/oauth/clients/${clientId}`);
+        const res = await api.get(`/oauth/client-info/${clientId}`);
         setClient(res.data.client);
         setScopes(scope?.split(' ').filter(Boolean) || ['openid']);
       } catch (err: any) {

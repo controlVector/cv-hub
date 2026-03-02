@@ -622,8 +622,10 @@ oauth.get('/.well-known/openid-configuration', (c) => {
   });
 });
 
-// GET /oauth/clients/:clientId - Get client info for consent screen
-oauth.get('/clients/:clientId', async (c) => {
+// GET /oauth/client-info/:clientId - Get client info for consent screen
+// NOTE: Must NOT be /clients/:clientId — that collides with oauthClientRoutes
+// mounted at /api/oauth/clients (Hono prefix match on /api/oauth swallows the request)
+oauth.get('/client-info/:clientId', async (c) => {
   const clientId = c.req.param('clientId');
   const client = await getClientByClientId(clientId);
 
