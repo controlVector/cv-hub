@@ -128,6 +128,84 @@ clients.post('/', zValidator('json', createClientSchema), async (c) => {
   }, 201);
 });
 
+// ==================== User's Authorized Apps (Consents) ====================
+// NOTE: These MUST be registered before /:clientId to avoid wildcard capture
+
+// GET /oauth/authorizations - List apps user has authorized
+clients.get('/authorizations', async (c) => {
+  const userId = getUserId(c);
+
+  const consents = await db.query.oauthConsents.findMany({
+    where: eq(oauthConsents.userId, userId),
+    with: {
+      // We'd need to set up relations for this
+    },
+  });
+
+  // Fetch associated clients
+  const clientIds = consents.map(c => c.clientId);
+  const clientsList = clientIds.length > 0
+    ? await db.query.oauthClients.findMany({
+        where: (clients, { inArray }) => inArray(clients.id, clientIds),
+      })
+    : [];
+
+  const clientMap = new Map(clientsList.map(c => [c.id, c]));
+
+  return c.json({
+    authorizations: consents
+      .filter(consent => !consent.revokedAt)
+      .map(consent => {
+        const client = clientMap.get(consent.clientId);
+        return {
+          id: consent.id,
+          clientId: client?.clientId,
+          clientName: client?.name,
+          clientDescription: client?.description,
+          clientLogoUrl: client?.logoUrl,
+          clientWebsiteUrl: client?.websiteUrl,
+          scopes: consent.scopes,
+          grantedAt: consent.grantedAt,
+        };
+      }),
+  });
+});
+
+// DELETE /oauth/authorizations/:clientId - Revoke authorization
+clients.delete('/authorizations/:clientId', async (c) => {
+  const userId = getUserId(c);
+  const clientId = c.req.param('clientId');
+  const meta = getRequestMeta(c);
+
+  const client = await db.query.oauthClients.findFirst({
+    where: eq(oauthClients.clientId, clientId),
+  });
+
+  if (!client) {
+    throw new NotFoundError('OAuth client not found');
+  }
+
+  // Revoke consent (this also revokes tokens in the service)
+  await db.update(oauthConsents)
+    .set({ revokedAt: new Date() })
+    .where(and(
+      eq(oauthConsents.clientId, client.id),
+      eq(oauthConsents.userId, userId),
+    ));
+
+  await logAuditEvent({
+    userId,
+    action: 'oauth.authorization.revoked',
+    resource: 'oauth_client',
+    resourceId: client.id,
+    status: 'success',
+    details: { clientId },
+    ...meta,
+  });
+
+  return c.json({ success: true });
+});
+
 // GET /oauth/clients/:clientId - Get specific client
 clients.get('/:clientId', async (c) => {
   const userId = getUserId(c);
@@ -324,81 +402,6 @@ clients.post('/:clientId/rotate-secret', async (c) => {
     clientSecret: newSecret,
     message: 'Save your new client secret now - it will not be shown again!',
   });
-});
-
-// ==================== User's Authorized Apps (Consents) ====================
-
-// GET /oauth/authorizations - List apps user has authorized
-clients.get('/authorizations', async (c) => {
-  const userId = getUserId(c);
-
-  const consents = await db.query.oauthConsents.findMany({
-    where: eq(oauthConsents.userId, userId),
-    with: {
-      // We'd need to set up relations for this
-    },
-  });
-
-  // Fetch associated clients
-  const clientIds = consents.map(c => c.clientId);
-  const clientsList = await db.query.oauthClients.findMany({
-    where: (clients, { inArray }) => inArray(clients.id, clientIds),
-  });
-
-  const clientMap = new Map(clientsList.map(c => [c.id, c]));
-
-  return c.json({
-    authorizations: consents
-      .filter(consent => !consent.revokedAt)
-      .map(consent => {
-        const client = clientMap.get(consent.clientId);
-        return {
-          id: consent.id,
-          clientId: client?.clientId,
-          clientName: client?.name,
-          clientDescription: client?.description,
-          clientLogoUrl: client?.logoUrl,
-          clientWebsiteUrl: client?.websiteUrl,
-          scopes: consent.scopes,
-          grantedAt: consent.grantedAt,
-        };
-      }),
-  });
-});
-
-// DELETE /oauth/authorizations/:clientId - Revoke authorization
-clients.delete('/authorizations/:clientId', async (c) => {
-  const userId = getUserId(c);
-  const clientId = c.req.param('clientId');
-  const meta = getRequestMeta(c);
-
-  const client = await db.query.oauthClients.findFirst({
-    where: eq(oauthClients.clientId, clientId),
-  });
-
-  if (!client) {
-    throw new NotFoundError('OAuth client not found');
-  }
-
-  // Revoke consent (this also revokes tokens in the service)
-  await db.update(oauthConsents)
-    .set({ revokedAt: new Date() })
-    .where(and(
-      eq(oauthConsents.clientId, client.id),
-      eq(oauthConsents.userId, userId),
-    ));
-
-  await logAuditEvent({
-    userId,
-    action: 'oauth.authorization.revoked',
-    resource: 'oauth_client',
-    resourceId: client.id,
-    status: 'success',
-    details: { clientId },
-    ...meta,
-  });
-
-  return c.json({ success: true });
 });
 
 export { clients as oauthClientRoutes };
