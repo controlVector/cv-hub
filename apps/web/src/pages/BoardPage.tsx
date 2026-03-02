@@ -81,7 +81,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function BoardPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [repoFilter, setRepoFilter] = useState<string>('');
+  const [repoFilter, _setRepoFilter] = useState<string>('');
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',

@@ -10,6 +10,8 @@ import type {
   OrgRole,
 } from '../types/organization';
 
+export type { CreateOrganizationInput, UpdateOrganizationInput };
+
 // List public organizations
 export async function listOrganizations(params?: {
   search?: string;
