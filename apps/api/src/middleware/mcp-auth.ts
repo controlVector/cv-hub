@@ -1,15 +1,20 @@
 import type { Context, Next } from 'hono';
 import { validateMCPAccessToken, hasMCPScope } from '../services/mcp-oauth.service';
 import type { AppEnv } from '../app';
+import { env } from '../config/env';
+
+const RESOURCE_METADATA_URL = `${env.API_URL}/.well-known/oauth-protected-resource`;
 
 /**
  * Middleware that validates OAuth Bearer tokens for MCP endpoints.
- * Sets userId in context if valid. Rejects with 401 if invalid.
+ * Sets userId in context if valid. Rejects with 401 + WWW-Authenticate if invalid.
+ * The WWW-Authenticate header triggers Claude.ai's OAuth discovery flow (RFC 9110).
  */
 export async function requireMCPAuth(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    c.header('WWW-Authenticate', `Bearer resource_metadata="${RESOURCE_METADATA_URL}"`);
     return c.json(
       {
         error: 'invalid_token',
@@ -23,6 +28,7 @@ export async function requireMCPAuth(c: Context<AppEnv>, next: Next) {
   const result = await validateMCPAccessToken(token);
 
   if (!result.valid || !result.userId) {
+    c.header('WWW-Authenticate', `Bearer resource_metadata="${RESOURCE_METADATA_URL}", error="invalid_token"`);
     return c.json(
       {
         error: 'invalid_token',
