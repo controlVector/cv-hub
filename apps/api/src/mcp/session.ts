@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db';
-import { mcpSessions } from '../db/schema';
+import { mcpSessions, oauthClients } from '../db/schema';
 import { generateSecureToken } from '../utils/crypto';
 import type { MCPSessionContext } from './types';
 
@@ -12,6 +12,7 @@ const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Create a new MCP session and return the session token.
+ * @param clientId - The public OAuth client_id (hex string), resolved to internal UUID for FK.
  */
 export async function createMCPSession(
   userId: string,
@@ -20,10 +21,20 @@ export async function createMCPSession(
   const sessionToken = generateSecureToken(32);
   const expiresAt = new Date(Date.now() + SESSION_EXPIRY_MS);
 
+  // Resolve public clientId to internal UUID for the FK constraint
+  let internalClientId: string | undefined;
+  if (clientId) {
+    const client = await db.query.oauthClients.findFirst({
+      where: eq(oauthClients.clientId, clientId),
+      columns: { id: true },
+    });
+    internalClientId = client?.id;
+  }
+
   await db.insert(mcpSessions).values({
     sessionToken,
     userId,
-    clientId: clientId || undefined,
+    clientId: internalClientId,
     transport: 'streamable_http',
     status: 'active',
     expiresAt,
