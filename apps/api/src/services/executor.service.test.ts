@@ -1,28 +1,30 @@
 /**
- * Executor Service Tests — sweepStaleExecutors
+ * Executor Service Tests
  *
- * Unit tests that mock the DB layer to verify sweep logic.
+ * Unit tests that mock the DB layer to verify:
+ *  - sweepStaleExecutors logic
+ *  - registerExecutor upsert behavior
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock DB before importing service ──────────────────────────────────
-const mockUpdate = vi.fn();
-const mockSet = vi.fn();
-const mockWhere = vi.fn();
-const mockReturning = vi.fn();
+const mockUpdateFn = vi.fn();
+const mockSetFn = vi.fn();
+const mockWhereFn = vi.fn();
+const mockReturningFn = vi.fn();
+const mockInsertFn = vi.fn();
+const mockValuesFn = vi.fn();
+const mockInsertReturningFn = vi.fn();
+const mockFindFirst = vi.fn();
 
 vi.mock('../db', () => ({
   db: {
-    update: (...args: any[]) => mockUpdate(...args),
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: 'new-exec-id' }]),
-      }),
-    }),
+    update: (...args: any[]) => mockUpdateFn(...args),
+    insert: (...args: any[]) => mockInsertFn(...args),
     query: {
       agentExecutors: {
-        findFirst: vi.fn(),
+        findFirst: (...args: any[]) => mockFindFirst(...args),
         findMany: vi.fn().mockResolvedValue([]),
       },
     },
@@ -56,62 +58,167 @@ vi.mock('../utils/crypto', () => ({
 }));
 
 // Import after mocks
-import { sweepStaleExecutors } from './executor.service';
+import { sweepStaleExecutors, registerExecutor } from './executor.service';
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+function setupUpdateChain() {
+  mockUpdateFn.mockReturnValue({ set: mockSetFn });
+  mockSetFn.mockReturnValue({ where: mockWhereFn });
+  mockWhereFn.mockReturnValue({ returning: mockReturningFn });
+}
+
+function setupInsertChain() {
+  mockInsertFn.mockReturnValue({ values: mockValuesFn });
+  mockValuesFn.mockReturnValue({ returning: mockInsertReturningFn });
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
 
 describe('sweepStaleExecutors', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Chain: db.update().set().where().returning()
-    mockUpdate.mockReturnValue({ set: mockSet });
-    mockSet.mockReturnValue({ where: mockWhere });
-    mockWhere.mockReturnValue({ returning: mockReturning });
+    setupUpdateChain();
   });
 
   it('should mark stale executors as offline', async () => {
-    mockReturning.mockResolvedValue([
-      { id: 'exec-1' },
-      { id: 'exec-2' },
-    ]);
+    mockReturningFn.mockResolvedValue([{ id: 'exec-1' }, { id: 'exec-2' }]);
 
     const count = await sweepStaleExecutors(5);
 
     expect(count).toBe(2);
-    expect(mockUpdate).toHaveBeenCalled();
-    expect(mockSet).toHaveBeenCalledWith(
+    expect(mockUpdateFn).toHaveBeenCalled();
+    expect(mockSetFn).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'offline' }),
     );
   });
 
   it('should return 0 when no stale executors exist', async () => {
-    mockReturning.mockResolvedValue([]);
-
-    const count = await sweepStaleExecutors(5);
-
-    expect(count).toBe(0);
+    mockReturningFn.mockResolvedValue([]);
+    expect(await sweepStaleExecutors(5)).toBe(0);
   });
 
   it('should use the provided threshold in minutes', async () => {
-    mockReturning.mockResolvedValue([{ id: 'exec-1' }]);
-
-    const count = await sweepStaleExecutors(10);
-
-    expect(count).toBe(1);
-    // Verify update was called (threshold is used in the WHERE clause)
-    expect(mockUpdate).toHaveBeenCalled();
+    mockReturningFn.mockResolvedValue([{ id: 'exec-1' }]);
+    expect(await sweepStaleExecutors(10)).toBe(1);
+    expect(mockUpdateFn).toHaveBeenCalled();
   });
 
   it('should default to 5 minutes threshold', async () => {
-    mockReturning.mockResolvedValue([]);
-
+    mockReturningFn.mockResolvedValue([]);
     await sweepStaleExecutors();
-
-    expect(mockUpdate).toHaveBeenCalled();
+    expect(mockUpdateFn).toHaveBeenCalled();
   });
 
   it('should propagate DB errors', async () => {
-    mockReturning.mockRejectedValue(new Error('DB connection failed'));
-
+    mockReturningFn.mockRejectedValue(new Error('DB connection failed'));
     await expect(sweepStaleExecutors(5)).rejects.toThrow('DB connection failed');
+  });
+});
+
+describe('registerExecutor — upsert', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupUpdateChain();
+    setupInsertChain();
+  });
+
+  it('should update existing executor when machineName matches', async () => {
+    const existingExec = {
+      id: 'existing-id',
+      userId: 'user-1',
+      machineName: 'z840-primary',
+      registrationToken: 'old-token',
+      organizationId: 'org-1',
+      repositoryId: null,
+    };
+    mockFindFirst.mockResolvedValue(existingExec);
+    mockReturningFn.mockResolvedValue([{
+      ...existingExec,
+      name: 'claude-code:z840-primary:abc123',
+      status: 'online',
+    }]);
+
+    const result = await registerExecutor({
+      userId: 'user-1',
+      name: 'claude-code:z840-primary:abc123',
+      machineName: 'z840-primary',
+    });
+
+    // Should NOT insert
+    expect(mockInsertFn).not.toHaveBeenCalled();
+    // Should update
+    expect(mockUpdateFn).toHaveBeenCalled();
+    expect(mockSetFn).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'online' }),
+    );
+    // Should return existing token
+    expect(result.registrationToken).toBe('old-token');
+  });
+
+  it('should insert new executor when machineName does NOT match', async () => {
+    mockFindFirst.mockResolvedValue(null); // No existing match
+    mockInsertReturningFn.mockResolvedValue([{
+      id: 'new-id',
+      name: 'claude-code:new-machine:abc123',
+      machineName: 'new-machine',
+      status: 'online',
+    }]);
+
+    const result = await registerExecutor({
+      userId: 'user-1',
+      name: 'claude-code:new-machine:abc123',
+      machineName: 'new-machine',
+    });
+
+    expect(mockInsertFn).toHaveBeenCalled();
+    expect(result.executor.id).toBe('new-id');
+    expect(result.registrationToken).toBe('mock-token-abc');
+  });
+
+  it('should insert new executor when no machineName provided', async () => {
+    mockInsertReturningFn.mockResolvedValue([{
+      id: 'new-id',
+      name: 'some-executor',
+      status: 'online',
+    }]);
+
+    const result = await registerExecutor({
+      userId: 'user-1',
+      name: 'some-executor',
+      // no machineName — skip upsert logic
+    });
+
+    // findFirst should NOT be called (no machineName to match on)
+    expect(mockFindFirst).not.toHaveBeenCalled();
+    expect(mockInsertFn).toHaveBeenCalled();
+    expect(result.executor.id).toBe('new-id');
+  });
+
+  it('should preserve existing orgId when not provided in upsert', async () => {
+    const existingExec = {
+      id: 'existing-id',
+      userId: 'user-1',
+      machineName: 'z840-primary',
+      registrationToken: 'tok',
+      organizationId: 'org-from-before',
+      repositoryId: 'repo-from-before',
+    };
+    mockFindFirst.mockResolvedValue(existingExec);
+    mockReturningFn.mockResolvedValue([{ ...existingExec, status: 'online' }]);
+
+    await registerExecutor({
+      userId: 'user-1',
+      name: 'test',
+      machineName: 'z840-primary',
+      // No organizationId or repositoryId — should keep existing
+    });
+
+    expect(mockSetFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-from-before',
+        repositoryId: 'repo-from-before',
+      }),
+    );
   });
 });

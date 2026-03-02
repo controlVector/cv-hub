@@ -20,6 +20,40 @@ export async function registerExecutor(params: {
   organizationId?: string;
   repositoryId?: string;
 }): Promise<{ executor: AgentExecutor; registrationToken: string }> {
+  // Upsert: if machineName is provided, reuse existing executor for same user+machine
+  if (params.machineName) {
+    const existing = await db.query.agentExecutors.findFirst({
+      where: and(
+        eq(agentExecutors.userId, params.userId),
+        eq(agentExecutors.machineName, params.machineName),
+      ),
+    });
+
+    if (existing) {
+      const [updated] = await db
+        .update(agentExecutors)
+        .set({
+          name: params.name,
+          status: 'online',
+          capabilities: params.capabilities,
+          workspaceRoot: params.workspaceRoot,
+          repos: params.repos,
+          organizationId: params.organizationId ?? existing.organizationId,
+          repositoryId: params.repositoryId ?? existing.repositoryId,
+          lastHeartbeatAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(agentExecutors.id, existing.id))
+        .returning();
+
+      return {
+        executor: updated,
+        registrationToken: existing.registrationToken ?? generateSecureToken(32),
+      };
+    }
+  }
+
+  // New executor — insert
   const registrationToken = generateSecureToken(32);
 
   const [executor] = await db
