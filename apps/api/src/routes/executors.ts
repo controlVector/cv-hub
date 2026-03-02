@@ -475,6 +475,21 @@ executors.post(
 );
 
 // ============================================================================
+// POST /api/v1/executors/:id/offline — Mark executor offline (session-end)
+// ============================================================================
+
+executors.post('/:id/offline', async (c) => {
+  const userId = getUserId(c);
+  const executor = await updateExecutorStatus(c.req.param('id'), userId, 'offline');
+
+  if (!executor) {
+    return c.json({ error: 'Executor not found' }, 404);
+  }
+
+  return c.json({ executor_id: executor.id, status: executor.status });
+});
+
+// ============================================================================
 // DELETE /api/v1/executors/:id — Unregister executor
 // ============================================================================
 

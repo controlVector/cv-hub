@@ -186,6 +186,34 @@ export async function updateExecutor(
   return updated || null;
 }
 
+// ==================== Sweep Stale Executors ====================
+
+/**
+ * Mark executors as offline if their last heartbeat exceeds the threshold.
+ * Returns the number of executors marked offline.
+ */
+export async function sweepStaleExecutors(
+  staleThresholdMinutes: number = 5,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - staleThresholdMinutes * 60 * 1000);
+
+  const result = await db
+    .update(agentExecutors)
+    .set({
+      status: 'offline',
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(agentExecutors.status, 'online'),
+        sql`${agentExecutors.lastHeartbeatAt} < ${cutoff}`,
+      ),
+    )
+    .returning({ id: agentExecutors.id });
+
+  return result.length;
+}
+
 // ==================== Unregister ====================
 
 export async function unregisterExecutor(
