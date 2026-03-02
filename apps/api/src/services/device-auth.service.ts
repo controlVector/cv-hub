@@ -2,7 +2,7 @@ import { randomBytes, createHash } from 'crypto';
 import { eq, and, gt, isNull } from 'drizzle-orm';
 
 import { db } from '../db';
-import { oauthClients, oauthAccessTokens, oauthRefreshTokens, users } from '../db/schema';
+import { oauthClients, oauthAccessTokens, oauthRefreshTokens, oauthConsents, users } from '../db/schema';
 import { env } from '../config/env';
 import { hashToken, generateSecureToken } from '../utils/crypto';
 import {
@@ -483,6 +483,22 @@ export async function exchangeDeviceCode(
       expiresAt: refreshExpiresAt,
     });
   }
+
+  // Record consent so the app appears in "Authorized Apps"
+  await db.insert(oauthConsents)
+    .values({
+      clientId: client.id,
+      userId: deviceAuth.userId,
+      scopes: deviceAuth.approvedScopes,
+    })
+    .onConflictDoUpdate({
+      target: [oauthConsents.clientId, oauthConsents.userId],
+      set: {
+        scopes: deviceAuth.approvedScopes,
+        updatedAt: new Date(),
+        revokedAt: null,
+      },
+    });
 
   // Clean up device auth data
   await deleteDeviceAuth(deviceCode);
