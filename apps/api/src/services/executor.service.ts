@@ -184,7 +184,11 @@ export async function updateExecutorStatus(
 
 export async function markExecutorTaskComplete(
   executorId: string,
+  userId?: string,
 ): Promise<void> {
+  const conditions = [eq(agentExecutors.id, executorId)];
+  if (userId) conditions.push(eq(agentExecutors.userId, userId));
+
   await db
     .update(agentExecutors)
     .set({
@@ -192,7 +196,7 @@ export async function markExecutorTaskComplete(
       lastTaskAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(agentExecutors.id, executorId));
+    .where(and(...conditions));
 }
 
 // ==================== Update (rename) ====================

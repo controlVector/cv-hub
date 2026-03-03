@@ -202,11 +202,16 @@ export async function claimNextTask(
 
 /**
  * Mark a task as running (executor started working on it).
+ * userId provides defense-in-depth (routes also validate executor ownership).
  */
 export async function startTask(
   taskId: string,
   executorId: string,
+  userId?: string,
 ): Promise<AgentTask | null> {
+  const conditions = [eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)];
+  if (userId) conditions.push(eq(agentTasks.userId, userId));
+
   const [updated] = await db
     .update(agentTasks)
     .set({
@@ -214,9 +219,7 @@ export async function startTask(
       startedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)),
-    )
+    .where(and(...conditions))
     .returning();
 
   return updated || null;
@@ -224,12 +227,17 @@ export async function startTask(
 
 /**
  * Complete a task with results.
+ * userId provides defense-in-depth (routes also validate executor ownership).
  */
 export async function completeTask(
   taskId: string,
   executorId: string,
   result: TaskResult,
+  userId?: string,
 ): Promise<AgentTask | null> {
+  const conditions = [eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)];
+  if (userId) conditions.push(eq(agentTasks.userId, userId));
+
   const [updated] = await db
     .update(agentTasks)
     .set({
@@ -238,9 +246,7 @@ export async function completeTask(
       completedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)),
-    )
+    .where(and(...conditions))
     .returning();
 
   return updated || null;
@@ -248,19 +254,22 @@ export async function completeTask(
 
 /**
  * Update task activity timestamp (heartbeat while running).
+ * userId provides defense-in-depth (routes also validate executor ownership).
  */
 export async function taskHeartbeat(
   taskId: string,
   executorId: string,
+  userId?: string,
 ): Promise<AgentTask | null> {
+  const conditions = [eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)];
+  if (userId) conditions.push(eq(agentTasks.userId, userId));
+
   const [updated] = await db
     .update(agentTasks)
     .set({
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)),
-    )
+    .where(and(...conditions))
     .returning();
 
   return updated || null;
@@ -268,12 +277,17 @@ export async function taskHeartbeat(
 
 /**
  * Fail a task with an error message.
+ * userId provides defense-in-depth (routes also validate executor ownership).
  */
 export async function failTask(
   taskId: string,
   executorId: string,
   error: string,
+  userId?: string,
 ): Promise<AgentTask | null> {
+  const conditions = [eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)];
+  if (userId) conditions.push(eq(agentTasks.userId, userId));
+
   const [updated] = await db
     .update(agentTasks)
     .set({
@@ -282,9 +296,7 @@ export async function failTask(
       completedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(
-      and(eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)),
-    )
+    .where(and(...conditions))
     .returning();
 
   return updated || null;

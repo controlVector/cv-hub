@@ -385,6 +385,17 @@ export function registerExecutorRelayTools(
     getAnnotations('respond_to_prompt'),
     async ({ prompt_id, response }) => {
       try {
+        // Verify the prompt belongs to a task owned by this user
+        const { getPrompt } = await import('../../services/task-prompt.service');
+        const prompt = await getPrompt(prompt_id);
+        if (!prompt) {
+          return { content: [{ type: 'text', text: 'Prompt not found or already answered' }], isError: true };
+        }
+        const task = await getAgentTask(prompt.taskId, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Prompt not found or already answered' }], isError: true };
+        }
+
         const updated = await respondToPrompt(prompt_id, response);
         if (!updated) {
           return { content: [{ type: 'text', text: 'Prompt not found or already answered' }], isError: true };

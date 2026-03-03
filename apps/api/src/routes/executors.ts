@@ -379,7 +379,7 @@ executors.post('/:id/tasks/:taskId/start', async (c) => {
   // Update executor status to busy
   await updateExecutorStatus(executorId, userId, 'busy');
 
-  const task = await startTask(taskId, executorId);
+  const task = await startTask(taskId, executorId, userId);
   if (!task) {
     return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
   }
@@ -431,7 +431,7 @@ executors.post(
       filesCreated: body.files_created,
       output: body.output,
       artifacts: body.artifacts,
-    });
+    }, userId);
 
     if (!task) {
       return c.json(
@@ -441,7 +441,7 @@ executors.post(
     }
 
     // Mark executor as available again
-    await markExecutorTaskComplete(executorId);
+    await markExecutorTaskComplete(executorId, userId);
 
     return c.json({
       task_id: task.id,
@@ -473,7 +473,7 @@ executors.post(
       return c.json({ error: 'Executor not found' }, 404);
     }
 
-    const task = await failTask(taskId, executorId, body.error);
+    const task = await failTask(taskId, executorId, body.error, userId);
 
     if (!task) {
       return c.json(
@@ -483,7 +483,7 @@ executors.post(
     }
 
     // Mark executor as available again
-    await markExecutorTaskComplete(executorId);
+    await markExecutorTaskComplete(executorId, userId);
 
     return c.json({
       task_id: task.id,
@@ -508,7 +508,7 @@ executors.post('/:id/tasks/:taskId/heartbeat', async (c) => {
     return c.json({ error: 'Executor not found' }, 404);
   }
 
-  const task = await taskHeartbeat(taskId, executorId);
+  const task = await taskHeartbeat(taskId, executorId, userId);
   if (!task) {
     return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
   }
