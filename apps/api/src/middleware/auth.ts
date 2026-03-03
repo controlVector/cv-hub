@@ -3,6 +3,7 @@ import { getCookie } from 'hono/cookie';
 import { verifyAccessToken } from '../services/token.service';
 import { getSessionUser } from '../services/session.service';
 import { validateToken } from '../services/pat.service';
+import { validateOAuthAccessToken } from '../services/oauth.service';
 import { AuthenticationError } from '../utils/errors';
 import { authLogger } from '../utils/logger';
 
@@ -37,11 +38,22 @@ export async function requireAuth(c: Context, next: Next) {
     const payload = await verifyAccessToken(token);
     c.set('userId', payload.sub);
     c.set('sessionId', payload.sid);
+    await next();
+    return;
   } catch {
-    throw new AuthenticationError('Invalid or expired access token');
+    // Not a valid JWT — fall through to OAuth token check
   }
 
-  await next();
+  // 3. Try OAuth access token (hash lookup in oauth_access_tokens)
+  const oauthResult = await validateOAuthAccessToken(token);
+  if (oauthResult) {
+    c.set('userId', oauthResult.userId);
+    c.set('tokenScopes', oauthResult.scopes ?? []);
+    await next();
+    return;
+  }
+
+  throw new AuthenticationError('Invalid or expired access token');
 }
 
 export async function optionalAuth(c: Context, next: Next) {
@@ -72,7 +84,16 @@ export async function optionalAuth(c: Context, next: Next) {
         await next();
         return;
       } catch {
-        // Ignore invalid tokens, try cookie auth
+        // Not JWT — try OAuth access token
+      }
+
+      // Try OAuth access token
+      const oauthResult = await validateOAuthAccessToken(token);
+      if (oauthResult) {
+        c.set('userId', oauthResult.userId);
+        c.set('tokenScopes', oauthResult.scopes ?? []);
+        await next();
+        return;
       }
     }
   }

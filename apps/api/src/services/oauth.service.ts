@@ -632,3 +632,40 @@ export async function createOAuthClient(params: {
 
   return { clientId, clientSecret };
 }
+
+// ============================================================================
+// OAuth Access Token Validation (for auth middleware fallback)
+// ============================================================================
+
+export interface OAuthTokenResult {
+  userId: string;
+  scopes: string[];
+  clientId: string;
+}
+
+/**
+ * Validate an OAuth access token by hash lookup in oauth_access_tokens.
+ * Used as a fallback when a Bearer token is not a PAT and not a JWT.
+ */
+export async function validateOAuthAccessToken(token: string): Promise<OAuthTokenResult | null> {
+  const tokenHash = hashToken(token);
+
+  const [record] = await db
+    .select()
+    .from(oauthAccessTokens)
+    .where(
+      and(
+        eq(oauthAccessTokens.tokenHash, tokenHash),
+        gt(oauthAccessTokens.expiresAt, new Date()),
+        isNull(oauthAccessTokens.revokedAt),
+      ),
+    );
+
+  if (!record) return null;
+
+  return {
+    userId: record.userId,
+    scopes: (record.scopes as string[]) ?? [],
+    clientId: record.clientId,
+  };
+}
