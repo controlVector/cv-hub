@@ -621,4 +621,92 @@ cvGitRoutes.get('/repos/:owner/:repo/compare/:baseHead', optionalAuth, async (c)
   }
 });
 
+// ============================================================================
+// File Write Endpoints (push_file — used by MCP and CLI)
+// ============================================================================
+
+/**
+ * PUT /api/v1/repos/:owner/:repo/contents/*path
+ * Create or update a file in a repository with a commit.
+ * Requires write access. Uses git plumbing (no worktree needed).
+ */
+const pushFileSchema = z.object({
+  content: z.string().describe('File content (UTF-8 text)'),
+  message: z.string().min(1).max(500).describe('Commit message'),
+  branch: z.string().optional().describe('Target branch (defaults to repo default branch)'),
+});
+
+cvGitRoutes.put('/repos/:owner/:repo/contents/*', requireAuth, zValidator('json', pushFileSchema), async (c) => {
+  const { owner, repo: repoSlug } = c.req.param();
+  const filePath = c.req.path.split('/contents/')[1];
+  const userId = c.get('userId')!;
+  const body = c.req.valid('json');
+
+  if (!filePath) {
+    return c.json({ error: 'File path is required' }, 400);
+  }
+
+  const repository = await getRepositoryByOwnerAndSlug(owner, repoSlug);
+  if (!repository) {
+    throw new NotFoundError('Repository');
+  }
+
+  const canWrite = await canUserWriteToRepo(repository.id, userId);
+  if (!canWrite) {
+    throw new ForbiddenError('You do not have write access to this repository');
+  }
+
+  if (repository.provider !== 'local') {
+    return c.json({
+      error: 'File push not available for external repositories',
+      code: 'EXTERNAL_REPO',
+    }, 400);
+  }
+
+  // Get user for commit author
+  const user = await getUserById(userId);
+  if (!user) {
+    throw new NotFoundError('User');
+  }
+
+  const branch = body.branch || repository.defaultBranch || 'main';
+  const author = {
+    name: user.name || user.username,
+    email: user.email,
+  };
+
+  try {
+    const commitSha = await gitBackend.commitFileToRef(
+      owner,
+      repoSlug,
+      branch,
+      filePath,
+      body.content,
+      body.message,
+      author,
+    );
+
+    if (commitSha === null) {
+      return c.json({
+        message: 'File content unchanged — no commit created',
+        path: filePath,
+        branch,
+      });
+    }
+
+    return c.json({
+      commit_sha: commitSha,
+      path: filePath,
+      branch,
+      message: body.message,
+      author: { name: author.name, email: author.email },
+    }, 201);
+  } catch (error: any) {
+    if (error.message.includes('does not exist')) {
+      return c.json({ error: `Branch '${branch}' does not exist` }, 404);
+    }
+    throw error;
+  }
+});
+
 export default cvGitRoutes;

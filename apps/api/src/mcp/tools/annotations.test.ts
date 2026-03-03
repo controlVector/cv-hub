@@ -33,7 +33,7 @@ const DESTRUCTIVE_TOOLS = ['merge_pull', 'cancel_run', 'cancel_task', 'delete_pi
 const WRITE_TOOLS = [
   'create_repo', 'create_pull', 'create_issue', 'create_task',
   'trigger_pipeline', 'create_pipeline',
-  'respond_to_prompt',
+  'respond_to_prompt', 'push_file',
 ];
 
 describe('toolAnnotations', () => {

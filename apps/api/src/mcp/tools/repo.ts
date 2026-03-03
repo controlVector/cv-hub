@@ -395,4 +395,82 @@ export function registerRepoTools(
       }
     },
   );
+
+  // ── push_file ────────────────────────────────────────────────────────
+  server.tool(
+    'push_file',
+    'Create or update a file in a repository by committing it to a branch. Use this to push design specs, configuration, docs, or code directly to a repo.',
+    {
+      owner: z.string().describe('Repository owner (username or org slug)'),
+      repo: z.string().describe('Repository slug'),
+      path: z.string().describe('File path in the repo (e.g. "docs/spec.md", "src/config.ts")'),
+      content: z.string().describe('File content (UTF-8 text)'),
+      message: z.string().describe('Commit message'),
+      branch: z.string().optional().describe('Target branch (defaults to repo default branch)'),
+    },
+    getAnnotations('push_file'),
+    async ({ owner, repo: repoSlug, path, content, message, branch }) => {
+      if (!hasWrite) {
+        return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
+      }
+      try {
+        const repository = await resolveRepo(owner, repoSlug, userId);
+        if (!repository) {
+          return { content: [{ type: 'text', text: 'Repository not found or access denied' }], isError: true };
+        }
+
+        if (repository.provider !== 'local') {
+          return { content: [{ type: 'text', text: 'push_file is only supported for local repositories' }], isError: true };
+        }
+
+        const user = await getUserById(userId);
+        if (!user) {
+          return { content: [{ type: 'text', text: 'User not found' }], isError: true };
+        }
+
+        const targetBranch = branch || repository.defaultBranch || 'main';
+        const author = { name: user.name || user.username, email: user.email };
+
+        const commitSha = await gitBackend.commitFileToRef(
+          owner,
+          repoSlug,
+          targetBranch,
+          path,
+          content,
+          message,
+          author,
+        );
+
+        if (commitSha === null) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                status: 'unchanged',
+                message: 'File content identical — no commit created',
+                path,
+                branch: targetBranch,
+              }, null, 2),
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: 'committed',
+              commit_sha: commitSha,
+              path,
+              branch: targetBranch,
+              message,
+              author: { name: author.name, email: author.email },
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error pushing file: ${err.message}` }], isError: true };
+      }
+    },
+  );
 }

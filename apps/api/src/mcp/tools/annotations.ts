@@ -60,6 +60,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   get_commit: READ_ONLY,
   get_commit_history: READ_ONLY,
   create_repo: WRITE_SAFE,
+  push_file: WRITE_SAFE,
 
   // ── Pull Request tools ─────────────────────────────────
   list_pulls: READ_ONLY,
