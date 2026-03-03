@@ -129,6 +129,16 @@ function formatUser(u: {
   };
 }
 
+function getGitCloneUrl(owner: string, repoSlug: string): string {
+  try {
+    const url = new URL(env.API_URL);
+    const gitHost = url.hostname.replace(/^api\./, 'git.');
+    return `https://${gitHost}/${owner}/${repoSlug}.git`;
+  } catch {
+    return `${env.API_URL}/git/${owner}/${repoSlug}.git`;
+  }
+}
+
 function formatRepo(repo: {
   id: string;
   name: string;
@@ -159,7 +169,7 @@ function formatRepo(repo: {
     open_issue_count: repo.openIssueCount,
     open_pr_count: repo.openPrCount,
     is_archived: repo.isArchived,
-    clone_url: `${env.API_URL}/git/${ownerSlug}/${repo.slug}.git`,
+    clone_url: getGitCloneUrl(ownerSlug, repo.slug),
     ssh_url: `git@${brand.domain}:${ownerSlug}/${repo.slug}.git`,
     web_url: `${env.APP_URL}/${ownerSlug}/${repo.slug}`,
     created_at: repo.createdAt.toISOString(),

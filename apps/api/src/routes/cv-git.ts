@@ -123,7 +123,13 @@ cvGitRoutes.get('/auth/whoami', requireAuth, async (c) => {
  * Helper to build clone URL for a repository
  */
 function getCloneUrl(owner: string, repo: string): string {
-  return `${env.API_URL}/git/${owner}/${repo}`;
+  try {
+    const url = new URL(env.API_URL);
+    const gitHost = url.hostname.replace(/^api\./, 'git.');
+    return `https://${gitHost}/${owner}/${repo}.git`;
+  } catch {
+    return `${env.API_URL}/git/${owner}/${repo}`;
+  }
 }
 
 /**
