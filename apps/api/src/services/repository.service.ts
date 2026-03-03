@@ -838,31 +838,37 @@ export async function getUserAccessibleRepositories(
   // Build conditions
   const conditions = [];
 
-  // User's own repos OR member repos OR org repos OR public repos
-  conditions.push(
-    or(
-      eq(repositories.userId, userId),
-      memberRepoIds.length > 0
-        ? or(...memberRepoIds.map((id) => eq(repositories.id, id)))
-        : sql`false`,
-      orgIds.length > 0
-        ? or(...orgIds.map((id) => eq(repositories.organizationId, id)))
-        : sql`false`,
-      eq(repositories.visibility, 'public')
-    )!
-  );
-
-  if (!includeArchived) conditions.push(eq(repositories.isArchived, false));
+  // Ownership clause: user's own repos OR member repos OR org repos
+  const ownershipClauses = [
+    eq(repositories.userId, userId),
+    memberRepoIds.length > 0
+      ? or(...memberRepoIds.map((id) => eq(repositories.id, id)))!
+      : sql`false`,
+    orgIds.length > 0
+      ? or(...orgIds.map((id) => eq(repositories.organizationId, id)))!
+      : sql`false`,
+  ];
 
   if (search) {
+    // When searching, also include matching public repos (discovery)
+    const searchCondition = or(
+      ilike(repositories.name, `%${search}%`),
+      ilike(repositories.slug, `%${search}%`),
+      ilike(repositories.description, `%${search}%`)
+    )!;
+
     conditions.push(
       or(
-        ilike(repositories.name, `%${search}%`),
-        ilike(repositories.slug, `%${search}%`),
-        ilike(repositories.description, `%${search}%`)
+        or(...ownershipClauses),
+        and(eq(repositories.visibility, 'public'), searchCondition)
       )!
     );
+  } else {
+    // No search: only user's own, member, or org repos
+    conditions.push(or(...ownershipClauses)!);
   }
+
+  if (!includeArchived) conditions.push(eq(repositories.isArchived, false));
 
   const repoList = await db.query.repositories.findMany({
     where: and(...conditions),
