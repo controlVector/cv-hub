@@ -18,6 +18,7 @@ import {
   startTask,
   completeTask,
   failTask,
+  taskHeartbeat,
 } from '../services/agent-task.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 import { getUserAccessibleRepositories } from '../services/repository.service';
@@ -492,6 +493,32 @@ executors.post(
     });
   },
 );
+
+// ============================================================================
+// POST /api/v1/executors/:id/tasks/:taskId/heartbeat — Task activity heartbeat
+// ============================================================================
+
+executors.post('/:id/tasks/:taskId/heartbeat', async (c) => {
+  const userId = getUserId(c);
+  const executorId = c.req.param('id');
+  const taskId = c.req.param('taskId');
+
+  const executor = await getExecutor(executorId, userId);
+  if (!executor) {
+    return c.json({ error: 'Executor not found' }, 404);
+  }
+
+  const task = await taskHeartbeat(taskId, executorId);
+  if (!task) {
+    return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
+  }
+
+  return c.json({
+    task_id: task.id,
+    status: task.status,
+    updated_at: task.updatedAt,
+  });
+});
 
 // ============================================================================
 // POST /api/v1/executors/:id/offline — Mark executor offline (session-end)

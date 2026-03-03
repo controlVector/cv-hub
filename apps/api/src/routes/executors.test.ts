@@ -1,6 +1,7 @@
 /**
  * Executor Routes Tests
- * Unit tests for resolveOrganizationId logic, PATCH rename, and POST offline endpoint
+ * Unit tests for resolveOrganizationId, task lifecycle (poll/start/complete/fail/heartbeat),
+ * PATCH rename, and POST offline endpoint
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -32,6 +33,7 @@ vi.mock('../services/agent-task.service', () => ({
   startTask: vi.fn(),
   completeTask: vi.fn(),
   failTask: vi.fn(),
+  taskHeartbeat: vi.fn(),
 }));
 
 // Mock auth middleware — auto-set userId
@@ -45,7 +47,8 @@ vi.mock('../middleware/auth', () => ({
 
 import { resolveOrganizationId, executorRoutes } from './executors';
 import { getUserOrgRole, getUserOrganizations } from '../services/organization.service';
-import { updateExecutorStatus, updateExecutor, registerExecutor } from '../services/executor.service';
+import { getExecutor, updateExecutorStatus, updateExecutor, registerExecutor, heartbeat, markExecutorTaskComplete } from '../services/executor.service';
+import { claimNextTask, startTask, completeTask, failTask, taskHeartbeat } from '../services/agent-task.service';
 import { getUserAccessibleRepositories } from '../services/repository.service';
 
 const mockGetUserOrgRole = vi.mocked(getUserOrgRole);
@@ -357,5 +360,233 @@ describe('POST / (registration with repo resolution)', () => {
     expect(res.status).toBe(201);
     // Should NOT call getUserAccessibleRepositories since explicit ID was given
     expect(mockGetUserAccessibleRepositories).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// Task lifecycle route tests (poll, start, complete, fail, heartbeat)
+// ============================================================================
+
+const EXEC_ID = 'eeee0000-0000-0000-0000-000000000001';
+const TASK_ID = 'tttt0000-0000-0000-0000-000000000001';
+
+const mockGetExecutor = vi.mocked(getExecutor);
+const mockClaimNextTask = vi.mocked(claimNextTask);
+const mockStartTask = vi.mocked(startTask);
+const mockCompleteTask = vi.mocked(completeTask);
+const mockFailTask = vi.mocked(failTask);
+const mockTaskHeartbeat = vi.mocked(taskHeartbeat);
+const mockHeartbeat = vi.mocked(heartbeat);
+const mockMarkExecutorTaskComplete = vi.mocked(markExecutorTaskComplete);
+
+const fakeExecutor = {
+  id: EXEC_ID,
+  userId: 'test-user-id',
+  name: 'test-exec',
+  machineName: 'z840',
+  type: 'claude_code' as const,
+  status: 'online' as const,
+  capabilities: null,
+  workspaceRoot: null,
+  repos: null,
+  organizationId: null,
+  repositoryId: null,
+  registrationToken: 'tok-abc',
+  lastHeartbeatAt: new Date(),
+  lastTaskAt: null,
+  metadata: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const now = new Date();
+const fakeTask = {
+  id: TASK_ID,
+  userId: 'test-user-id',
+  executorId: EXEC_ID,
+  threadId: null,
+  title: 'Build the site',
+  description: 'Full instructions here',
+  taskType: 'code_change' as const,
+  status: 'assigned' as const,
+  priority: 'high' as const,
+  input: { description: 'build it' },
+  result: null,
+  error: null,
+  repositoryId: null,
+  branch: 'main',
+  filePaths: null,
+  mcpSessionId: null,
+  parentTaskId: null,
+  metadata: null,
+  startedAt: null,
+  completedAt: null,
+  timeoutAt: new Date(now.getTime() + 30 * 60 * 1000),
+  createdAt: now,
+  updatedAt: now,
+};
+
+describe('POST /:id/poll (claim task)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should claim a pending task and return it', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockHeartbeat.mockResolvedValue(fakeExecutor as any);
+    mockClaimNextTask.mockResolvedValue(fakeTask as any);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/poll`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.task).toBeDefined();
+    expect(body.task.id).toBe(TASK_ID);
+    expect(body.task.title).toBe('Build the site');
+    expect(body.task.priority).toBe('high');
+  });
+
+  it('should return null task when nothing pending', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockHeartbeat.mockResolvedValue(fakeExecutor as any);
+    mockClaimNextTask.mockResolvedValue(null);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/poll`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.task).toBeNull();
+    expect(body.message).toMatch(/No tasks/);
+  });
+
+  it('should return 404 for unknown executor', async () => {
+    mockGetExecutor.mockResolvedValue(null);
+
+    const res = await executorRoutes.request('/unknown-exec/poll', { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /:id/tasks/:taskId/start', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should mark task as running', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockStartTask.mockResolvedValue({ ...fakeTask, status: 'running', startedAt: now } as any);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('running');
+    expect(body.started_at).toBeDefined();
+  });
+
+  it('should return 404 for task not assigned to this executor', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockStartTask.mockResolvedValue(null);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /:id/tasks/:taskId/complete', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should complete task with result', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockCompleteTask.mockResolvedValue({
+      ...fakeTask,
+      status: 'completed',
+      result: { summary: 'Built 7 files' },
+      completedAt: now,
+    } as any);
+    mockMarkExecutorTaskComplete.mockResolvedValue(undefined as any);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: 'Built 7 files', files_modified: ['index.ts'] }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('completed');
+    expect(body.completed_at).toBeDefined();
+    expect(mockMarkExecutorTaskComplete).toHaveBeenCalledWith(EXEC_ID);
+  });
+
+  it('should return 404 when task not assigned to executor', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockCompleteTask.mockResolvedValue(null);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: 'done' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /:id/tasks/:taskId/fail', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should fail task with error', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockFailTask.mockResolvedValue({
+      ...fakeTask,
+      status: 'failed',
+      error: 'Build failed: missing dep',
+      completedAt: now,
+    } as any);
+    mockMarkExecutorTaskComplete.mockResolvedValue(undefined as any);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/fail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Build failed: missing dep' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('failed');
+    expect(body.error).toBe('Build failed: missing dep');
+    expect(mockMarkExecutorTaskComplete).toHaveBeenCalledWith(EXEC_ID);
+  });
+
+  it('should return 404 for wrong executor', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockFailTask.mockResolvedValue(null);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/fail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'some error' }),
+    });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /:id/tasks/:taskId/heartbeat', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should update task activity timestamp', async () => {
+    const updatedAt = new Date();
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockTaskHeartbeat.mockResolvedValue({ ...fakeTask, updatedAt } as any);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/heartbeat`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.task_id).toBe(TASK_ID);
+    expect(body.status).toBe('assigned');
+    expect(body.updated_at).toBeDefined();
+  });
+
+  it('should return 404 for task not assigned to executor', async () => {
+    mockGetExecutor.mockResolvedValue(fakeExecutor as any);
+    mockTaskHeartbeat.mockResolvedValue(null);
+
+    const res = await executorRoutes.request(`/${EXEC_ID}/tasks/${TASK_ID}/heartbeat`, { method: 'POST' });
+    expect(res.status).toBe(404);
   });
 });

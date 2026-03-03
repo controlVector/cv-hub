@@ -247,6 +247,26 @@ export async function completeTask(
 }
 
 /**
+ * Update task activity timestamp (heartbeat while running).
+ */
+export async function taskHeartbeat(
+  taskId: string,
+  executorId: string,
+): Promise<AgentTask | null> {
+  const [updated] = await db
+    .update(agentTasks)
+    .set({
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(agentTasks.id, taskId), eq(agentTasks.executorId, executorId)),
+    )
+    .returning();
+
+  return updated || null;
+}
+
+/**
  * Fail a task with an error message.
  */
 export async function failTask(
