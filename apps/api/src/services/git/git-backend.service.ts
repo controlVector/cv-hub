@@ -1159,28 +1159,36 @@ export async function commitFileToRef(
   const repoPath = getRepoPath(ownerSlug, repoSlug);
   const branch = ref.replace(/^refs\/heads\//, '');
 
+  // Ensure bare repo exists on disk (lazy-init)
+  const exists = await repoExists(ownerSlug, repoSlug);
+  if (!exists) {
+    await initBareRepo(ownerSlug, repoSlug, branch);
+  }
+
   // 1. Create blob
   const newBlobSha = (await execGitWithStdin(
     repoPath, ['hash-object', '-w', '--stdin'], content
   )).trim();
 
-  // 2. Resolve branch ref
-  let refSha: string;
+  // 2. Resolve branch ref (may not exist for empty repos)
+  let refSha: string | null = null;
   try {
     refSha = (await execGit(repoPath, ['rev-parse', `refs/heads/${branch}`])).trim();
   } catch {
-    throw new Error(`Branch '${branch}' does not exist`);
+    // Branch doesn't exist — could be an empty repo (root commit)
   }
 
-  // 3. Idempotency check — see if the file already has this blob SHA
-  try {
-    const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', filePath]);
-    const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
-    if (match && match[2] === newBlobSha) {
-      return null; // Content unchanged
+  // 3. Idempotency check (only if branch exists)
+  if (refSha) {
+    try {
+      const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', filePath]);
+      const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
+      if (match && match[2] === newBlobSha) {
+        return null; // Content unchanged
+      }
+    } catch {
+      // File doesn't exist yet — that's fine
     }
-  } catch {
-    // File doesn't exist yet — that's fine
   }
 
   // 4. Build tree hierarchy bottom-up for nested paths
@@ -1189,10 +1197,14 @@ export async function commitFileToRef(
 
   // Walk down the existing tree to find SHA for each directory level
   const dirShas: (string | null)[] = [];
-  let currentTreeSha: string = refSha;
+  let currentTreeSha: string = refSha || '';
 
   // Resolve each intermediate directory's tree SHA
   for (const dir of parts) {
+    if (!currentTreeSha) {
+      dirShas.push(null);
+      continue;
+    }
     try {
       const output = await execGit(repoPath, ['ls-tree', currentTreeSha, '--', dir]);
       const match = output.match(/^(\d+)\s+tree\s+([a-f0-9]+)\t/);
@@ -1226,7 +1238,7 @@ export async function commitFileToRef(
   // Build the root tree
   const newRootTree = await buildModifiedTree(repoPath, refSha, childName, childMode, childType, childSha);
 
-  // 5. Create commit
+  // 5. Create commit (root commit if no parent)
   const timestamp = Math.floor(Date.now() / 1000);
   const gitEnv = {
     GIT_AUTHOR_NAME: author.name,
@@ -1237,10 +1249,15 @@ export async function commitFileToRef(
     GIT_COMMITTER_DATE: `${timestamp} +0000`,
   };
 
+  const commitArgs = ['commit-tree', newRootTree, '-m', message];
+  if (refSha) {
+    commitArgs.push('-p', refSha);
+  }
+
   const commitHash = await new Promise<string>((resolve, reject) => {
     const proc = spawn(
       'git',
-      ['commit-tree', newRootTree, '-p', refSha, '-m', message],
+      commitArgs,
       { cwd: repoPath, env: { ...process.env, ...gitEnv } }
     );
     let stdout = '';
@@ -1254,8 +1271,12 @@ export async function commitFileToRef(
     proc.on('error', reject);
   });
 
-  // 6. Update branch ref
-  await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
+  // 6. Update branch ref (create or update)
+  if (refSha) {
+    await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
+  } else {
+    await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash]);
+  }
 
   return commitHash;
 }
@@ -1275,32 +1296,40 @@ export async function commitFilesToRef(
   const repoPath = getRepoPath(ownerSlug, repoSlug);
   const branch = ref.replace(/^refs\/heads\//, '');
 
-  // Resolve branch ref
-  let refSha: string;
+  // Ensure bare repo exists on disk (lazy-init)
+  const exists = await repoExists(ownerSlug, repoSlug);
+  if (!exists) {
+    await initBareRepo(ownerSlug, repoSlug, branch);
+  }
+
+  // Resolve branch ref (may not exist for empty repos)
+  let refSha: string | null = null;
   try {
     refSha = (await execGit(repoPath, ['rev-parse', `refs/heads/${branch}`])).trim();
   } catch {
-    throw new Error(`Branch '${branch}' does not exist`);
+    // Branch doesn't exist — empty repo (root commit)
   }
 
   // Create blobs and check for changes
   const blobEntries: Array<{ path: string; sha: string }> = [];
-  let hasChanges = false;
+  let hasChanges = !refSha; // Empty repo always has changes
 
   for (const file of files) {
     const blobSha = (await execGitWithStdin(
       repoPath, ['hash-object', '-w', '--stdin'], file.content
     )).trim();
 
-    // Check if content changed
-    try {
-      const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', file.path]);
-      const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
-      if (!match || match[2] !== blobSha) {
-        hasChanges = true;
+    // Check if content changed (only if branch exists)
+    if (refSha) {
+      try {
+        const lsOutput = await execGit(repoPath, ['ls-tree', refSha, '--', file.path]);
+        const match = lsOutput.match(/^(\d+)\s+blob\s+([a-f0-9]+)\t/);
+        if (!match || match[2] !== blobSha) {
+          hasChanges = true;
+        }
+      } catch {
+        hasChanges = true; // File doesn't exist yet
       }
-    } catch {
-      hasChanges = true; // File doesn't exist yet
     }
 
     blobEntries.push({ path: file.path, sha: blobSha });
@@ -1310,7 +1339,6 @@ export async function commitFilesToRef(
     return null; // All files unchanged
   }
 
-  // Use read-tree + update-index approach via mktree for multiple files
   // Build the complete tree by applying each file change sequentially
   let currentRootSha = refSha;
 
@@ -1320,9 +1348,13 @@ export async function commitFilesToRef(
 
     // Walk down to find existing directory SHAs
     const dirShas: (string | null)[] = [];
-    let walkSha: string = currentRootSha;
+    let walkSha: string = currentRootSha || '';
 
     for (const dir of parts) {
+      if (!walkSha) {
+        dirShas.push(null);
+        continue;
+      }
       try {
         const output = await execGit(repoPath, ['ls-tree', walkSha, '--', dir]);
         const match = output.match(/^(\d+)\s+tree\s+([a-f0-9]+)\t/);
@@ -1355,7 +1387,7 @@ export async function commitFilesToRef(
     currentRootSha = await buildModifiedTree(repoPath, currentRootSha, childName, childMode, childType, childSha);
   }
 
-  // Create commit
+  // Create commit (root commit if no parent)
   const timestamp = Math.floor(Date.now() / 1000);
   const gitEnv = {
     GIT_AUTHOR_NAME: author.name,
@@ -1366,10 +1398,15 @@ export async function commitFilesToRef(
     GIT_COMMITTER_DATE: `${timestamp} +0000`,
   };
 
+  const commitArgs = ['commit-tree', currentRootSha!, '-m', message];
+  if (refSha) {
+    commitArgs.push('-p', refSha);
+  }
+
   const commitHash = await new Promise<string>((resolve, reject) => {
     const proc = spawn(
       'git',
-      ['commit-tree', currentRootSha, '-p', refSha, '-m', message],
+      commitArgs,
       { cwd: repoPath, env: { ...process.env, ...gitEnv } }
     );
     let stdout = '';
@@ -1383,6 +1420,10 @@ export async function commitFilesToRef(
     proc.on('error', reject);
   });
 
-  await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
+  if (refSha) {
+    await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash, refSha]);
+  } else {
+    await execGit(repoPath, ['update-ref', `refs/heads/${branch}`, commitHash]);
+  }
   return commitHash;
 }

@@ -17,6 +17,7 @@ import { getUserById } from '../../services/user.service';
 import { db } from '../../db';
 import { branches, organizations } from '../../db/schema';
 import { eq } from 'drizzle-orm';
+import { env } from '../../config/env';
 
 async function resolveRepo(owner: string, repoSlug: string, userId: string) {
   const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
@@ -24,6 +25,20 @@ async function resolveRepo(owner: string, repoSlug: string, userId: string) {
     return null;
   }
   return repo;
+}
+
+/**
+ * Derive the git clone URL from the API URL.
+ * api.hub.controlvector.io → https://git.hub.controlvector.io/owner/repo.git
+ */
+function getCloneUrl(owner: string, repoSlug: string): string {
+  try {
+    const url = new URL(env.API_URL);
+    const gitHost = url.hostname.replace(/^api\./, 'git.');
+    return `https://${gitHost}/${owner}/${repoSlug}.git`;
+  } catch {
+    return `${env.API_URL}/git/${owner}/${repoSlug}`;
+  }
 }
 
 export function registerRepoTools(
@@ -49,16 +64,20 @@ export function registerRepoTools(
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:read required' }], isError: true };
       }
       const repos = await getUserAccessibleRepositories(userId, { search, limit });
-      const data = repos.map((r) => ({
-        name: r.name,
-        slug: r.slug,
-        owner: r.owner?.slug ?? null,
-        visibility: r.visibility,
-        description: r.description,
-        default_branch: r.defaultBranch,
-        updated_at: r.updatedAt?.toISOString() ?? null,
-        branch_count: r.branchCount,
-      }));
+      const data = repos.map((r) => {
+        const ownerSlug = r.owner?.slug ?? null;
+        return {
+          name: r.name,
+          slug: r.slug,
+          owner: ownerSlug,
+          visibility: r.visibility,
+          description: r.description,
+          default_branch: r.defaultBranch,
+          clone_url: ownerSlug ? getCloneUrl(ownerSlug, r.slug) : null,
+          updated_at: r.updatedAt?.toISOString() ?? null,
+          branch_count: r.branchCount,
+        };
+      });
       return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
     },
   );
@@ -80,6 +99,7 @@ export function registerRepoTools(
       if (!repoData) {
         return { content: [{ type: 'text', text: 'Repository not found or access denied' }], isError: true };
       }
+      const ownerSlug = repoData.owner?.slug ?? owner;
       return {
         content: [{
           type: 'text',
@@ -87,10 +107,11 @@ export function registerRepoTools(
             id: repoData.id,
             name: repoData.name,
             slug: repoData.slug,
-            owner: repoData.owner?.slug ?? null,
+            owner: ownerSlug,
             visibility: repoData.visibility,
             description: repoData.description,
             default_branch: repoData.defaultBranch,
+            clone_url: getCloneUrl(ownerSlug, repoData.slug),
             is_archived: repoData.isArchived,
             created_at: repoData.createdAt?.toISOString() ?? null,
             updated_at: repoData.updatedAt?.toISOString() ?? null,
@@ -209,9 +230,10 @@ export function registerRepoTools(
       is_private: z.boolean().optional().describe('Whether the repository is private (default false)'),
       default_branch: z.string().optional().describe('Default branch name (default "main")'),
       org: z.string().optional().describe('Organization slug (creates under org instead of user)'),
+      auto_init: z.boolean().optional().describe('Initialize with a README commit (default false)'),
     },
     getAnnotations('create_repo'),
-    async ({ name, description, is_private, default_branch, org }) => {
+    async ({ name, description, is_private, default_branch, org, auto_init }) => {
       if (!hasWrite) {
         return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
       }
@@ -248,10 +270,20 @@ export function registerRepoTools(
         );
 
         const user = await getUserById(userId);
-        const full = await getRepositoryByOwnerAndSlug(
-          org ?? user!.username,
-          slug,
-        );
+        const ownerSlug = org ?? user!.username;
+        const branch = default_branch ?? 'main';
+
+        // Auto-initialize with README if requested
+        let initCommitSha: string | null = null;
+        if (auto_init) {
+          const readmeContent = `# ${name}\n\n${description || ''}\n`;
+          const author = { name: user!.name || user!.username, email: user!.email };
+          initCommitSha = await gitBackend.commitFileToRef(
+            ownerSlug, slug, branch, 'README.md', readmeContent, 'Initial commit', author,
+          );
+        }
+
+        const full = await getRepositoryByOwnerAndSlug(ownerSlug, slug);
 
         return {
           content: [{
@@ -260,8 +292,11 @@ export function registerRepoTools(
               id: (full ?? repo).id,
               name: (full ?? repo).name,
               slug: (full ?? repo).slug,
+              owner: ownerSlug,
               visibility: (full ?? repo).visibility,
               default_branch: (full ?? repo).defaultBranch,
+              clone_url: getCloneUrl(ownerSlug, slug),
+              initialized: !!initCommitSha,
             }, null, 2),
           }],
         };
