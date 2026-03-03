@@ -146,6 +146,7 @@ app.route('/api/user/tokens', patRoutes);
 
 // Device Authorization API (RFC 8628 - OAuth 2.0 Device Authorization Grant)
 app.route('/oauth/device', deviceAuthRoutes);
+app.route('/api/oauth/device', deviceAuthRoutes); // Also at /api/oauth/device for frontend convenience
 
 // Pricing API (tiers, calculator, quotes)
 app.route('/api/pricing', pricingRoutes);

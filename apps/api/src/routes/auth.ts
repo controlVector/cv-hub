@@ -381,7 +381,16 @@ auth.get('/me', requireAuth, async (c) => {
     throw new AuthenticationError('User not found');
   }
 
-  return c.json({ user });
+  // Include organizations for CLI credential setup
+  const { getUserOrganizations } = await import('../services/organization.service');
+  const orgs = await getUserOrganizations(userId);
+  const organizations = orgs.map((o) => ({
+    id: o.id,
+    slug: o.slug,
+    name: o.name,
+  }));
+
+  return c.json({ user, organizations });
 });
 
 // POST /api/auth/verify-email
