@@ -205,6 +205,10 @@ export function registerExecutorRelayTools(
           return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
         }
 
+        const elapsed = task.startedAt
+          ? Math.round(((task.completedAt ?? new Date()).getTime() - task.startedAt.getTime()) / 1000)
+          : null;
+
         return {
           content: [{
             type: 'text',
@@ -223,6 +227,7 @@ export function registerExecutorRelayTools(
               branch: task.branch,
               file_paths: task.filePaths,
               parent_task_id: task.parentTaskId,
+              elapsed_seconds: elapsed,
               created_at: task.createdAt.toISOString(),
               started_at: task.startedAt?.toISOString() ?? null,
               completed_at: task.completedAt?.toISOString() ?? null,
@@ -287,6 +292,12 @@ export function registerExecutorRelayTools(
 
         const results = [];
         for (const t of tasks) {
+          const elapsed = t.startedAt
+            ? Math.round((Date.now() - t.startedAt.getTime()) / 1000)
+            : null;
+          const lastActivity = t.updatedAt
+            ? Math.round((Date.now() - t.updatedAt.getTime()) / 1000)
+            : null;
           const entry: Record<string, unknown> = {
             id: t.id,
             title: t.title,
@@ -294,6 +305,9 @@ export function registerExecutorRelayTools(
             priority: t.priority,
             executor_id: t.executorId,
             started_at: t.startedAt?.toISOString() ?? null,
+            elapsed_seconds: elapsed,
+            last_activity_seconds_ago: lastActivity,
+            possibly_stuck: lastActivity !== null && lastActivity > 300,
           };
 
           if (t.status === 'waiting_for_input') {
