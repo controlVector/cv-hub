@@ -309,10 +309,11 @@ export async function getTree(
   const sha = await execGit(repoPath, ['rev-parse', ref]);
   const commitSha = sha.trim();
 
-  // Get tree at path
+  // Get tree at path — trailing slash tells git to list directory CONTENTS
   const lsTreeArgs = ['ls-tree', '-l', commitSha];
   if (treePath) {
-    lsTreeArgs.push('--', treePath);
+    const normalized = treePath.endsWith('/') ? treePath : treePath + '/';
+    lsTreeArgs.push('--', normalized);
   }
 
   const output = await execGit(repoPath, lsTreeArgs);
@@ -323,12 +324,13 @@ export async function getTree(
     const match = line.match(/^(\d+)\s+(blob|tree|commit)\s+([a-f0-9]+)\s+(-|\d+)\t(.+)$/);
     if (match) {
       const [, mode, type, entrySha, sizeStr, entryPath] = match;
-      const name = treePath
-        ? entryPath.replace(treePath + '/', '')
+      const strippedTreePath = treePath?.replace(/\/$/, '') || '';
+      const name = strippedTreePath
+        ? entryPath.replace(strippedTreePath + '/', '')
         : entryPath;
 
-      // Skip if this is a deeper path
-      if (name.includes('/')) continue;
+      // Skip the directory entry itself or deeper nested paths
+      if (!name || name === entryPath || name.includes('/')) continue;
 
       entries.push({
         name,
