@@ -397,6 +397,7 @@ executors.post('/:id/tasks/:taskId/start', async (c) => {
 // ============================================================================
 
 const completeSchema = z.object({
+  // Legacy flat fields (cv-git < 0.7.18)
   summary: z.string().optional(),
   files_modified: z.array(z.string()).optional(),
   files_created: z.array(z.string()).optional(),
@@ -410,6 +411,26 @@ const completeSchema = z.object({
       }),
     )
     .optional(),
+  // Structured payload (cv-git >= 0.7.18)
+  commit: z.object({
+    sha: z.string().nullable(),
+    branch: z.string().nullable(),
+    remote: z.string().nullable(),
+    push_status: z.string(),
+    messages: z.array(z.string()),
+  }).optional(),
+  files: z.object({
+    added: z.array(z.string()),
+    modified: z.array(z.string()),
+    deleted: z.array(z.string()),
+    total_changed: z.number(),
+  }).optional(),
+  stats: z.object({
+    lines_added: z.number(),
+    lines_deleted: z.number(),
+    duration_seconds: z.number(),
+  }).optional(),
+  exit_code: z.number().optional(),
 });
 
 executors.post(
@@ -427,11 +448,17 @@ executors.post(
     }
 
     const task = await completeTask(taskId, executorId, {
+      // Legacy flat fields
       summary: body.summary,
       filesModified: body.files_modified,
       filesCreated: body.files_created,
       output: body.output,
       artifacts: body.artifacts,
+      // Structured payload (cv-git >= 0.7.18)
+      ...(body.commit ? { commit: body.commit } : {}),
+      ...(body.files ? { files: body.files } : {}),
+      ...(body.stats ? { stats: body.stats } : {}),
+      ...(body.exit_code !== undefined ? { exit_code: body.exit_code } : {}),
     }, userId);
 
     if (!task) {
