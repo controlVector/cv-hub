@@ -20,6 +20,7 @@ import {
   failTask,
   taskHeartbeat,
 } from '../services/agent-task.service';
+import { createTaskLog } from '../services/task-log.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 import { getUserAccessibleRepositories } from '../services/repository.service';
 
@@ -513,12 +514,77 @@ executors.post('/:id/tasks/:taskId/heartbeat', async (c) => {
     return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
   }
 
+  // Optionally create a log entry if message is provided (backward compatible)
+  let logId: string | undefined;
+  try {
+    const body = await c.req.json().catch(() => null);
+    if (body?.message) {
+      const log = await createTaskLog({
+        taskId,
+        logType: body.log_type || 'heartbeat',
+        message: body.message,
+        details: body.details,
+      });
+      logId = log.id;
+    }
+  } catch {
+    // Empty body is fine — backward compatible
+  }
+
   return c.json({
     task_id: task.id,
     status: task.status,
     updated_at: task.updatedAt,
+    ...(logId ? { log_id: logId } : {}),
   });
 });
+
+// ============================================================================
+// POST /api/v1/executors/:id/tasks/:taskId/log — Submit a progress log entry
+// ============================================================================
+
+const logSchema = z.object({
+  log_type: z.enum(['lifecycle', 'heartbeat', 'progress', 'git', 'error', 'info']).optional(),
+  message: z.string().min(1),
+  details: z.record(z.unknown()).optional(),
+  progress_pct: z.number().int().min(0).max(100).optional(),
+});
+
+executors.post(
+  '/:id/tasks/:taskId/log',
+  zValidator('json', logSchema),
+  async (c) => {
+    const userId = getUserId(c);
+    const executorId = c.req.param('id');
+    const taskId = c.req.param('taskId');
+    const body = c.req.valid('json');
+
+    const executor = await getExecutor(executorId, userId);
+    if (!executor) {
+      return c.json({ error: 'Executor not found' }, 404);
+    }
+
+    // Double-duty: log + liveness
+    const task = await taskHeartbeat(taskId, executorId, userId);
+    if (!task) {
+      return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
+    }
+
+    const log = await createTaskLog({
+      taskId,
+      logType: body.log_type,
+      message: body.message,
+      details: body.details,
+      progressPct: body.progress_pct,
+    });
+
+    return c.json({
+      log_id: log.id,
+      task_id: taskId,
+      created_at: log.createdAt,
+    }, 201);
+  },
+);
 
 // ============================================================================
 // POST /api/v1/executors/:id/offline — Mark executor offline (session-end)

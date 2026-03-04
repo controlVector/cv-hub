@@ -513,6 +513,31 @@ export type TaskPrompt = typeof taskPrompts.$inferSelect;
 export type NewTaskPrompt = typeof taskPrompts.$inferInsert;
 
 // ============================================================================
+// Task Logs (Structured Progress Events)
+// ============================================================================
+
+export const taskLogTypeEnum = pgEnum('task_log_type', [
+  'lifecycle', 'heartbeat', 'progress', 'git', 'error', 'info',
+]);
+
+export const taskLogs = pgTable('task_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').notNull()
+    .references(() => agentTasks.id, { onDelete: 'cascade' }),
+  logType: taskLogTypeEnum('log_type').default('info').notNull(),
+  message: text('message').notNull(),
+  details: jsonb('details').$type<Record<string, unknown>>(),
+  progressPct: integer('progress_pct'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('task_logs_task_idx').on(table.taskId),
+  index('task_logs_task_created_idx').on(table.taskId, table.createdAt),
+]);
+
+export type TaskLog = typeof taskLogs.$inferSelect;
+export type NewTaskLog = typeof taskLogs.$inferInsert;
+
+// ============================================================================
 // MCP Sessions (Streamable HTTP Session Tracking)
 // ============================================================================
 
@@ -724,11 +749,19 @@ export const agentTasksRelations = relations(agentTasks, ({ one, many }) => ({
     references: [agentTasks.id],
   }),
   prompts: many(taskPrompts),
+  logs: many(taskLogs),
 }));
 
 export const taskPromptsRelations = relations(taskPrompts, ({ one }) => ({
   task: one(agentTasks, {
     fields: [taskPrompts.taskId],
+    references: [agentTasks.id],
+  }),
+}));
+
+export const taskLogsRelations = relations(taskLogs, ({ one }) => ({
+  task: one(agentTasks, {
+    fields: [taskLogs.taskId],
     references: [agentTasks.id],
   }),
 }));

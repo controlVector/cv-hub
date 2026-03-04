@@ -4,6 +4,7 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -83,6 +84,7 @@ interface RepositoryIssuesProps {
 }
 
 export default function RepositoryIssues({ owner, repo }: RepositoryIssuesProps) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tabValue, setTabValue] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -203,7 +205,11 @@ export default function RepositoryIssues({ owner, repo }: RepositoryIssuesProps)
       {!isLoading && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {issues.map((issue) => (
-            <Card key={issue.id} sx={{ cursor: 'default' }}>
+            <Card
+              key={issue.id}
+              sx={{ cursor: 'pointer', '&:hover': { borderColor: colors.slateLighter } }}
+              onClick={() => navigate(`/dashboard/repositories/${owner}/${repo}/issues/${issue.number}`)}
+            >
               <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
                   {issue.state === 'open' ? (

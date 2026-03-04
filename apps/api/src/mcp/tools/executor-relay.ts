@@ -20,6 +20,10 @@ import {
   respondToPrompt,
 } from '../../services/task-prompt.service';
 import {
+  getTaskLogs,
+  getRecentTaskLogs,
+} from '../../services/task-log.service';
+import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
 } from '../../services/repository.service';
@@ -322,6 +326,17 @@ export function registerExecutorRelayTools(
             }));
           }
 
+          // Include recent logs for at-a-glance progress
+          const recentLogs = await getRecentTaskLogs(t.id, 3);
+          if (recentLogs.length > 0) {
+            entry.recent_logs = recentLogs.map((l) => ({
+              log_type: l.logType,
+              message: l.message,
+              progress_pct: l.progressPct,
+              created_at: l.createdAt.toISOString(),
+            }));
+          }
+
           results.push(entry);
         }
 
@@ -410,6 +425,48 @@ export function registerExecutorRelayTools(
               response: updated.response,
               responded_at: updated.respondedAt?.toISOString(),
               message: 'Response sent. The executor will continue on its next poll cycle.',
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── get_task_logs ─────────────────────────────────────────────────
+  server.tool(
+    'get_task_logs',
+    'Get progress logs for a task. Shows lifecycle events, heartbeats, git activity, and errors reported by the executor.',
+    {
+      task_id: z.string().uuid().describe('Task ID'),
+      limit: z.number().optional().describe('Max log entries to return (default: 50)'),
+    },
+    getAnnotations('get_task_logs'),
+    async ({ task_id, limit }) => {
+      try {
+        const task = await getAgentTask(task_id, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
+        }
+
+        const logs = await getTaskLogs(task_id, limit ?? 50);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              task_id: task.id,
+              task_title: task.title,
+              task_status: task.status,
+              log_count: logs.length,
+              logs: logs.map((l) => ({
+                id: l.id,
+                log_type: l.logType,
+                message: l.message,
+                details: l.details,
+                progress_pct: l.progressPct,
+                created_at: l.createdAt.toISOString(),
+              })),
             }, null, 2),
           }],
         };

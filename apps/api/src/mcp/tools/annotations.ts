@@ -112,6 +112,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   cancel_task: DESTRUCTIVE_IDEMPOTENT,
   check_active_tasks: READ_ONLY,
   get_task_prompts: READ_ONLY,
+  get_task_logs: READ_ONLY,
   respond_to_prompt: WRITE_SAFE,
 
   // ── Context tools ──────────────────────────────────────

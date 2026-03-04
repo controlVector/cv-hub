@@ -61,6 +61,7 @@ import GlobalContextEngineDashboard from './pages/GlobalContextEngineDashboard';
 import BoardPage from './pages/BoardPage';
 import SafetyDashboard from './pages/SafetyDashboard';
 import ExecutorsPage from './pages/ExecutorsPage';
+import IssueDetailPage from './pages/IssueDetailPage';
 import NotFoundPage from './pages/NotFoundPage';
 import DeviceAuthPage from './pages/DeviceAuthPage';
 
@@ -136,6 +137,8 @@ function App() {
                 <Route path="repositories/:owner/:repo/commit/:sha" element={<CommitDetailPage />} />
                 <Route path="repositories/:owner/:repo/commits/*" element={<CommitHistoryPage />} />
                 <Route path="repositories/:owner/:repo/blame/*" element={<BlamePage />} />
+                {/* Issue detail route */}
+                <Route path="repositories/:owner/:repo/issues/:number" element={<IssueDetailPage />} />
                 {/* CI/CD Routes */}
                 <Route path="repositories/:owner/:repo/pipelines/new" element={<PipelineWizardPage />} />
                 <Route path="repositories/:owner/:repo/pipelines/:slug" element={<PipelineRunsPage />} />
