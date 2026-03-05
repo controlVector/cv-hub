@@ -10,6 +10,7 @@ import {
   cancelAgentTask,
   updateAgentTaskStatus,
 } from '../services/agent-task.service';
+import { getTaskLogs } from '../services/task-log.service';
 
 import type { AppEnv } from '../app';
 
@@ -197,6 +198,34 @@ tasks.patch('/:id', zValidator('json', updateSchema), async (c) => {
   }
 
   return c.json({ error: 'No update fields provided' }, 400);
+});
+
+// ============================================================================
+// GET /api/v1/tasks/:id/logs — Get task lifecycle logs
+// ============================================================================
+
+tasks.get('/:id/logs', async (c) => {
+  const userId = getUserId(c);
+  const taskId = c.req.param('id');
+
+  // Verify the task belongs to the requesting user
+  const task = await getAgentTask(taskId, userId);
+  if (!task) {
+    return c.json({ error: 'Task not found' }, 404);
+  }
+
+  const logs = await getTaskLogs(taskId);
+
+  return c.json({
+    logs: logs.map((l) => ({
+      id: l.id,
+      log_type: l.logType,
+      message: l.message,
+      details: l.details,
+      progress_pct: l.progressPct,
+      created_at: l.createdAt,
+    })),
+  });
 });
 
 // ============================================================================

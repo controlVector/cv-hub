@@ -21,8 +21,9 @@ import {
   taskHeartbeat,
 } from '../services/agent-task.service';
 import { createTaskLog } from '../services/task-log.service';
+import { createTaskPrompt, getPrompt } from '../services/task-prompt.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
-import { getUserAccessibleRepositories } from '../services/repository.service';
+import { getUserAccessibleRepositories, getRepositoryById } from '../services/repository.service';
 
 import type { AppEnv } from '../app';
 
@@ -342,6 +343,21 @@ executors.post('/:id/poll', async (c) => {
     return c.json({ task: null, message: 'No tasks available' });
   }
 
+  // Enrich with owner/repo slugs if task has a repositoryId
+  let owner: string | undefined;
+  let repo: string | undefined;
+  if (task.repositoryId) {
+    try {
+      const repository = await getRepositoryById(task.repositoryId);
+      if (repository) {
+        owner = repository.owner?.slug || repository.owner?.name;
+        repo = repository.slug;
+      }
+    } catch {
+      // Non-fatal — task still works without owner/repo
+    }
+  }
+
   return c.json({
     task: {
       id: task.id,
@@ -352,6 +368,8 @@ executors.post('/:id/poll', async (c) => {
       status: task.status,
       input: task.input,
       repository_id: task.repositoryId,
+      owner,
+      repo,
       branch: task.branch,
       file_paths: task.filePaths,
       thread_id: task.threadId,
@@ -626,6 +644,80 @@ executors.post('/:id/offline', async (c) => {
   }
 
   return c.json({ executor_id: executor.id, status: executor.status });
+});
+
+// ============================================================================
+// POST /api/v1/executors/:id/tasks/:taskId/prompt — Create a permission prompt
+// ============================================================================
+
+const promptSchema = z.object({
+  type: z.enum(['question', 'approval', 'choice', 'info']).optional(),
+  text: z.string().min(1),
+  options: z.array(z.string()).optional(),
+  context: z.record(z.unknown()).optional(),
+});
+
+executors.post(
+  '/:id/tasks/:taskId/prompt',
+  zValidator('json', promptSchema),
+  async (c) => {
+    const userId = getUserId(c);
+    const executorId = c.req.param('id');
+    const taskId = c.req.param('taskId');
+    const body = c.req.valid('json');
+
+    const executor = await getExecutor(executorId, userId);
+    if (!executor) {
+      return c.json({ error: 'Executor not found' }, 404);
+    }
+
+    const prompt = await createTaskPrompt({
+      taskId,
+      promptType: body.type || 'approval',
+      promptText: body.text,
+      options: body.options,
+      context: body.context,
+      expiresInMinutes: 5,
+    });
+
+    return c.json({
+      prompt_id: prompt.id,
+      task_id: taskId,
+      created_at: prompt.createdAt,
+    }, 201);
+  },
+);
+
+// ============================================================================
+// GET /api/v1/executors/:id/tasks/:taskId/prompts/:promptId — Poll for response
+// ============================================================================
+
+executors.get('/:id/tasks/:taskId/prompts/:promptId', async (c) => {
+  const userId = getUserId(c);
+  const executorId = c.req.param('id');
+  const promptId = c.req.param('promptId');
+
+  const executor = await getExecutor(executorId, userId);
+  if (!executor) {
+    return c.json({ error: 'Executor not found' }, 404);
+  }
+
+  const prompt = await getPrompt(promptId);
+  if (!prompt) {
+    return c.json({ error: 'Prompt not found' }, 404);
+  }
+
+  return c.json({
+    prompt_id: prompt.id,
+    task_id: prompt.taskId,
+    prompt_type: prompt.promptType,
+    prompt_text: prompt.promptText,
+    options: prompt.options,
+    response: prompt.response ?? null,
+    responded_at: prompt.respondedAt ?? null,
+    created_at: prompt.createdAt,
+    expires_at: prompt.expiresAt,
+  });
 });
 
 // ============================================================================
