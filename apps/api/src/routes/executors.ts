@@ -26,7 +26,7 @@ import { createTaskEvent } from '../services/task-events.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 import { getUserAccessibleRepositories, getRepositoryById } from '../services/repository.service';
 
-import { processBanditFeedback } from '../services/bandit-feedback.service';
+import { processBanditFeedback, processTransitionLearning } from '../services/bandit-feedback.service';
 import { recordDeployOutcome } from '../services/deploy-outcome.service';
 import type { AppEnv } from '../app';
 
@@ -506,8 +506,9 @@ executors.post(
     // Mark executor as available again
     await markExecutorTaskComplete(executorId, userId);
 
-    // Fire-and-forget: bandit learns from task outcome + deploy → manifold
+    // Fire-and-forget: bandit + transitions + deploy → manifold
     processBanditFeedback(taskId, 'completed').catch(() => {});
+    processTransitionLearning(taskId).catch(() => {});
     recordDeployOutcome(taskId).catch(() => {});
 
     return c.json({

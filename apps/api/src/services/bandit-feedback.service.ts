@@ -222,6 +222,71 @@ export async function processBanditFeedback(
   }
 }
 
+// ==================== Transition Learning ====================
+
+/**
+ * Extract event sequence from a completed task and record transitions
+ * in the graph so the model learns phase patterns.
+ *
+ * Called fire-and-forget after task completion.
+ */
+export async function processTransitionLearning(taskId: string): Promise<void> {
+  try {
+    const task = await db.query.agentTasks.findFirst({
+      where: eq(agentTasks.id, taskId),
+    });
+    if (!task || !task.repositoryId) return;
+
+    // Get all events for this task in order
+    const events = await db.query.taskEvents.findMany({
+      where: eq(taskEvents.taskId, taskId),
+      orderBy: [desc(taskEvents.createdAt)],
+    });
+
+    if (events.length < 2) return;
+
+    // Extract phase sequence
+    const phases = events
+      .map((e) => e.eventType)
+      .reverse(); // chronological order
+
+    // Load existing transition state from graph
+    const graph = await getGraphManager(task.repositoryId);
+    const stateResult = await graph.query(`
+      MATCH (t:TransitionModel {id: 'phase-transitions'})
+      RETURN t.data as data
+    `);
+
+    let transitions: Record<string, Record<string, number>> = {};
+    let totalSequences = 0;
+
+    if (stateResult.length > 0 && stateResult[0].data) {
+      const parsed = JSON.parse(stateResult[0].data as string);
+      transitions = parsed.transitions ?? {};
+      totalSequences = parsed.totalSequences ?? 0;
+    }
+
+    // Record transitions
+    for (let i = 0; i < phases.length - 1; i++) {
+      const from = phases[i];
+      const to = phases[i + 1];
+      if (!transitions[from]) transitions[from] = {};
+      transitions[from][to] = (transitions[from][to] ?? 0) + 1;
+    }
+    totalSequences++;
+
+    // Persist
+    const json = JSON.stringify({ transitions, totalSequences });
+    await graph.query(`
+      MERGE (t:TransitionModel {id: 'phase-transitions'})
+      SET t.data = $data, t.updatedAt = $ts
+    `, { data: json, ts: new Date().toISOString() });
+
+  } catch (error) {
+    console.warn('[TransitionLearning] Failed to process:', error);
+  }
+}
+
 // ==================== Helpers ====================
 
 /**
