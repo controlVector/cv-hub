@@ -51,6 +51,7 @@ import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context
 import { mcpGateway } from './routes/mcp-gateway';
 import statusRoutes from './routes/status';
 import { errorHandler } from './utils/errors';
+import { randomUUID } from 'crypto';
 
 export type AppVariables = {
   userId?: string;
@@ -70,6 +71,11 @@ const app = new Hono<AppEnv>();
 // Global middleware
 app.use('*', logger());
 app.use('*', secureHeaders());
+app.use('*', async (c, next) => {
+  const requestId = randomUUID();
+  c.header('X-CV-Hub-Request-Id', requestId);
+  await next();
+});
 const allowedOrigins = [
   env.APP_URL,
   env.API_URL,
@@ -81,7 +87,7 @@ app.use('*', cors({
   credentials: true,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'Mcp-Session-Id'],
-  exposeHeaders: ['X-CSRF-Token', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Mcp-Session-Id'],
+  exposeHeaders: ['X-CSRF-Token', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Mcp-Session-Id', 'X-CV-Hub-Request-Id'],
 }));
 
 // Serve static files
