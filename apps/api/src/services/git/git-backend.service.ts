@@ -330,7 +330,8 @@ export async function getTree(
         : entryPath;
 
       // Skip the directory entry itself or deeper nested paths
-      if (!name || name === entryPath || name.includes('/')) continue;
+      // (only check name === entryPath when inside a subdirectory)
+      if (!name || (strippedTreePath && name === entryPath) || name.includes('/')) continue;
 
       entries.push({
         name,
