@@ -831,3 +831,52 @@ export type NewMcpSession = typeof mcpSessions.$inferInsert;
 
 export type SessionBinding = typeof sessionBindings.$inferSelect;
 export type NewSessionBinding = typeof sessionBindings.$inferInsert;
+
+// ============================================================================
+// Task Events (Structured Streaming Events for Bidirectional Thinking Stream)
+// ============================================================================
+
+export const taskEventTypeEnum = pgEnum('task_event_type', [
+  'thinking',
+  'decision',
+  'question',
+  'progress',
+  'file_change',
+  'error',
+  'approval_request',
+  'completed',
+  'redirect',
+]);
+
+export const taskEvents = pgTable('task_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  taskId: uuid('task_id')
+    .notNull()
+    .references(() => agentTasks.id, { onDelete: 'cascade' }),
+
+  eventType: taskEventTypeEnum('event_type').notNull(),
+
+  content: jsonb('content').$type<Record<string, unknown> | string>().notNull().default({}),
+
+  needsResponse: boolean('needs_response').notNull().default(false),
+
+  response: jsonb('response').$type<Record<string, unknown> | string>(),
+
+  respondedAt: timestamp('responded_at', { withTimezone: true }),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_task_events_task_id').on(table.taskId, table.createdAt),
+  index('idx_task_events_needs_response').on(table.taskId, table.needsResponse),
+]);
+
+export const taskEventsRelations = relations(taskEvents, ({ one }) => ({
+  task: one(agentTasks, {
+    fields: [taskEvents.taskId],
+    references: [agentTasks.id],
+  }),
+}));
+
+export type TaskEvent = typeof taskEvents.$inferSelect;
+export type NewTaskEvent = typeof taskEvents.$inferInsert;
