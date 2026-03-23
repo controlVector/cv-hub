@@ -49,6 +49,7 @@ import { taskPromptRoutes } from './routes/task-prompts';
 import { safetyRoutes } from './routes/safety';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
 import { mcpGateway } from './routes/mcp-gateway';
+import statusRoutes from './routes/status';
 import { errorHandler } from './utils/errors';
 
 export type AppVariables = {
@@ -90,6 +91,9 @@ app.use('/favicon.ico', serveStatic({ path: './public/favicon.png' }));
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Status endpoint (public, no auth)
+app.route('', statusRoutes);
 
 // API routes
 app.route('/api/auth', authRoutes);
