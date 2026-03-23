@@ -9,14 +9,11 @@ import {
   Alert,
   TextField,
   Divider,
-  IconButton,
 } from '@mui/material';
 import {
   ArrowBack,
   RadioButtonUnchecked,
   CheckCircle,
-  Schedule,
-  Comment as CommentIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { colors } from '../theme';
