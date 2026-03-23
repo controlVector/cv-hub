@@ -26,3 +26,4 @@ export * from './feature-flags';
 export * from './agent-bridge';
 export * from './summaries';
 export * from './context-engine';
+export * from './context-versions';

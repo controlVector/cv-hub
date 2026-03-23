@@ -48,6 +48,7 @@ import { taskRoutes } from './routes/tasks';
 import { taskPromptRoutes } from './routes/task-prompts';
 import { safetyRoutes } from './routes/safety';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
+import { contextVersionRoutes } from './routes/context-versions';
 import { mcpGateway } from './routes/mcp-gateway';
 import statusRoutes from './routes/status';
 import { errorHandler } from './utils/errors';
@@ -230,6 +231,9 @@ app.route('/api/v1/repos', contextEngineRoutes);
 
 // Context Engine Global API (cross-repo aggregation)
 app.route('/api/v1', globalContextEngineRoutes);
+
+// Context Versions API (manifold snapshots per commit)
+app.route('/api/v1/repos', contextVersionRoutes);
 
 // OpenID Connect discovery (well-known needs to be at root)
 const oidcConfig = {
