@@ -8,6 +8,7 @@ import { eq, desc, and, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import { contextVersions, agentTasks, taskEvents } from '../db/schema';
 import { getFocusedContext } from './context-engine.service';
+import { getGraphManager } from './graph/graph.service';
 
 // ==================== Enrichment ====================
 
@@ -76,10 +77,20 @@ async function getManifoldContext(repositoryId: string): Promise<string | null> 
     return null;
   }
 
-  const nodes = latest.nodes as Array<Record<string, unknown>>;
-  const decisions = nodes.filter((n) => n.type === 'decision' && n.status !== 'archived');
-  const constraints = nodes.filter((n) => n.type === 'constraint' && n.status !== 'archived');
-  const architecture = nodes.filter((n) => n.type === 'architecture' && n.status !== 'archived');
+  const allNodes = latest.nodes as Array<Record<string, unknown>>;
+  const activeNodes = allNodes.filter((n) => n.status !== 'archived');
+
+  // Try to rank nodes using bandit scorer
+  let ranked = activeNodes;
+  try {
+    ranked = await rankNodesByBandit(repositoryId, activeNodes);
+  } catch {
+    // Fall back to unranked
+  }
+
+  const decisions = ranked.filter((n) => n.type === 'decision');
+  const constraints = ranked.filter((n) => n.type === 'constraint');
+  const architecture = ranked.filter((n) => n.type === 'architecture');
 
   const parts: string[] = ['## Project Context (auto-injected from Context Manifold)'];
 
@@ -105,6 +116,40 @@ async function getManifoldContext(repositoryId: string): Promise<string | null> 
   }
 
   return parts.length > 1 ? parts.join('\n') : null;
+}
+
+/**
+ * Rank context nodes using the bandit state from FalkorDB.
+ * Returns nodes sorted by predicted usefulness (highest first).
+ */
+async function rankNodesByBandit(
+  repositoryId: string,
+  nodes: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  const graph = await getGraphManager(repositoryId);
+  const state = await graph.loadBanditState();
+  if (!state || !state.arms || Object.keys(state.arms).length === 0) {
+    return nodes; // No bandit data yet
+  }
+
+  const DIMENSION = state.dimension ?? 8;
+  // Default context vector for scoring (mid-session, moderate file count)
+  const x = [0.5, 0.3, 0.5, 0.1, 0, 1, 1, 0.3];
+
+  const scored = nodes.map((node) => {
+    const nodeId = (node.id as string) || (node.title as string) || '';
+    const arm = state.arms[nodeId];
+    if (!arm || arm.pulls === 0) {
+      return { node, score: 0.5 }; // neutral score for unknown nodes
+    }
+
+    // Simple score: average reward (skip full LinUCB for speed)
+    const avgReward = arm.totalReward / arm.pulls;
+    return { node, score: avgReward };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.node);
 }
 
 // ==================== Code Intelligence ====================
