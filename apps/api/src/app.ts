@@ -46,6 +46,7 @@ import { mcpRoutes } from './routes/mcp';
 import { executorRoutes } from './routes/executors';
 import { taskRoutes } from './routes/tasks';
 import { taskPromptRoutes } from './routes/task-prompts';
+import { taskEventRoutes } from './routes/task-events';
 import { safetyRoutes } from './routes/safety';
 import { contextEngineRoutes, globalContextEngineRoutes } from './routes/context-engine';
 import { contextVersionRoutes } from './routes/context-versions';
@@ -222,6 +223,9 @@ app.route('/api/v1/tasks', taskRoutes);
 
 // Task Prompts API (bidirectional executor ↔ user communication)
 app.route('/api/v1/tasks', taskPromptRoutes);
+
+// Task Events API (structured streaming events for thinking stream)
+app.route('/api/v1/tasks', taskEventRoutes);
 
 // Safety Analysis API (CV-Safe)
 app.route('/api/v1/repos', safetyRoutes);
