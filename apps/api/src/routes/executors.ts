@@ -26,6 +26,7 @@ import { createTaskEvent } from '../services/task-events.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 import { getUserAccessibleRepositories, getRepositoryById } from '../services/repository.service';
 
+import { processBanditFeedback } from '../services/bandit-feedback.service';
 import type { AppEnv } from '../app';
 
 const executors = new Hono<AppEnv>();
@@ -504,6 +505,9 @@ executors.post(
     // Mark executor as available again
     await markExecutorTaskComplete(executorId, userId);
 
+    // Fire-and-forget: bandit learns from task outcome
+    processBanditFeedback(taskId, 'completed').catch(() => {});
+
     return c.json({
       task_id: task.id,
       status: task.status,
@@ -545,6 +549,9 @@ executors.post(
 
     // Mark executor as available again
     await markExecutorTaskComplete(executorId, userId);
+
+    // Fire-and-forget: bandit learns from task outcome
+    processBanditFeedback(taskId, 'failed').catch(() => {});
 
     return c.json({
       task_id: task.id,

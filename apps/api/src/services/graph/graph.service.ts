@@ -1219,6 +1219,32 @@ export class GraphManager {
     return { callers, coChanged };
   }
 
+  // ========== Bandit State Persistence ==========
+
+  /**
+   * Save bandit state to the graph for cross-session learning.
+   */
+  async saveBanditState(state: { arms: Record<string, any>; alpha: number; dimension: number }): Promise<void> {
+    const json = JSON.stringify(state);
+    await this.query(`
+      MERGE (b:BanditState {id: 'contextual-bandit'})
+      SET b.data = $data, b.updatedAt = $ts
+    `, { data: json, ts: new Date().toISOString() });
+  }
+
+  /**
+   * Load bandit state from the graph. Returns null if no saved state.
+   */
+  async loadBanditState(): Promise<{ arms: Record<string, any>; alpha: number; dimension: number } | null> {
+    const results = await this.query(`
+      MATCH (b:BanditState {id: 'contextual-bandit'})
+      RETURN b.data as data
+    `);
+
+    if (results.length === 0 || !results[0].data) return null;
+    return JSON.parse(results[0].data as string);
+  }
+
   // ========== Graph Management ==========
 
   async getStats(): Promise<GraphStats> {
