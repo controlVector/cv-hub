@@ -22,6 +22,7 @@ import {
 } from '../services/agent-task.service';
 import { createTaskLog } from '../services/task-log.service';
 import { createTaskPrompt, getPrompt } from '../services/task-prompt.service';
+import { createTaskEvent } from '../services/task-events.service';
 import { getUserOrganizations, getUserOrgRole } from '../services/organization.service';
 import { getUserAccessibleRepositories, getRepositoryById } from '../services/repository.service';
 
@@ -343,6 +344,13 @@ executors.post('/:id/poll', async (c) => {
     return c.json({ task: null, message: 'No tasks available' });
   }
 
+  // Emit lifecycle event: task claimed
+  createTaskEvent({
+    taskId: task.id,
+    eventType: 'progress',
+    content: { text: `Task claimed by executor ${executor.name || executorId}` },
+  }).catch(() => {});
+
   // Enrich with owner/repo slugs if task has a repositoryId
   let owner: string | undefined;
   let repo: string | undefined;
@@ -402,6 +410,13 @@ executors.post('/:id/tasks/:taskId/start', async (c) => {
   if (!task) {
     return c.json({ error: 'Task not found or not assigned to this executor' }, 404);
   }
+
+  // Emit lifecycle event: task started
+  createTaskEvent({
+    taskId: task.id,
+    eventType: 'progress',
+    content: { text: 'Task started, launching Claude Code' },
+  }).catch(() => {});
 
   return c.json({
     task_id: task.id,

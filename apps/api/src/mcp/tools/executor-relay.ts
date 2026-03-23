@@ -34,6 +34,7 @@ import {
   canUserAccessRepo,
 } from '../../services/repository.service';
 import { enrichTaskPrompt } from '../../services/task-enrichment.service';
+import { createTaskEvent } from '../../services/task-events.service';
 
 async function resolveRepo(owner: string, repoSlug: string, userId: string) {
   const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
@@ -147,6 +148,13 @@ export function registerExecutorRelayTools(
           filePaths: params.file_paths,
           timeoutMinutes: params.timeout_minutes,
         });
+
+        // Emit initial lifecycle event
+        createTaskEvent({
+          taskId: task.id,
+          eventType: 'progress',
+          content: { text: 'Task dispatched, waiting for executor' },
+        }).catch(() => {});
 
         return {
           content: [{
