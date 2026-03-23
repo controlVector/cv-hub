@@ -314,7 +314,7 @@ export async function validateAccessToken(token: string): Promise<{
   return {
     valid: true,
     userId: accessToken.userId,
-    clientId: client?.clientId,
+    clientId: client?.id,
     scopes: accessToken.scopes,
   };
 }
