@@ -24,6 +24,12 @@ import {
   getRecentTaskLogs,
 } from '../../services/task-log.service';
 import {
+  getTaskEvents,
+  respondToTaskEvent,
+  createRedirectEvent,
+  getTaskEventSummary,
+} from '../../services/task-events.service';
+import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
 } from '../../services/repository.service';
@@ -467,6 +473,179 @@ export function registerExecutorRelayTools(
                 progress_pct: l.progressPct,
                 created_at: l.createdAt.toISOString(),
               })),
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── cv_task_stream ──────────────────────────────────────────────────
+  server.tool(
+    'cv_task_stream',
+    'Subscribe to a task\'s event stream. Returns the latest structured events (thinking, decisions, questions, progress) and any pending questions.',
+    {
+      task_id: z.string().uuid().describe('Task ID'),
+      after_id: z.string().uuid().optional().describe('Only events after this event ID'),
+      limit: z.number().optional().describe('Max events to return (default: 20)'),
+    },
+    getAnnotations('cv_task_stream'),
+    async ({ task_id, after_id, limit }) => {
+      try {
+        const task = await getAgentTask(task_id, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
+        }
+
+        const events = await getTaskEvents({
+          taskId: task_id,
+          afterId: after_id,
+          limit: limit ?? 20,
+        });
+
+        const pendingCount = events.filter(
+          (e) => e.needsResponse && !e.respondedAt
+        ).length;
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              events: events.map((e) => ({
+                id: e.id,
+                event_type: e.eventType,
+                content: e.content,
+                needs_response: e.needsResponse,
+                responded_at: e.respondedAt?.toISOString() ?? null,
+                created_at: e.createdAt.toISOString(),
+              })),
+              pending_questions: pendingCount,
+              total_events: events.length,
+              task_status: task.status,
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── cv_task_respond ─────────────────────────────────────────────────
+  server.tool(
+    'cv_task_respond',
+    'Answer a question or approval request from the executor. The executor is waiting for your response to continue working.',
+    {
+      event_id: z.string().uuid().describe('The event ID to respond to'),
+      response: z.string().describe('Your response to the question'),
+    },
+    getAnnotations('cv_task_respond'),
+    async ({ event_id, response }) => {
+      try {
+        const updated = await respondToTaskEvent({
+          eventId: event_id,
+          response,
+        });
+        if (!updated) {
+          return { content: [{ type: 'text', text: 'Event not found or already responded' }], isError: true };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              event_id: updated.id,
+              responded_at: updated.respondedAt?.toISOString(),
+              status: 'responded',
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── cv_task_redirect ────────────────────────────────────────────────
+  server.tool(
+    'cv_task_redirect',
+    'Inject a new instruction into a running task. The executor will see this as a redirect event and adjust its approach.',
+    {
+      task_id: z.string().uuid().describe('Task ID'),
+      instruction: z.string().describe('New instruction for the executor'),
+    },
+    getAnnotations('cv_task_redirect'),
+    async ({ task_id, instruction }) => {
+      try {
+        const task = await getAgentTask(task_id, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
+        }
+
+        const event = await createRedirectEvent({
+          taskId: task_id,
+          instruction,
+        });
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              event_id: event.id,
+              created_at: event.createdAt.toISOString(),
+              status: 'redirect_created',
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  // ── cv_task_summary ─────────────────────────────────────────────────
+  server.tool(
+    'cv_task_summary',
+    'Get a high-level summary of a task\'s progress without pulling all events. Shows latest thinking, decisions, progress, pending questions, and files changed.',
+    {
+      task_id: z.string().uuid().describe('Task ID'),
+    },
+    getAnnotations('cv_task_summary'),
+    async ({ task_id }) => {
+      try {
+        const task = await getAgentTask(task_id, userId);
+        if (!task) {
+          return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
+        }
+
+        const summary = await getTaskEventSummary(task_id);
+
+        const elapsed = task.startedAt
+          ? Math.round(((task.completedAt ?? new Date()).getTime() - task.startedAt.getTime()) / 1000)
+          : null;
+
+        const extractText = (event?: { content: Record<string, unknown> | string | null }) => {
+          if (!event) return null;
+          if (typeof event.content === 'string') return event.content;
+          return (event.content as Record<string, unknown>)?.text as string ?? null;
+        };
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              task_id: task.id,
+              status: task.status,
+              total_events: summary.totalEvents,
+              last_thinking: extractText(summary.lastThinking),
+              last_decision: extractText(summary.lastDecision),
+              last_progress: extractText(summary.lastProgress),
+              pending_questions: summary.pendingQuestions.length,
+              errors: summary.errors.length,
+              files_changed: summary.fileChanges,
+              elapsed_seconds: elapsed,
             }, null, 2),
           }],
         };

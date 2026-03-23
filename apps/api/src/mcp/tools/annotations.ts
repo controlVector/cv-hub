@@ -114,6 +114,10 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   get_task_prompts: READ_ONLY,
   get_task_logs: READ_ONLY,
   respond_to_prompt: WRITE_SAFE,
+  cv_task_stream: READ_ONLY,
+  cv_task_respond: WRITE_SAFE,
+  cv_task_redirect: WRITE_SAFE,
+  cv_task_summary: READ_ONLY,
 
   // ── Context tools ──────────────────────────────────────
   get_repo_context: READ_ONLY,
