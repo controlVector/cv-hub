@@ -33,6 +33,7 @@ import {
   getRepositoryByOwnerAndSlug,
   canUserAccessRepo,
 } from '../../services/repository.service';
+import { enrichTaskPrompt } from '../../services/task-enrichment.service';
 
 async function resolveRepo(owner: string, repoSlug: string, userId: string) {
   const repo = await getRepositoryByOwnerAndSlug(owner, repoSlug);
@@ -114,13 +115,33 @@ export function registerExecutorRelayTools(
           repositoryId = repoData.id;
         }
 
+        // Enrich task description with manifold context + structured output markers
+        let enrichedDescription = params.description ?? '';
+        try {
+          const enrichment = await enrichTaskPrompt({
+            repositoryId,
+            description: params.description,
+            filePaths: params.file_paths,
+            userId,
+          });
+          if (enrichment) {
+            enrichedDescription = enrichedDescription
+              ? `${enrichedDescription}\n\n${enrichment}`
+              : enrichment;
+          }
+        } catch {
+          // Non-fatal: dispatch without enrichment if it fails
+        }
+
         const task = await createAgentTask({
           userId,
           title: params.title,
-          description: params.description,
+          description: enrichedDescription,
           taskType: params.task_type,
           priority: params.priority,
-          input: params.input,
+          input: params.input
+            ? { ...params.input, context: enrichedDescription }
+            : { description: enrichedDescription },
           repositoryId,
           branch: params.branch,
           filePaths: params.file_paths,
