@@ -16,6 +16,7 @@ import { registerExecutorRelayTools } from './tools/executor-relay';
 import { registerContextTools } from './tools/context';
 import { registerContextEngineTools } from './tools/context-engine';
 import { registerSafetyTools } from './tools/safety';
+import { registerPlatformTools } from './tools/platform';
 
 /**
  * Create a fully-configured MCP server for a specific user session.
@@ -51,6 +52,9 @@ export function createMcpServer(userId: string, scopes: string[]): McpServer {
 
   // Phase 6: Safety analysis tools (CV-Safe)
   registerSafetyTools(server, userId, scopes);
+
+  // Platform status (no auth scopes needed)
+  registerPlatformTools(server);
 
   return server;
 }
