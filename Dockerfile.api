@@ -15,7 +15,7 @@ COPY apps/api/package.json apps/api/tsconfig.json ./apps/api/
 COPY packages/shared/package.json ./packages/shared/
 
 # Install all dependencies with hoisting for Docker compatibility
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile && pnpm add -D esbuild --filter @cv-hub/api
 
 # Copy source code
 COPY packages/shared ./packages/shared
