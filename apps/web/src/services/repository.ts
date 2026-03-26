@@ -441,33 +441,38 @@ export interface ImpactData {
 }
 
 /**
- * Get graph visualization data (nodes and edges)
+ * Get graph visualization data (nodes and edges).
+ * Uses /graph/query with type:'custom' instead of /graph/cypher
+ * because cypher requires org-admin access (403 for personal repos).
  */
 export async function getGraphVisualization(owner: string, repo: string): Promise<GraphVisualizationData> {
   // Get stats
   const statsResponse = await api.get(`/v1/repos/${owner}/${repo}/graph/stats`);
   const stats = statsResponse.data.data as GraphStats;
 
-  // Get all file nodes
-  const filesResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/cypher`, {
-    query: 'MATCH (f:File) RETURN f.path as path, f.language as language, f.complexity as complexity LIMIT 200'
+  // Get all file nodes via graph/query (type: custom)
+  const filesResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/query`, {
+    type: 'custom',
+    cypher: 'MATCH (f:File) RETURN f.path as path, f.language as language, f.complexity as complexity LIMIT 200',
   });
 
   // Get all symbol nodes
-  const symbolsResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/cypher`, {
-    query: 'MATCH (s:Symbol) RETURN s.qualifiedName as name, s.kind as kind, s.file as file, s.complexity as complexity LIMIT 200'
+  const symbolsResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/query`, {
+    type: 'custom',
+    cypher: 'MATCH (s:Symbol) RETURN s.qualifiedName as name, s.kind as kind, s.file as file, s.complexity as complexity LIMIT 200',
   });
 
   // Get edges
-  const edgesResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/cypher`, {
-    query: `
+  const edgesResponse = await api.post(`/v1/repos/${owner}/${repo}/graph/query`, {
+    type: 'custom',
+    cypher: `
       MATCH (a)-[r]->(b)
       WHERE type(r) IN ['IMPORTS', 'CALLS', 'INHERITS', 'DEFINES']
       RETURN a.path as sourcePath, a.qualifiedName as sourceSymbol,
              b.path as targetPath, b.qualifiedName as targetSymbol,
              type(r) as relType
       LIMIT 500
-    `
+    `,
   });
 
   // Transform to visualization format
