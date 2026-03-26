@@ -207,7 +207,7 @@ export default function Layout() {
                   borderRadius: 1,
                   fontSize: '0.7rem',
                   fontWeight: 600,
-                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
                   color: colors.textLight,
                 }}
               >
@@ -241,7 +241,7 @@ export default function Layout() {
                   ? `${Math.min(100, (dashboardData.billing.usage.repos / dashboardData.billing.limits.repositories) * 100)}%`
                   : '10%',
                 height: '100%',
-                background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
                 borderRadius: 3,
               }}
             />
@@ -268,7 +268,7 @@ export default function Layout() {
           <Box
             component="span"
             sx={{
-              background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+              background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -427,7 +427,7 @@ export default function Layout() {
                 sx={{
                   width: 32,
                   height: 32,
-                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
                 }}
               >
                 {user?.displayName?.[0]?.toUpperCase() || user?.username?.[0]?.toUpperCase() || 'U'}
