@@ -267,7 +267,7 @@ const theme = createTheme({
     MuiTabs: {
       styleOverrides: {
         indicator: {
-          background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+          background: `linear-gradient(90deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
           height: 3,
         },
       },
