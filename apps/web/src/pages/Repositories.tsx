@@ -116,7 +116,7 @@ export default function Repositories() {
             transition: 'all 0.2s ease',
             '&:hover': {
               transform: 'translateY(-1px)',
-              boxShadow: `0 4px 15px rgba(124, 58, 237, 0.3)`,
+              boxShadow: `0 4px 15px ${colors.violetGlow}`,
             },
           }}
         >
