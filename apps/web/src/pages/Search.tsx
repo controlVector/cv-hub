@@ -77,7 +77,7 @@ const getResultTypeColor = (type: string) => {
     case 'code':
       return colors.orange;
     case 'file':
-      return colors.blue;
+      return colors.violet;
     case 'symbol':
       return colors.purple;
     default:
