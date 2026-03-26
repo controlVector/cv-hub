@@ -182,7 +182,7 @@ export default function Dashboard() {
         <Card
           sx={{
             mb: 4,
-            background: `linear-gradient(135deg, ${colors.violet}18 0%, ${colors.cyan}18 100%)`,
+            background: `linear-gradient(135deg, ${colors.violet}18 0%, ${colors.purple}18 100%)`,
             border: `1px solid ${colors.violet}40`,
           }}
         >
@@ -192,7 +192,7 @@ export default function Dashboard() {
                 sx={{
                   p: 1,
                   borderRadius: 2,
-                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                  background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
                   color: colors.textLight,
                   display: 'flex',
                 }}
@@ -215,11 +215,11 @@ export default function Dashboard() {
               size="small"
               onClick={() => navigate(`/dashboard/orgs/${dashboardData.billing!.orgSlug}/settings`)}
               sx={{
-                background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.cyan} 100%)`,
+                background: `linear-gradient(135deg, ${colors.violet} 0%, ${colors.purple} 100%)`,
                 textTransform: 'none',
                 fontWeight: 600,
                 '&:hover': {
-                  background: `linear-gradient(135deg, ${colors.violet} 20%, ${colors.cyan} 120%)`,
+                  background: `linear-gradient(135deg, ${colors.violetDark} 0%, ${colors.violet} 100%)`,
                 },
               }}
             >
