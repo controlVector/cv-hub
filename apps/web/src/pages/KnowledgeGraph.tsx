@@ -58,7 +58,7 @@ interface Repository {
 }
 
 const nodeTypeColors: Record<string, string> = {
-  file: colors.blue,
+  file: colors.violet,
   function: colors.orange,
   class: colors.purple,
   module: colors.green,
@@ -67,7 +67,7 @@ const nodeTypeColors: Record<string, string> = {
 
 const edgeTypeColors: Record<string, string> = {
   calls: colors.orange,
-  imports: colors.blue,
+  imports: colors.violet,
   inherits: colors.purple,
   defines: colors.green,
   modifies: colors.textMuted,
@@ -612,7 +612,7 @@ export default function KnowledgeGraph() {
                 </Typography>
               </Box>
               <Box sx={{ p: 1.5, borderRadius: 1, backgroundColor: colors.navy, textAlign: 'center' }}>
-                <Typography variant="h5" sx={{ fontWeight: 700, color: colors.blue }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: colors.cyan }}>
                   {stats?.symbolCount ?? 0}
                 </Typography>
                 <Typography variant="caption" sx={{ color: colors.textMuted }}>
