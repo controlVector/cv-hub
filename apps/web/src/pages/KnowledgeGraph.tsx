@@ -53,7 +53,7 @@ interface Repository {
   userId?: string;
   organizationId?: string;
   graphSyncStatus: string;
-  owner?: { username: string };
+  owner?: { slug: string };
   organization?: { slug: string };
 }
 
@@ -187,7 +187,7 @@ export default function KnowledgeGraph() {
   useEffect(() => {
     if (reposData?.length && !selectedRepo) {
       const repo = reposData[0];
-      const owner = repo.organization?.slug || repo.owner?.username || 'unknown';
+      const owner = repo.organization?.slug || repo.owner?.slug || 'unknown';
       setSelectedRepo({ owner, repo: repo.slug });
     }
   }, [reposData, selectedRepo]);
@@ -686,7 +686,7 @@ export default function KnowledgeGraph() {
           <MenuItem disabled>No repositories found</MenuItem>
         ) : (
           reposData?.map((repo) => {
-            const owner = repo.organization?.slug || repo.owner?.username || 'unknown';
+            const owner = repo.organization?.slug || repo.owner?.slug || 'unknown';
             const repoPath = `${owner}/${repo.slug}`;
             const isSelected = selectedRepo?.owner === owner && selectedRepo?.repo === repo.slug;
             return (
