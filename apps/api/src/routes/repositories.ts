@@ -147,11 +147,46 @@ repoRoutes.get('/dashboard/stats', requireAuth, async (c) => {
     if (userOrgs.length > 0) {
       const primaryOrg = userOrgs[0];
       const usageWithLimits = await getOrgUsageWithLimits(primaryOrg.id);
+
+      // Count personal repos (not under any org) owned by this user
+      const personalRepoCount = repos.filter(r => r.userId === userId && !r.organizationId).length;
+
+      // Override usage.repos to show total accessible repos (what the user actually sees)
       billing = {
         orgId: primaryOrg.id,
         orgSlug: primaryOrg.slug,
         orgName: primaryOrg.name,
         ...usageWithLimits,
+        usage: {
+          ...usageWithLimits.usage,
+          repos: totalRepos, // All repos the user can see, not just org repos
+          orgRepos: usageWithLimits.usage.repos, // Keep the org-only count available
+          personalRepos: personalRepoCount,
+        },
+      };
+    } else {
+      // User has no org — show personal repo usage against personal limit
+      const personalCheck = await checkPersonalRepoLimit(userId);
+      billing = {
+        orgId: null,
+        orgSlug: null,
+        orgName: null,
+        tierName: 'personal',
+        tierDisplayName: 'Personal',
+        isFreeTier: true,
+        usage: {
+          repos: personalCheck.current,
+          members: 1,
+          orgRepos: 0,
+          personalRepos: personalCheck.current,
+        },
+        limits: {
+          repositories: personalCheck.limit,
+          teamMembers: 1,
+          storageGb: 1,
+          environments: 1,
+          buildMinutes: 0,
+        },
       };
     }
   } catch (err) {
