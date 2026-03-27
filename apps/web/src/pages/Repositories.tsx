@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Typography,
@@ -22,6 +23,7 @@ import {
   BubbleChart as GraphIcon,
   Schedule,
   Add as AddIcon,
+  Folder as RepoIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { colors } from '../theme';
@@ -179,17 +181,48 @@ export default function Repositories() {
         </Grid>
       )}
 
-      {/* Empty state */}
-      {!isLoading && !error && repos.length === 0 && (
+      {/* Empty state — onboarding for new users */}
+      {!isLoading && !error && repos.length === 0 && !debouncedSearch && (
+        <Card sx={{ p: 4, textAlign: 'center' }}>
+          <RepoIcon sx={{ fontSize: 64, color: colors.textMuted, opacity: 0.4, mb: 2 }} />
+          <Typography variant="h5" sx={{ mb: 1 }}>
+            No repositories yet
+          </Typography>
+          <Typography variant="body1" sx={{ color: colors.textMuted, mb: 3, maxWidth: 500, mx: 'auto' }}>
+            Create a repository to start hosting your code, or push an existing project using the CV-Git CLI.
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/dashboard/repositories/new')}
+            sx={{ mb: 3 }}
+          >
+            Create Your First Repository
+          </Button>
+          <Box sx={{ textAlign: 'left', maxWidth: 480, mx: 'auto' }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: colors.textMuted }}>
+              Or push an existing project:
+            </Typography>
+            <Typography variant="body2" sx={{ color: colors.textMuted, fontFamily: 'monospace', mb: 0.5 }}>
+              npm install -g @controlvector/cv-git
+            </Typography>
+            <Typography variant="body2" sx={{ color: colors.textMuted, fontFamily: 'monospace', mb: 0.5 }}>
+              cd your-project && cv init
+            </Typography>
+            <Typography variant="body2" sx={{ color: colors.textMuted, fontFamily: 'monospace' }}>
+              cv push
+            </Typography>
+          </Box>
+        </Card>
+      )}
+
+      {/* Empty search results */}
+      {!isLoading && !error && repos.length === 0 && debouncedSearch && (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="h6" sx={{ color: colors.textMuted, mb: 2 }}>
-            {debouncedSearch ? 'No repositories match your search' : 'No repositories yet'}
+            No repositories match "{debouncedSearch}"
           </Typography>
-          {!debouncedSearch && (
-            <Typography variant="body2" sx={{ color: colors.textMuted }}>
-              Create your first repository to get started.
-            </Typography>
-          )}
         </Box>
       )}
 
