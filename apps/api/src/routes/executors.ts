@@ -384,6 +384,7 @@ executors.post('/:id/poll', async (c) => {
       file_paths: task.filePaths,
       thread_id: task.threadId,
       parent_task_id: task.parentTaskId,
+      target_executor_id: task.targetExecutorId,
       timeout_at: task.timeoutAt,
       metadata: task.metadata,
     },

@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, isNull, or } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, or, lt } from 'drizzle-orm';
 import { db } from '../db';
 import {
   agentTasks,
@@ -26,6 +26,7 @@ export async function createAgentTask(params: {
   parentTaskId?: string;
   timeoutMinutes?: number;
   metadata?: Record<string, unknown>;
+  targetExecutorId?: string;
 }): Promise<AgentTask> {
   const timeoutAt = params.timeoutMinutes
     ? new Date(Date.now() + params.timeoutMinutes * 60 * 1000)
@@ -47,6 +48,7 @@ export async function createAgentTask(params: {
       threadId: params.threadId,
       mcpSessionId: params.mcpSessionId,
       parentTaskId: params.parentTaskId,
+      targetExecutorId: params.targetExecutorId,
       timeoutAt,
       metadata: params.metadata,
     })
@@ -160,44 +162,117 @@ export async function updateAgentTaskStatus(
 
 // ==================== Executor-facing operations ====================
 
+const STALE_THRESHOLD_MS = 60_000; // Tasks pending >60s can be rescued by any executor
+
 /**
- * Claim the next pending task for an executor.
- * Used by executor polling (A.5).
+ * Claim the next pending task for an executor using 4-pass priority routing:
+ *
+ *   Pass 1: Direct targeting — task explicitly targets THIS executor by ID
+ *   Pass 2: Repository affinity — task's repositoryId matches executor's repositoryId
+ *   Pass 3: Unscoped tasks — no repositoryId AND no targetExecutorId (any executor can claim)
+ *   Pass 4: Stale rescue — any task pending >60s (prevents stuck tasks)
  */
 export async function claimNextTask(
   executorId: string,
   userId: string,
 ): Promise<AgentTask | null> {
-  // Find the highest-priority pending task for this user
-  const task = await db.query.agentTasks.findFirst({
+  // Step 0: Look up the calling executor to know its identity + affinity
+  const executor = await db.query.agentExecutors.findFirst({
     where: and(
-      eq(agentTasks.userId, userId),
-      eq(agentTasks.status, 'pending'),
-      isNull(agentTasks.executorId),
+      eq(agentExecutors.id, executorId),
+      eq(agentExecutors.userId, userId),
     ),
-    orderBy: [desc(agentTasks.priority), desc(agentTasks.createdAt)],
   });
+  if (!executor) return null;
 
-  if (!task) return null;
+  // Atomic claim helper — prevents double-claims from concurrent polls
+  async function tryClaim(task: AgentTask): Promise<AgentTask | null> {
+    const [claimed] = await db
+      .update(agentTasks)
+      .set({ executorId, status: 'assigned', updatedAt: new Date() })
+      .where(
+        and(
+          eq(agentTasks.id, task.id),
+          eq(agentTasks.status, 'pending'),
+          isNull(agentTasks.executorId),
+        ),
+      )
+      .returning();
+    return claimed || null;
+  }
 
-  // Atomically assign and mark as running
-  const [claimed] = await db
-    .update(agentTasks)
-    .set({
-      executorId,
-      status: 'assigned',
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(agentTasks.id, task.id),
+  // PASS 1: Direct targeting — task explicitly targets THIS executor by ID
+  {
+    const targeted = await db.query.agentTasks.findFirst({
+      where: and(
+        eq(agentTasks.userId, userId),
         eq(agentTasks.status, 'pending'),
         isNull(agentTasks.executorId),
+        eq(agentTasks.targetExecutorId, executorId),
       ),
-    )
-    .returning();
+      orderBy: [desc(agentTasks.priority), desc(agentTasks.createdAt)],
+    });
+    if (targeted) {
+      const claimed = await tryClaim(targeted);
+      if (claimed) return claimed;
+    }
+  }
 
-  return claimed || null;
+  // PASS 2: Repository affinity — task's repositoryId matches executor's repositoryId
+  if (executor.repositoryId) {
+    const affinityTask = await db.query.agentTasks.findFirst({
+      where: and(
+        eq(agentTasks.userId, userId),
+        eq(agentTasks.status, 'pending'),
+        isNull(agentTasks.executorId),
+        isNull(agentTasks.targetExecutorId),
+        eq(agentTasks.repositoryId, executor.repositoryId),
+      ),
+      orderBy: [desc(agentTasks.priority), desc(agentTasks.createdAt)],
+    });
+    if (affinityTask) {
+      const claimed = await tryClaim(affinityTask);
+      if (claimed) return claimed;
+    }
+  }
+
+  // PASS 3: Unscoped tasks — no repositoryId AND no targetExecutorId (any executor can claim)
+  {
+    const unscopedTask = await db.query.agentTasks.findFirst({
+      where: and(
+        eq(agentTasks.userId, userId),
+        eq(agentTasks.status, 'pending'),
+        isNull(agentTasks.executorId),
+        isNull(agentTasks.repositoryId),
+        isNull(agentTasks.targetExecutorId),
+      ),
+      orderBy: [desc(agentTasks.priority), desc(agentTasks.createdAt)],
+    });
+    if (unscopedTask) {
+      const claimed = await tryClaim(unscopedTask);
+      if (claimed) return claimed;
+    }
+  }
+
+  // PASS 4: Stale rescue — repo-scoped or targeted tasks pending >60s (prevents stuck tasks)
+  {
+    const staleCutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
+    const staleTask = await db.query.agentTasks.findFirst({
+      where: and(
+        eq(agentTasks.userId, userId),
+        eq(agentTasks.status, 'pending'),
+        isNull(agentTasks.executorId),
+        lt(agentTasks.createdAt, staleCutoff),
+      ),
+      orderBy: [desc(agentTasks.priority), desc(agentTasks.createdAt)],
+    });
+    if (staleTask) {
+      const claimed = await tryClaim(staleTask);
+      if (claimed) return claimed;
+    }
+  }
+
+  return null;
 }
 
 /**

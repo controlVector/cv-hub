@@ -419,6 +419,10 @@ export const agentTasks = pgTable(
       onDelete: 'set null',
     }),
 
+    targetExecutorId: uuid('target_executor_id').references(() => agentExecutors.id, {
+      onDelete: 'set null',
+    }),
+
     threadId: uuid('thread_id').references(() => workflowThreads.id, {
       onDelete: 'set null',
     }),
@@ -468,6 +472,7 @@ export const agentTasks = pgTable(
     index('agent_tasks_repo_idx').on(table.repositoryId),
     index('agent_tasks_mcp_session_idx').on(table.mcpSessionId),
     index('agent_tasks_parent_idx').on(table.parentTaskId),
+    index('agent_tasks_target_executor_idx').on(table.targetExecutorId),
   ]
 );
 
@@ -642,7 +647,8 @@ export const agentExecutorsRelations = relations(
       fields: [agentExecutors.repositoryId],
       references: [repositories.id],
     }),
-    tasks: many(agentTasks),
+    tasks: many(agentTasks, { relationName: 'assignedExecutor' }),
+    targetedTasks: many(agentTasks, { relationName: 'targetExecutor' }),
     bindings: many(sessionBindings),
   })
 );
@@ -731,6 +737,12 @@ export const agentTasksRelations = relations(agentTasks, ({ one, many }) => ({
   executor: one(agentExecutors, {
     fields: [agentTasks.executorId],
     references: [agentExecutors.id],
+    relationName: 'assignedExecutor',
+  }),
+  targetExecutor: one(agentExecutors, {
+    fields: [agentTasks.targetExecutorId],
+    references: [agentExecutors.id],
+    relationName: 'targetExecutor',
   }),
   thread: one(workflowThreads, {
     fields: [agentTasks.threadId],

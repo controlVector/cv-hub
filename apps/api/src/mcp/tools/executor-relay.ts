@@ -7,7 +7,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { getAnnotations } from './annotations';
-import { listExecutors } from '../../services/executor.service';
+import { listExecutors, getExecutor } from '../../services/executor.service';
+import { db } from '../../db';
+import { eq, and } from 'drizzle-orm';
+import { agentExecutors } from '../../db/schema';
 import {
   createAgentTask,
   listAgentTasks,
@@ -90,6 +93,10 @@ export function registerExecutorRelayTools(
         .describe('Task category (default: custom)'),
       priority: z.enum(['low', 'medium', 'high', 'critical']).optional()
         .describe('Task priority (default: medium)'),
+      executor_id: z.string().uuid().optional()
+        .describe('Target a specific executor by ID. Task will only be claimed by this executor.'),
+      executor_name: z.string().optional()
+        .describe('Target a specific executor by name (e.g. "tastytrade-mcp", "NyxCore"). Resolved to executor_id on creation.'),
       owner: z.string().optional().describe('Repository owner (for repo-scoped tasks)'),
       repo: z.string().optional().describe('Repository slug (for repo-scoped tasks)'),
       branch: z.string().optional().describe('Git branch to work on'),
@@ -107,6 +114,51 @@ export function registerExecutorRelayTools(
     async (params) => {
       try {
         let repositoryId: string | undefined;
+        let targetExecutorId: string | undefined;
+
+        // Resolve target executor (direct ID or name lookup)
+        if (params.executor_id) {
+          const targetExec = await db.query.agentExecutors.findFirst({
+            where: and(
+              eq(agentExecutors.id, params.executor_id),
+              eq(agentExecutors.userId, userId),
+            ),
+          });
+          if (!targetExec) {
+            return { content: [{ type: 'text', text: `Executor not found: ${params.executor_id}` }], isError: true };
+          }
+          targetExecutorId = targetExec.id;
+          if (!repositoryId && targetExec.repositoryId) {
+            repositoryId = targetExec.repositoryId;
+          }
+        } else if (params.executor_name) {
+          const executors = await listExecutors(userId);
+          const match = executors.find(
+            (e) =>
+              e.name === params.executor_name ||
+              e.name === `cva:${params.executor_name}` ||
+              e.machineName === params.executor_name ||
+              (e.machineName || '').toLowerCase() === (params.executor_name || '').toLowerCase() ||
+              (e.name || '').toLowerCase().includes((params.executor_name || '').toLowerCase())
+          );
+          if (!match) {
+            const names = executors
+              .filter((e) => e.status === 'online')
+              .map((e) => e.machineName || e.name)
+              .join(', ');
+            return {
+              content: [{
+                type: 'text',
+                text: `No executor found matching "${params.executor_name}". Online executors: ${names || '(none)'}`,
+              }],
+              isError: true,
+            };
+          }
+          targetExecutorId = match.id;
+          if (!repositoryId && match.repositoryId) {
+            repositoryId = match.repositoryId;
+          }
+        }
 
         if (params.owner && params.repo) {
           const repoData = await resolveRepo(params.owner, params.repo, userId);
@@ -147,6 +199,7 @@ export function registerExecutorRelayTools(
           branch: params.branch,
           filePaths: params.file_paths,
           timeoutMinutes: params.timeout_minutes,
+          targetExecutorId,
         });
 
         // Emit initial lifecycle event
@@ -163,8 +216,11 @@ export function registerExecutorRelayTools(
               task_id: task.id,
               status: task.status,
               priority: task.priority,
+              target_executor_id: task.targetExecutorId ?? null,
               timeout_at: task.timeoutAt?.toISOString() ?? null,
-              message: 'Task created. An executor will claim it on next poll.',
+              message: targetExecutorId
+                ? `Task created and targeted to executor ${targetExecutorId}. It will claim on next poll.`
+                : 'Task created. An executor will claim it on next poll.',
             }, null, 2),
           }],
         };
