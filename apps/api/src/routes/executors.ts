@@ -117,6 +117,19 @@ const registerSchema = z.object({
   repos: z.array(z.string()).optional(),
   organization_id: z.string().uuid().optional(),
   repository_id: z.string().uuid().optional(),
+  // Executor identity and safety metadata
+  role: z.enum(['development', 'production', 'ci', 'staging']).optional(),
+  dispatch_guard: z.enum(['open', 'confirm', 'locked']).optional(),
+  integration: z.object({
+    system: z.string(),
+    description: z.string().optional(),
+    service_port: z.number().optional(),
+    safe_task_types: z.array(z.string()).optional(),
+    unsafe_task_types: z.array(z.string()).optional(),
+    self_referential: z.boolean().optional(),
+  }).optional(),
+  tags: z.array(z.string()).optional(),
+  owner_project: z.string().max(100).optional(),
 });
 
 executors.post('/', zValidator('json', registerSchema), async (c) => {
@@ -157,6 +170,11 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
     repos: body.repos,
     organizationId: orgResult.orgId,
     repositoryId,
+    role: body.role,
+    dispatchGuard: body.dispatch_guard,
+    integration: body.integration,
+    tags: body.tags,
+    ownerProject: body.owner_project,
   });
 
   return c.json(
@@ -170,6 +188,11 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
         repos: executor.repos,
         organization_id: executor.organizationId,
         repository_id: executor.repositoryId,
+        role: executor.role,
+        dispatch_guard: executor.dispatchGuard,
+        integration: executor.integration,
+        tags: executor.tags,
+        owner_project: executor.ownerProject,
         created_at: executor.createdAt,
       },
       registration_token: registrationToken,
