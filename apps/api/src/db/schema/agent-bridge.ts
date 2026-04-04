@@ -205,6 +205,20 @@ export const agentExecutors = pgTable(
 
     registrationToken: varchar('registration_token', { length: 64 }),
 
+    // Executor identity and safety metadata
+    role: varchar('role', { length: 20 }).default('development'),
+    dispatchGuard: varchar('dispatch_guard', { length: 20 }).default('open'),
+    integration: jsonb('integration').$type<{
+      system: string;
+      description?: string;
+      service_port?: number;
+      safe_task_types?: string[];
+      unsafe_task_types?: string[];
+      self_referential?: boolean;
+    }>(),
+    tags: jsonb('tags').$type<string[]>(),
+    ownerProject: varchar('owner_project', { length: 100 }),
+
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     lastTaskAt: timestamp('last_task_at', { withTimezone: true }),
 

@@ -68,6 +68,11 @@ export function registerExecutorRelayTools(
           display_name: e.machineName || e.name,
           type: e.type,
           status: e.status,
+          role: e.role ?? 'development',
+          dispatch_guard: e.dispatchGuard ?? 'open',
+          integration: e.integration ?? null,
+          tags: e.tags ?? [],
+          owner_project: e.ownerProject ?? null,
           workspace_root: e.workspaceRoot,
           repository_id: e.repositoryId,
           capabilities: e.capabilities,
@@ -184,6 +189,58 @@ export function registerExecutorRelayTools(
           }
         } catch {
           // Non-fatal: dispatch without enrichment if it fails
+        }
+
+        // ── Dispatch Guard Check ────────────────────────────────────────
+        if (targetExecutorId) {
+          const targetExec = await db.query.agentExecutors.findFirst({
+            where: eq(agentExecutors.id, targetExecutorId),
+          });
+
+          if (targetExec) {
+            const guard = targetExec.dispatchGuard || 'open';
+            const executorRole = targetExec.role || 'development';
+            const integration = targetExec.integration as {
+              system?: string; unsafe_task_types?: string[]; self_referential?: boolean;
+            } | null;
+            const taskType = params.task_type || 'custom';
+
+            // Locked executors reject all dispatches
+            if (guard === 'locked') {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Executor "${targetExec.name}" is locked (dispatch_guard=locked).` +
+                    (integration?.system ? ` Integrated into: ${integration.system}.` : '') +
+                    ` Use a different executor or change the guard setting.`,
+                }],
+                isError: true,
+              };
+            }
+
+            // Self-referential executors block code_change by default
+            if (integration?.self_referential && ['code_change', 'deploy'].includes(taskType)) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `BLOCKED: Executor "${targetExec.name}" is self-referential ` +
+                    `(modifies the platform itself). Task type "${taskType}" is not safe. ` +
+                    `Use a staging executor for code changes to ${integration.system || 'this system'}.`,
+                }],
+                isError: true,
+              };
+            }
+
+            // Confirm-guard or production executors with unsafe task types
+            if ((guard === 'confirm' || executorRole === 'production') &&
+                integration?.unsafe_task_types?.includes(taskType)) {
+              // Include warning in response (task still dispatches)
+              // The planner sees this and can decide to proceed or cancel
+              enrichedDescription = `⚠️ WARNING: Executor "${targetExec.name}" is ${executorRole} ` +
+                `and integrated into ${integration.system || 'a running service'}. ` +
+                `Task type "${taskType}" may disrupt the service.\n\n` + enrichedDescription;
+            }
+          }
         }
 
         const task = await createAgentTask({

@@ -19,6 +19,11 @@ export async function registerExecutor(params: {
   repos?: string[];
   organizationId?: string;
   repositoryId?: string;
+  role?: string;
+  dispatchGuard?: string;
+  integration?: Record<string, unknown>;
+  tags?: string[];
+  ownerProject?: string;
 }): Promise<{ executor: AgentExecutor; registrationToken: string }> {
   // Upsert: if machineName is provided, reuse existing executor for same user+machine
   if (params.machineName) {
@@ -40,6 +45,11 @@ export async function registerExecutor(params: {
           repos: params.repos,
           organizationId: params.organizationId ?? existing.organizationId,
           repositoryId: params.repositoryId ?? existing.repositoryId,
+          role: params.role ?? existing.role,
+          dispatchGuard: params.dispatchGuard ?? existing.dispatchGuard,
+          integration: (params.integration ?? existing.integration) as any,
+          tags: (params.tags ?? existing.tags) as any,
+          ownerProject: params.ownerProject ?? existing.ownerProject,
           lastHeartbeatAt: new Date(),
           updatedAt: new Date(),
         })
@@ -69,6 +79,11 @@ export async function registerExecutor(params: {
       repos: params.repos,
       organizationId: params.organizationId,
       repositoryId: params.repositoryId,
+      role: params.role,
+      dispatchGuard: params.dispatchGuard,
+      integration: params.integration as any,
+      tags: params.tags as any,
+      ownerProject: params.ownerProject,
       registrationToken,
       lastHeartbeatAt: new Date(),
     })
