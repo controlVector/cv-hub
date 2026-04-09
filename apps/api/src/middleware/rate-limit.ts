@@ -15,7 +15,7 @@ const defaultConfig: RateLimitConfig = {
 
 const strictConfig: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,  // 15 minutes
-  maxRequests: 5,             // Very strict for auth endpoints
+  maxRequests: 30,            // Strict but allows legitimate OAuth flows (token exchange, refresh)
 };
 
 function getClientIdentifier(c: Context): string {
