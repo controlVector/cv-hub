@@ -3,7 +3,7 @@
  * Manage repository visibility, danger zone (delete/transfer)
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -135,15 +135,6 @@ function CollaboratorsSection({ owner, repo }: { owner: string; repo: string }) 
       queryClient.invalidateQueries({ queryKey: ['repo-members', owner, repo] });
     },
   });
-
-  const roleColor = (role: string) => {
-    switch (role) {
-      case 'admin': return 'error';
-      case 'write': return 'primary';
-      case 'read': return 'default';
-      default: return 'default';
-    }
-  };
 
   return (
     <Card sx={{ mb: 3 }}>
