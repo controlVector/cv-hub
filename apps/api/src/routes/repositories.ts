@@ -683,4 +683,39 @@ repoRoutes.delete('/repos/:owner/:repo/watch', requireAuth, async (c) => {
   return c.json({ watching: false });
 });
 
+// ============================================================================
+// GET /api/v1/users/search - Search users by username or email
+// Used by the collaborator UI to find users to add
+// ============================================================================
+
+repoRoutes.get('/users/search', requireAuth, async (c) => {
+  const q = c.req.query('q') || '';
+  const limit = parseInt(c.req.query('limit') || '10', 10);
+
+  if (q.length < 2) {
+    return c.json({ users: [] });
+  }
+
+  const { db } = await import('../db');
+  const { users } = await import('../db/schema');
+  const { ilike, or } = await import('drizzle-orm');
+
+  const results = await db.query.users.findMany({
+    where: or(
+      ilike(users.username, `%${q}%`),
+      ilike(users.email, `%${q}%`),
+    ),
+    columns: {
+      id: true,
+      username: true,
+      email: true,
+      displayName: true,
+      avatarUrl: true,
+    },
+    limit: Math.min(limit, 20),
+  });
+
+  return c.json({ users: results });
+});
+
 export { repoRoutes as repositoryRoutes };
