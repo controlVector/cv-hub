@@ -658,6 +658,48 @@ export async function determineRunConclusion(
   return hasFailure ? 'failure' : 'success';
 }
 
+/**
+ * Check if a pipeline run is complete and advance the DAG.
+ * Called by the task completion hook when a pipeline job's linked task finishes.
+ */
+export async function checkAndAdvanceRun(runId: string): Promise<void> {
+  const complete = await isRunComplete(runId);
+
+  if (complete) {
+    const conclusion = await determineRunConclusion(runId);
+    await updatePipelineRunStatus(runId, conclusion);
+    return;
+  }
+
+  // Not complete — check if there are new jobs ready to dispatch
+  const readyJobs = await getReadyJobs(runId);
+  if (readyJobs.length > 0) {
+    // Dispatch ready jobs — import dynamically to avoid circular dependency
+    const { dispatchJobForExecution } = await import('./job-dispatch.service');
+    const run = await getPipelineRunById(runId);
+    if (!run) return;
+
+    const repo = await db.query.pipelines.findFirst({
+      where: eq(pipelines.id, run.pipelineId),
+      with: { repository: { with: { organization: true, owner: true } } },
+    });
+
+    const ownerSlug = repo?.repository?.organization?.slug || (repo?.repository as any)?.owner?.username || '';
+    const repoSlug = repo?.repository?.slug || '';
+
+    const workspaceConfig = {
+      ownerSlug,
+      repoSlug,
+      ref: run.triggerRef || 'main',
+      sha: run.triggerSha || '',
+    };
+
+    for (const job of readyJobs) {
+      await dispatchJobForExecution(job, run, workspaceConfig);
+    }
+  }
+}
+
 // ============================================================================
 // Repository Pipelines
 // ============================================================================

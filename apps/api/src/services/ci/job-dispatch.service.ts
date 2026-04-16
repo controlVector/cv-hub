@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger';
 import { getReadyJobs, updateJobStatus, updatePipelineRunStatus } from './pipeline.service';
 import { executeStep as executeStepReal, cleanupWorkspace } from './step-executor';
 import { getDeployConfig, deployConfigToEnv } from './deploy-config';
+import { createAgentTask } from '../agent-task.service';
 
 // Type aliases for status values
 type JobStatus = 'pending' | 'queued' | 'running' | 'success' | 'failure' | 'cancelled' | 'skipped';
@@ -230,9 +231,19 @@ export async function dispatchJobForExecution(
   run: PipelineRun,
   workspaceConfig: WorkspaceConfig
 ): Promise<string> {
+  // Try executor-based dispatch first (CV-Agent task system)
+  try {
+    const taskId = await dispatchJobToExecutor(job, run, workspaceConfig);
+    if (taskId) return taskId;
+  } catch (err: any) {
+    logger.warn('ci', `Executor dispatch failed, falling back to queue: ${err.message}`, {
+      jobId: job.id,
+    });
+  }
+
+  // Fallback: BullMQ queue (traditional CI runner)
   const queue = getExecutionQueue();
 
-  // Update job status to queued
   await updateJobStatus(job.id, 'queued');
 
   const executionJob = await queue.add(
@@ -253,7 +264,7 @@ export async function dispatchJobForExecution(
     }
   );
 
-  logger.info('ci', 'Job dispatched for execution', {
+  logger.info('ci', 'Job dispatched via queue', {
     jobId: job.id,
     jobKey: job.jobKey,
     runId: run.id,
@@ -261,6 +272,87 @@ export async function dispatchJobForExecution(
   });
 
   return executionJob.id!;
+}
+
+/**
+ * Dispatch a pipeline job as a task to the CV-Agent executor system.
+ * Returns the task ID if successful, null if no executor available.
+ */
+async function dispatchJobToExecutor(
+  job: PipelineJob,
+  run: PipelineRun,
+  workspaceConfig: WorkspaceConfig,
+): Promise<string | null> {
+  // Build step list for the task description
+  const steps = (job.steps as JobStep[]) || [];
+  const stepList = steps.map((s, i) => {
+    let desc = `${i + 1}. **${s.name || s.uses || 'Run command'}**`;
+    if (s.uses) desc += `\n   Action: ${s.uses}`;
+    if (s.run) desc += `\n   \`\`\`bash\n   ${s.run}\n   \`\`\``;
+    return desc;
+  }).join('\n\n');
+
+  const envVars = (job.environment as Record<string, string>) || {};
+  const envList = Object.entries(envVars)
+    .map(([k, v]) => `- \`${k}\`=${v.length > 50 ? v.substring(0, 50) + '...' : v}`)
+    .join('\n') || '(none)';
+
+  // Infer task type from steps
+  let taskType: 'test' | 'deploy' | 'custom' = 'custom';
+  const allStepText = steps.map(s => (s.run || '') + (s.uses || '') + (s.name || '')).join(' ').toLowerCase();
+  if (allStepText.includes('test') || allStepText.includes('jest') || allStepText.includes('vitest')) {
+    taskType = 'test';
+  } else if (allStepText.includes('deploy') || allStepText.includes('release')) {
+    taskType = 'deploy';
+  }
+
+  const description = [
+    `## CI Job: ${job.name}`,
+    `Pipeline Run: #${run.number}`,
+    `Trigger: ${run.trigger} on ${run.triggerRef || 'main'} (${(run.triggerSha || '').substring(0, 8)})`,
+    `Repository: ${workspaceConfig.ownerSlug}/${workspaceConfig.repoSlug}`,
+    '',
+    '### Steps',
+    'Execute these steps in order. Stop on first failure.',
+    '',
+    stepList,
+    '',
+    '### Environment',
+    envList,
+  ].join('\n');
+
+  // Create a task via the agent task system
+  // The task's triggeredBy is the run's triggeredBy user
+  const task = await createAgentTask({
+    userId: run.triggeredBy,
+    title: `${job.name} (#${run.number})`,
+    description,
+    taskType,
+    priority: taskType === 'deploy' ? 'high' : 'medium',
+    repositoryId: run.repositoryId,
+    branch: run.triggerRef || undefined,
+    metadata: {
+      pipelineJobId: job.id,
+      pipelineRunId: run.id,
+      jobKey: job.jobKey,
+      source: 'ci-pipeline',
+    },
+  });
+
+  // Link the task to the pipeline job
+  await db
+    .update(pipelineJobs)
+    .set({ taskId: task.id, status: 'queued', queuedAt: new Date(), updatedAt: new Date() })
+    .where(eq(pipelineJobs.id, job.id));
+
+  logger.info('ci', 'Job dispatched to executor via task system', {
+    jobId: job.id,
+    jobKey: job.jobKey,
+    runId: run.id,
+    taskId: task.id,
+  });
+
+  return task.id;
 }
 
 /**
