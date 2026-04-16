@@ -102,6 +102,27 @@ export async function removeMember(slug: string, memberId: string): Promise<void
   await api.delete(`/v1/orgs/${slug}/members/${memberId}`);
 }
 
+// Invite member by email
+export async function inviteMember(
+  slug: string,
+  email: string,
+  role: OrgRole = 'member'
+): Promise<{ id: string; email: string; role: string }> {
+  const response = await api.post(`/v1/orgs/${slug}/invites`, { email, role });
+  return response.data.invite;
+}
+
+// List pending invites
+export async function listPendingInvites(slug: string): Promise<Array<{ id: string; email: string; role: string; createdAt: string }>> {
+  const response = await api.get(`/v1/orgs/${slug}/invites`);
+  return response.data.invites || [];
+}
+
+// Cancel invite
+export async function cancelInvite(slug: string, inviteId: string): Promise<void> {
+  await api.delete(`/v1/orgs/${slug}/invites/${inviteId}`);
+}
+
 // Transfer app to organization
 export async function transferApp(slug: string, appId: string): Promise<void> {
   await api.post(`/v1/orgs/${slug}/apps/${appId}/transfer`);
