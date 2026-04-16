@@ -35,6 +35,8 @@ import {
   Delete as DeleteIcon,
   Person as PersonIcon,
   Warning as WarningIcon,
+  PersonAdd as PersonAddIcon,
+  Cancel as CancelIcon,
 } from '@mui/icons-material';
 import { colors } from '../../theme';
 import {
@@ -44,6 +46,9 @@ import {
   listMembers,
   updateMemberRole,
   removeMember,
+  inviteMember,
+  listPendingInvites,
+  cancelInvite,
 } from '../../services/organization';
 import type { UpdateOrganizationInput, OrgRole } from '../../types/organization';
 import { useAuth } from '../../contexts/AuthContext';
@@ -138,6 +143,36 @@ export default function OrganizationSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization-members', slug] });
       queryClient.invalidateQueries({ queryKey: ['organization', slug] });
+    },
+  });
+
+  // Invite member functionality
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<OrgRole>('member');
+  const [inviteSuccess, setInviteSuccess] = useState('');
+
+  const { data: pendingInvites } = useQuery({
+    queryKey: ['org-invites', slug],
+    queryFn: () => listPendingInvites(slug!),
+    enabled: !!slug,
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: () => inviteMember(slug!, inviteEmail, inviteRole),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-invites', slug] });
+      setInviteOpen(false);
+      setInviteEmail('');
+      setInviteSuccess('Invitation sent');
+      setTimeout(() => setInviteSuccess(''), 3000);
+    },
+  });
+
+  const cancelInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => cancelInvite(slug!, inviteId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['org-invites', slug] });
     },
   });
 
@@ -285,9 +320,25 @@ export default function OrganizationSettings() {
           {/* Members */}
           <Card sx={{ mb: 4 }}>
             <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>
-                Members
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  Members
+                </Typography>
+                {isAdmin && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<PersonAddIcon />}
+                    onClick={() => setInviteOpen(true)}
+                  >
+                    Invite member
+                  </Button>
+                )}
+              </Box>
+
+              {inviteSuccess && (
+                <Alert severity="success" sx={{ mb: 2 }}>{inviteSuccess}</Alert>
+              )}
 
               <TierLimitAlert error={removeMemberMutation.error} orgSlug={slug} />
               <TierLimitAlert error={updateRoleMutation.error} orgSlug={slug} />
@@ -357,8 +408,82 @@ export default function OrganizationSettings() {
                   ))}
                 </List>
               )}
+
+              {/* Pending Invites */}
+              {pendingInvites && pendingInvites.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="subtitle2" sx={{ color: colors.textMuted, mb: 1 }}>
+                    Pending Invitations
+                  </Typography>
+                  <List dense>
+                    {pendingInvites.map((invite) => (
+                      <ListItem key={invite.id} divider>
+                        <ListItemText
+                          primary={invite.email}
+                          secondary={`Invited as ${invite.role} — ${new Date(invite.createdAt).toLocaleDateString()}`}
+                        />
+                        {isAdmin && (
+                          <ListItemSecondaryAction>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => cancelInviteMutation.mutate(invite.id)}
+                              title="Cancel invitation"
+                            >
+                              <CancelIcon fontSize="small" />
+                            </IconButton>
+                          </ListItemSecondaryAction>
+                        )}
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              )}
             </CardContent>
           </Card>
+
+          {/* Invite Member Dialog */}
+          <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} maxWidth="sm" fullWidth>
+            <DialogTitle>Invite Member</DialogTitle>
+            <DialogContent>
+              <TextField
+                label="Email address"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                fullWidth
+                autoFocus
+                type="email"
+                placeholder="colleague@example.com"
+                sx={{ mt: 1, mb: 2 }}
+              />
+              <FormControl fullWidth>
+                <Select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as OrgRole)}
+                  size="small"
+                >
+                  <MenuItem value="member">Member — Can view repos and participate</MenuItem>
+                  <MenuItem value="admin">Admin — Full access including settings</MenuItem>
+                </Select>
+              </FormControl>
+              {inviteMutation.error && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {(inviteMutation.error as Error).message || 'Failed to send invitation'}
+                </Alert>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setInviteOpen(false)}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={() => inviteMutation.mutate()}
+                disabled={!inviteEmail || inviteMutation.isPending}
+                startIcon={<PersonAddIcon />}
+              >
+                {inviteMutation.isPending ? 'Sending...' : 'Send Invitation'}
+              </Button>
+            </DialogActions>
+          </Dialog>
 
           {/* Billing */}
           {isAdmin && org && (
