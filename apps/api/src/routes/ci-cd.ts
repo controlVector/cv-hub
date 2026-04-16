@@ -59,13 +59,13 @@ async function getRepoWithAccess(
   }
 
   const userId = c.get('userId');
-  const canAccess = await canUserAccessRepo(userId, repository.id);
+  const canAccess = await canUserAccessRepo(repository.id, userId);
   if (!canAccess) {
     throw new ForbiddenError('Access denied');
   }
 
   if (requireWrite) {
-    const canWrite = await canUserWriteToRepo(userId, repository.id);
+    const canWrite = await canUserWriteToRepo(repository.id, userId);
     if (!canWrite) {
       throw new ForbiddenError('Write access required');
     }
