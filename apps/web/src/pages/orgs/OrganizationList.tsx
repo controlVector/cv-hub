@@ -62,7 +62,7 @@ export default function OrganizationList() {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => navigate('/orgs/new')}
+          onClick={() => navigate('/dashboard/orgs/new')}
         >
           Create Organization
         </Button>
@@ -120,7 +120,7 @@ export default function OrganizationList() {
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
-              onClick={() => navigate('/orgs/new')}
+              onClick={() => navigate('/dashboard/orgs/new')}
             >
               Create Organization
             </Button>

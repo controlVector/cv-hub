@@ -126,7 +126,7 @@ export default function OrganizationSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['my-organizations'] });
-      navigate('/orgs');
+      navigate('/dashboard/orgs');
     },
   });
 
@@ -195,7 +195,7 @@ export default function OrganizationSettings() {
   if (orgError) {
     return (
       <Box>
-        <Button startIcon={<BackIcon />} onClick={() => navigate('/orgs')} sx={{ mb: 2 }}>
+        <Button startIcon={<BackIcon />} onClick={() => navigate('/dashboard/orgs')} sx={{ mb: 2 }}>
           Back to Organizations
         </Button>
         <Alert severity="error">

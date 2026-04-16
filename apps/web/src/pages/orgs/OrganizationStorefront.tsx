@@ -79,7 +79,7 @@ export default function OrganizationStorefront() {
   if (orgError) {
     return (
       <Box>
-        <Button startIcon={<BackIcon />} onClick={() => navigate('/orgs')} sx={{ mb: 2 }}>
+        <Button startIcon={<BackIcon />} onClick={() => navigate('/dashboard/orgs')} sx={{ mb: 2 }}>
           Back to Organizations
         </Button>
         <Alert severity="error">
@@ -95,7 +95,7 @@ export default function OrganizationStorefront() {
   return (
     <Box>
       {/* Back Button */}
-      <Button startIcon={<BackIcon />} onClick={() => navigate('/orgs')} sx={{ mb: 2 }}>
+      <Button startIcon={<BackIcon />} onClick={() => navigate('/dashboard/orgs')} sx={{ mb: 2 }}>
         Back to Organizations
       </Button>
 
