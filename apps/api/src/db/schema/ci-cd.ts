@@ -436,6 +436,10 @@ export const pipelineJobs = pgTable(
     // Logs location
     logsPath: text('logs_path'),
 
+    // CV-Agent task bridge — links pipeline jobs to the executor task system
+    taskId: uuid('task_id'),
+    executorId: uuid('executor_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -446,6 +450,7 @@ export const pipelineJobs = pgTable(
   (table) => [
     uniqueIndex('pipeline_jobs_run_key_idx').on(table.runId, table.jobKey),
     index('pipeline_jobs_run_idx').on(table.runId),
+    index('pipeline_jobs_task_idx').on(table.taskId),
     index('pipeline_jobs_status_idx').on(table.status),
     index('pipeline_jobs_runner_idx').on(table.runnerId),
   ]

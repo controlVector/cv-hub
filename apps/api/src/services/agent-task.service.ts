@@ -324,6 +324,11 @@ export async function completeTask(
     .where(and(...conditions))
     .returning();
 
+  // Pipeline job completion hook — advance the DAG if this task is linked to a pipeline job
+  if (updated) {
+    onTaskTerminal(taskId, 'success').catch(() => {});
+  }
+
   return updated || null;
 }
 
@@ -374,5 +379,50 @@ export async function failTask(
     .where(and(...conditions))
     .returning();
 
+  // Pipeline job failure hook
+  if (updated) {
+    onTaskTerminal(taskId, 'failure').catch(() => {});
+  }
+
   return updated || null;
+}
+
+// ==================== Pipeline Job Bridge ====================
+
+/**
+ * Called when a task reaches a terminal state (completed/failed).
+ * If the task is linked to a pipeline job, updates the job status
+ * and triggers DAG advancement for the pipeline run.
+ */
+async function onTaskTerminal(
+  taskId: string,
+  outcome: 'success' | 'failure',
+): Promise<void> {
+  try {
+    const { pipelineJobs } = await import('../db/schema/ci-cd');
+    const { updateJobStatus, checkAndAdvanceRun } = await import('./ci/pipeline.service');
+
+    // Check if this task is linked to a pipeline job
+    const job = await db.query.pipelineJobs.findFirst({
+      where: eq(pipelineJobs.taskId, taskId),
+    });
+
+    if (!job) return; // Not a pipeline task
+
+    // Update the pipeline job status
+    await updateJobStatus(job.id, outcome, {
+      completedAt: new Date(),
+      durationMs: job.startedAt
+        ? Date.now() - new Date(job.startedAt).getTime()
+        : undefined,
+    });
+
+    // Advance the pipeline DAG (dispatch next jobs or mark run as complete)
+    if (job.runId) {
+      await checkAndAdvanceRun(job.runId);
+    }
+  } catch (err: any) {
+    // Non-fatal — don't break task completion if pipeline bridge fails
+    console.warn(`[pipeline-bridge] onTaskTerminal failed for task ${taskId}: ${err.message}`);
+  }
 }
