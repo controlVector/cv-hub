@@ -409,13 +409,9 @@ async function onTaskTerminal(
 
     if (!job) return; // Not a pipeline task
 
-    // Update the pipeline job status
-    await updateJobStatus(job.id, outcome, {
-      completedAt: new Date(),
-      durationMs: job.startedAt
-        ? Date.now() - new Date(job.startedAt).getTime()
-        : undefined,
-    });
+    // updateJobStatus auto-populates completedAt and durationMs (when
+    // startedAt is known) for terminal statuses.
+    await updateJobStatus(job.id, outcome);
 
     // Advance the pipeline DAG (dispatch next jobs or mark run as complete)
     if (job.runId) {

@@ -300,8 +300,11 @@ cicdRoutes.post(
       inputs: body.inputs,
     });
 
-    // Enqueue for execution
-    await enqueuePipelineRun(run.id);
+    // triggerPipeline already dispatched for `api` triggers. Still enqueue
+    // to BullMQ as a best-effort fallback for deployments where a worker
+    // is running — the worker will no-op if the run is already running.
+    // Don't fail the request if Redis is unavailable.
+    enqueuePipelineRun(run.id).catch(() => {});
 
     return c.json(
       {
