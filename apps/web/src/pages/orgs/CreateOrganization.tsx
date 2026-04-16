@@ -41,7 +41,7 @@ export default function CreateOrganization() {
     onSuccess: (org) => {
       queryClient.invalidateQueries({ queryKey: ['organizations'] });
       queryClient.invalidateQueries({ queryKey: ['my-organizations'] });
-      navigate(`/orgs/${org.slug}`);
+      navigate(`/dashboard/orgs/${org.slug}/settings`);
     },
   });
 
@@ -76,7 +76,7 @@ export default function CreateOrganization() {
 
   return (
     <Box>
-      <Button startIcon={<BackIcon />} onClick={() => navigate('/orgs')} sx={{ mb: 2 }}>
+      <Button startIcon={<BackIcon />} onClick={() => navigate('/dashboard/orgs')} sx={{ mb: 2 }}>
         Back to Organizations
       </Button>
 
@@ -165,7 +165,7 @@ export default function CreateOrganization() {
                 </Typography>
 
                 <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 2 }}>
-                  <Button variant="outlined" onClick={() => navigate('/orgs')}>
+                  <Button variant="outlined" onClick={() => navigate('/dashboard/orgs')}>
                     Cancel
                   </Button>
                   <Button
