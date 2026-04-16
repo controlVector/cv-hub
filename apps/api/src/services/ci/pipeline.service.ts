@@ -345,6 +345,23 @@ export async function triggerPipeline(
     trigger: input.trigger,
   });
 
+  // Synchronous dispatch for manually/API-initiated runs so they make progress
+  // even when the BullMQ orchestration worker isn't running in the current
+  // deployment. Push/schedule triggers still rely on BullMQ at the callsite.
+  if (input.trigger === 'api' || input.trigger === 'manual') {
+    try {
+      const started = await startRunDirect(run.id);
+      if (started) return started;
+    } catch (err: any) {
+      logger.error('ci', 'triggerPipeline: startRunDirect failed', {
+        runId: run.id,
+        error: err.message,
+      });
+      // Fall through to return the pending run — BullMQ (if running) or a later
+      // caller can retry via enqueuePipelineRun.
+    }
+  }
+
   return run;
 }
 
@@ -698,6 +715,89 @@ export async function checkAndAdvanceRun(runId: string): Promise<void> {
       await dispatchJobForExecution(job, run, workspaceConfig);
     }
   }
+}
+
+/**
+ * Start a run synchronously, without relying on a BullMQ worker.
+ *
+ * Transitions the run from `pending` → `running`, then dispatches every root
+ * job (no deps, or deps already satisfied) via the agent task system. Used by
+ * `api` and `manual` triggers so runs make progress even when the BullMQ
+ * orchestration worker isn't running in the current deployment.
+ */
+export async function startRunDirect(runId: string): Promise<PipelineRun | null> {
+  const runWithRepo = await db.query.pipelineRuns.findFirst({
+    where: eq(pipelineRuns.id, runId),
+    with: {
+      pipeline: {
+        with: {
+          repository: {
+            with: {
+              organization: true,
+              owner: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!runWithRepo) {
+    logger.warn('ci', 'startRunDirect: run not found', { runId });
+    return null;
+  }
+
+  if (runWithRepo.status !== 'pending') {
+    // Already started by another path (BullMQ worker, etc.) — no-op
+    return runWithRepo;
+  }
+
+  // Transition to running
+  const updatedRun = await updatePipelineRunStatus(runId, 'running');
+  if (!updatedRun) return null;
+
+  const repo = runWithRepo.pipeline.repository;
+  const ownerSlug =
+    repo.organization?.slug || (repo.owner as any)?.username || '';
+
+  const workspaceConfig = {
+    ownerSlug,
+    repoSlug: repo.slug,
+    ref: updatedRun.triggerRef || repo.defaultBranch || 'main',
+    sha: updatedRun.triggerSha || '',
+  };
+
+  const readyJobs = await getReadyJobs(runId);
+
+  // Degenerate case: pipeline has no jobs (or all are conditionally skipped).
+  if (readyJobs.length === 0) {
+    await updatePipelineRunStatus(runId, 'success');
+    return (await getPipelineRunById(runId)) || updatedRun;
+  }
+
+  // Dynamic import to avoid circular dependency with job-dispatch.service
+  const { dispatchJobForExecution } = await import('./job-dispatch.service');
+
+  for (const job of readyJobs) {
+    try {
+      await dispatchJobForExecution(job, updatedRun, workspaceConfig);
+    } catch (err: any) {
+      logger.error('ci', 'startRunDirect: dispatch failed for job', {
+        runId,
+        jobId: job.id,
+        error: err.message,
+      });
+      // Mark the job as failed so the DAG can still advance / fail the run
+      await updateJobStatus(job.id, 'failure');
+    }
+  }
+
+  logger.info('ci', 'Pipeline run started directly', {
+    runId,
+    jobsDispatched: readyJobs.length,
+  });
+
+  return updatedRun;
 }
 
 // ============================================================================
