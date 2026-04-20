@@ -19,6 +19,7 @@ export async function createTaskEvent(params: {
   eventType: string;
   content: Record<string, unknown> | string;
   needsResponse?: boolean;
+  sequenceNumber?: number;
 }): Promise<TaskEvent> {
   const [event] = await db
     .insert(taskEvents)
@@ -27,6 +28,7 @@ export async function createTaskEvent(params: {
       eventType: params.eventType as any,
       content: params.content,
       needsResponse: params.needsResponse ?? false,
+      sequenceNumber: params.sequenceNumber,
     })
     .returning();
 
@@ -69,7 +71,7 @@ export async function getTaskEvents(params: {
 
   return db.query.taskEvents.findMany({
     where: and(...conditions),
-    orderBy: [asc(taskEvents.createdAt)],
+    orderBy: [asc(taskEvents.sequenceNumber), asc(taskEvents.createdAt)],
     limit: Math.min(params.limit ?? 50, 200),
   });
 }

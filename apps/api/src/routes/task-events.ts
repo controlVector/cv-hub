@@ -39,10 +39,14 @@ const createEventSchema = z.object({
   event_type: z.enum([
     'thinking', 'decision', 'question', 'progress',
     'file_change', 'error', 'approval_request', 'completed',
+    'redirect', 'output', 'output_final',
   ]),
   content: z.union([z.record(z.unknown()), z.string()]),
   needs_response: z.boolean().optional(),
+  sequence_number: z.number().int().nonnegative().optional(),
 });
+
+const MAX_EVENT_CONTENT_BYTES = 64 * 1024;
 
 taskEventRoutes.post(
   '/:taskId/events',
@@ -57,11 +61,24 @@ taskEventRoutes.post(
       return c.json({ error: 'Task not found' }, 404);
     }
 
+    const contentBytes = Buffer.byteLength(
+      typeof body.content === 'string' ? body.content : JSON.stringify(body.content),
+      'utf8',
+    );
+    if (contentBytes > MAX_EVENT_CONTENT_BYTES) {
+      return c.json({
+        error: 'Event content exceeds 64KB limit — chunk output across multiple events',
+        size_bytes: contentBytes,
+        limit_bytes: MAX_EVENT_CONTENT_BYTES,
+      }, 413);
+    }
+
     const event = await createTaskEvent({
       taskId,
       eventType: body.event_type,
       content: body.content,
       needsResponse: body.needs_response,
+      sequenceNumber: body.sequence_number,
     });
 
     return c.json(event, 201);

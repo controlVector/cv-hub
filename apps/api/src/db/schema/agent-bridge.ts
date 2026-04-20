@@ -8,6 +8,7 @@ import {
   index,
   pgEnum,
   integer,
+  bigint,
   jsonb,
   uniqueIndex,
   unique,
@@ -872,6 +873,8 @@ export const taskEventTypeEnum = pgEnum('task_event_type', [
   'approval_request',
   'completed',
   'redirect',
+  'output',
+  'output_final',
 ]);
 
 export const taskEvents = pgTable('task_events', {
@@ -891,10 +894,13 @@ export const taskEvents = pgTable('task_events', {
 
   respondedAt: timestamp('responded_at', { withTimezone: true }),
 
+  sequenceNumber: bigint('sequence_number', { mode: 'number' }),
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('idx_task_events_task_id').on(table.taskId, table.createdAt),
   index('idx_task_events_needs_response').on(table.taskId, table.needsResponse),
+  index('idx_task_events_task_seq').on(table.taskId, table.sequenceNumber),
 ]);
 
 export const taskEventsRelations = relations(taskEvents, ({ one }) => ({
