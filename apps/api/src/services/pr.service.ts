@@ -59,7 +59,16 @@ export interface PRListOptions {
 
 export interface PRWithDetails extends PullRequest {
   author: { id: string; username: string; displayName: string | null };
-  repository: { id: string; slug: string; name: string };
+  repository: { id: string; slug: string; name: string; ownerSlug: string };
+  reviews?: Array<{
+    id: string;
+    reviewerId: string;
+    state: string;
+    body: string | null;
+    submittedAt: Date | null;
+    createdAt: Date;
+    reviewer?: { id: string; username: string; displayName: string | null };
+  }>;
   reviewCount: number;
   commentCount: number;
 }
@@ -174,8 +183,15 @@ export async function getPullRequest(id: string): Promise<PRWithDetails | null> 
     where: eq(pullRequests.id, id),
     with: {
       author: true,
-      repository: true,
-      reviews: true,
+      repository: {
+        with: {
+          organization: true,
+          owner: true,
+        },
+      },
+      reviews: {
+        with: { reviewer: true },
+      },
       comments: true,
     },
   });
@@ -184,6 +200,17 @@ export async function getPullRequest(id: string): Promise<PRWithDetails | null> 
     return null;
   }
 
+  return shapePR(pr);
+}
+
+/**
+ * Normalize a DB-fetched PR into the PRWithDetails shape the API / UI consumes.
+ * Centralized so every fetch path (by-id, by-number, user-list, review-requests)
+ * returns the same envelope including `repository.ownerSlug` and the review array.
+ */
+function shapePR(pr: any): PRWithDetails {
+  const ownerSlug =
+    pr.repository?.organization?.slug ?? pr.repository?.owner?.username ?? '';
   return {
     ...pr,
     author: {
@@ -195,9 +222,25 @@ export async function getPullRequest(id: string): Promise<PRWithDetails | null> 
       id: pr.repository.id,
       slug: pr.repository.slug,
       name: pr.repository.name,
+      ownerSlug,
     },
-    reviewCount: pr.reviews.length,
-    commentCount: pr.comments.length,
+    reviews: (pr.reviews ?? []).map((r: any) => ({
+      id: r.id,
+      reviewerId: r.reviewerId,
+      state: r.state,
+      body: r.body,
+      submittedAt: r.submittedAt,
+      createdAt: r.createdAt,
+      reviewer: r.reviewer
+        ? {
+            id: r.reviewer.id,
+            username: r.reviewer.username,
+            displayName: r.reviewer.displayName,
+          }
+        : undefined,
+    })),
+    reviewCount: pr.reviews?.length ?? 0,
+    commentCount: pr.comments?.length ?? 0,
   };
 }
 
@@ -215,8 +258,15 @@ export async function getPullRequestByNumber(
     ),
     with: {
       author: true,
-      repository: true,
-      reviews: true,
+      repository: {
+        with: {
+          organization: true,
+          owner: true,
+        },
+      },
+      reviews: {
+        with: { reviewer: true },
+      },
       comments: true,
     },
   });
@@ -225,21 +275,7 @@ export async function getPullRequestByNumber(
     return null;
   }
 
-  return {
-    ...pr,
-    author: {
-      id: pr.author.id,
-      username: pr.author.username,
-      displayName: pr.author.displayName,
-    },
-    repository: {
-      id: pr.repository.id,
-      slug: pr.repository.slug,
-      name: pr.repository.name,
-    },
-    reviewCount: pr.reviews.length,
-    commentCount: pr.comments.length,
-  };
+  return shapePR(pr);
 }
 
 /**
@@ -265,8 +301,10 @@ export async function listPullRequests(
     where: and(...conditions),
     with: {
       author: true,
-      repository: true,
-      reviews: true,
+      repository: {
+        with: { organization: true, owner: true },
+      },
+      reviews: { with: { reviewer: true } },
       comments: true,
     },
     orderBy: desc(pullRequests.createdAt),
@@ -282,21 +320,7 @@ export async function listPullRequests(
   const total = countResult?.count || 0;
 
   return {
-    pullRequests: prs.map(pr => ({
-      ...pr,
-      author: {
-        id: pr.author.id,
-        username: pr.author.username,
-        displayName: pr.author.displayName,
-      },
-      repository: {
-        id: pr.repository.id,
-        slug: pr.repository.slug,
-        name: pr.repository.name,
-      },
-      reviewCount: pr.reviews.length,
-      commentCount: pr.comments.length,
-    })),
+    pullRequests: prs.map(shapePR),
     total,
   };
 }
@@ -723,8 +747,8 @@ export async function getUserPullRequests(
     where: and(...conditions),
     with: {
       author: true,
-      repository: true,
-      reviews: true,
+      repository: { with: { organization: true, owner: true } },
+      reviews: { with: { reviewer: true } },
       comments: true,
     },
     orderBy: desc(pullRequests.updatedAt),
@@ -732,21 +756,7 @@ export async function getUserPullRequests(
     offset,
   });
 
-  return prs.map(pr => ({
-    ...pr,
-    author: {
-      id: pr.author.id,
-      username: pr.author.username,
-      displayName: pr.author.displayName,
-    },
-    repository: {
-      id: pr.repository.id,
-      slug: pr.repository.slug,
-      name: pr.repository.name,
-    },
-    reviewCount: pr.reviews.length,
-    commentCount: pr.comments.length,
-  }));
+  return prs.map(shapePR);
 }
 
 /**
@@ -779,8 +789,8 @@ export async function getUserReviewRequests(
     ),
     with: {
       author: true,
-      repository: true,
-      reviews: true,
+      repository: { with: { organization: true, owner: true } },
+      reviews: { with: { reviewer: true } },
       comments: true,
     },
     orderBy: desc(pullRequests.updatedAt),
@@ -788,19 +798,5 @@ export async function getUserReviewRequests(
     offset,
   });
 
-  return prs.map(pr => ({
-    ...pr,
-    author: {
-      id: pr.author.id,
-      username: pr.author.username,
-      displayName: pr.author.displayName,
-    },
-    repository: {
-      id: pr.repository.id,
-      slug: pr.repository.slug,
-      name: pr.repository.name,
-    },
-    reviewCount: pr.reviews.length,
-    commentCount: pr.comments.length,
-  }));
+  return prs.map(shapePR);
 }

@@ -15,6 +15,33 @@ export interface PullRequestRepository {
   id: string;
   slug: string;
   name: string;
+  ownerSlug: string;
+}
+
+export interface PullRequestReview {
+  id: string;
+  reviewerId: string;
+  state: 'pending' | 'approved' | 'changes_requested' | 'commented' | 'dismissed';
+  body: string | null;
+  submittedAt: string | null;
+  createdAt: string;
+  reviewer?: PullRequestAuthor;
+}
+
+export interface PullRequestDiffFile {
+  path: string;
+  oldPath?: string;
+  additions: number;
+  deletions: number;
+  status: string;
+}
+
+export interface PullRequestDiff {
+  baseSha: string;
+  headSha: string;
+  totalAdditions: number;
+  totalDeletions: number;
+  files: PullRequestDiffFile[];
 }
 
 export interface PullRequest {
@@ -29,12 +56,14 @@ export interface PullRequest {
   targetSha: string | null;
   isDraft: boolean;
   labels: string[];
+  requiredReviewers?: number;
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
   mergedAt: string | null;
   author: PullRequestAuthor;
   repository: PullRequestRepository;
+  reviews?: PullRequestReview[];
   reviewCount: number;
   commentCount: number;
 }
@@ -158,7 +187,31 @@ export async function submitReview(
     state: 'approved' | 'changes_requested' | 'commented';
     body?: string;
   }
-): Promise<any> {
+): Promise<{ review: PullRequestReview }> {
   const response = await api.post(`/v1/repos/${owner}/${repo}/pulls/${number}/reviews`, data);
   return response.data;
+}
+
+/**
+ * Get all reviews for a PR
+ */
+export async function getReviews(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<{ reviews: PullRequestReview[] }> {
+  const response = await api.get(`/v1/repos/${owner}/${repo}/pulls/${number}/reviews`);
+  return response.data;
+}
+
+/**
+ * Get PR diff (base → head numstat)
+ */
+export async function getPullRequestDiff(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<PullRequestDiff> {
+  const response = await api.get(`/v1/repos/${owner}/${repo}/pulls/${number}/diff`);
+  return response.data.diff ?? response.data;
 }

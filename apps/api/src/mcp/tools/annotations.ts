@@ -67,6 +67,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   get_pull: READ_ONLY,
   create_pull: WRITE_SAFE,
   merge_pull: DESTRUCTIVE,
+  submit_review: WRITE_SAFE,
 
   // ── Issue tools ────────────────────────────────────────
   list_issues: READ_ONLY,

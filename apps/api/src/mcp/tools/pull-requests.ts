@@ -217,4 +217,51 @@ export function registerPullRequestTools(
       }
     },
   );
+
+  // ── submit_review ───────────────────────────────────────────────────
+  server.tool(
+    'submit_review',
+    'Submit a review on a pull request (approve, request changes, or comment). ' +
+    'Use state="approved" to satisfy merge gates; "changes_requested" to block merge; ' +
+    '"commented" for neutral feedback.',
+    {
+      owner: z.string().describe('Repository owner (username or org)'),
+      repo: z.string().describe('Repository slug'),
+      number: z.number().describe('Pull request number'),
+      state: z.enum(['approved', 'changes_requested', 'commented']).describe('Review verdict'),
+      body: z.string().optional().describe('Review body / comment (optional)'),
+    },
+    getAnnotations('submit_review'),
+    async ({ owner, repo, number, state, body }) => {
+      if (!hasWrite) {
+        return { content: [{ type: 'text', text: 'Insufficient scope: repo:write required' }], isError: true };
+      }
+      const repoData = await resolveRepo(owner, repo, userId);
+      if (!repoData) {
+        return { content: [{ type: 'text', text: 'Repository not found or access denied' }], isError: true };
+      }
+      try {
+        const existing = await prService.getPullRequestByNumber(repoData.id, number);
+        if (!existing) {
+          return { content: [{ type: 'text', text: 'Pull request not found' }], isError: true };
+        }
+
+        const review = await prService.submitReview(existing.id, userId, state, body);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              review_id: review.id,
+              pull_request: number,
+              state: review.state,
+              submitted_at: review.submittedAt?.toISOString() ?? null,
+            }, null, 2),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: `Error submitting review: ${err.message}` }], isError: true };
+      }
+    },
+  );
 }

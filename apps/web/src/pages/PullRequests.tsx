@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -69,6 +70,7 @@ const formatDate = (dateStr: string) => {
 };
 
 export default function PullRequests() {
+  const navigate = useNavigate();
   const [tabValue, setTabValue] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -182,7 +184,19 @@ export default function PullRequests() {
       {!isLoading && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {filtered.map((pr) => (
-            <Card key={pr.id}>
+            <Card
+              key={pr.id}
+              onClick={() => {
+                if (pr.repository?.ownerSlug && pr.repository?.slug) {
+                  navigate(`/dashboard/repositories/${pr.repository.ownerSlug}/${pr.repository.slug}/pulls/${pr.number}`);
+                }
+              }}
+              sx={{
+                cursor: pr.repository?.ownerSlug ? 'pointer' : 'default',
+                transition: 'border-color 120ms',
+                '&:hover': pr.repository?.ownerSlug ? { borderColor: colors.cyan } : {},
+              }}
+            >
               <CardContent sx={{ py: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
                   {getStateIcon(pr.state)}
