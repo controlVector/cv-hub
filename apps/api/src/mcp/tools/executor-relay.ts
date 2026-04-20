@@ -585,20 +585,29 @@ export function registerExecutorRelayTools(
   // ── get_task_logs ─────────────────────────────────────────────────
   server.tool(
     'get_task_logs',
-    'Get progress logs for a task. Shows lifecycle events, heartbeats, git activity, and errors reported by the executor.',
+    'Get progress logs for a task. Returns lifecycle events, heartbeats, git activity, and errors. ' +
+    'For `log_type: progress` entries, `details.output_chunk` carries the raw Claude Code stdout ' +
+    '(streamed in ~4KB segments). For the fully synthesized Claude Code output and final result, ' +
+    'use `cv_task_stream` to read `output` and `output_final` task events.',
     {
       task_id: z.string().uuid().describe('Task ID'),
       limit: z.number().optional().describe('Max log entries to return (default: 50)'),
+      log_types: z.array(z.enum([
+        'lifecycle', 'heartbeat', 'progress', 'git', 'error', 'info',
+      ])).optional().describe('Filter by log types. Omit to return all types.'),
     },
     getAnnotations('get_task_logs'),
-    async ({ task_id, limit }) => {
+    async ({ task_id, limit, log_types }) => {
       try {
         const task = await getAgentTask(task_id, userId);
         if (!task) {
           return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
         }
 
-        const logs = await getTaskLogs(task_id, limit ?? 50);
+        const allLogs = await getTaskLogs(task_id, limit ?? 50);
+        const logs = log_types && log_types.length > 0
+          ? allLogs.filter((l) => log_types.includes(l.logType as any))
+          : allLogs;
         return {
           content: [{
             type: 'text',
@@ -627,25 +636,36 @@ export function registerExecutorRelayTools(
   // ── cv_task_stream ──────────────────────────────────────────────────
   server.tool(
     'cv_task_stream',
-    'Subscribe to a task\'s event stream. Returns the latest structured events (thinking, decisions, questions, progress) and any pending questions.',
+    'Subscribe to a task\'s event stream. Returns the latest structured events ' +
+    '(thinking, decisions, questions, progress, output, output_final) and any pending questions. ' +
+    '`output` events carry streamed Claude Code stdout chunks; `output_final` carries the ' +
+    'synthesized final response. Events are returned ordered by sequence_number when present.',
     {
       task_id: z.string().uuid().describe('Task ID'),
       after_id: z.string().uuid().optional().describe('Only events after this event ID'),
       limit: z.number().optional().describe('Max events to return (default: 20)'),
+      event_types: z.array(z.enum([
+        'thinking', 'decision', 'question', 'progress',
+        'file_change', 'error', 'approval_request', 'completed',
+        'redirect', 'output', 'output_final',
+      ])).optional().describe('Filter by event types. Omit to return all types.'),
     },
     getAnnotations('cv_task_stream'),
-    async ({ task_id, after_id, limit }) => {
+    async ({ task_id, after_id, limit, event_types }) => {
       try {
         const task = await getAgentTask(task_id, userId);
         if (!task) {
           return { content: [{ type: 'text', text: 'Task not found' }], isError: true };
         }
 
-        const events = await getTaskEvents({
+        const allEvents = await getTaskEvents({
           taskId: task_id,
           afterId: after_id,
           limit: limit ?? 20,
         });
+        const events = event_types && event_types.length > 0
+          ? allEvents.filter((e) => event_types.includes(e.eventType as any))
+          : allEvents;
 
         const pendingCount = events.filter(
           (e) => e.needsResponse && !e.respondedAt
@@ -659,6 +679,7 @@ export function registerExecutorRelayTools(
                 id: e.id,
                 event_type: e.eventType,
                 content: e.content,
+                sequence_number: (e as any).sequenceNumber ?? null,
                 needs_response: e.needsResponse,
                 responded_at: e.respondedAt?.toISOString() ?? null,
                 created_at: e.createdAt.toISOString(),
