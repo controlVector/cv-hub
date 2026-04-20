@@ -2,6 +2,21 @@
 
 All notable changes to CV-Hub will be documented in this file.
 
+## [1.2.0] - 2026-04-20
+
+### Added
+- **Pull request detail page** (`/dashboard/repositories/:owner/:repo/pulls/:number`) — previously 404'd. Includes header with state + branches, body markdown, merge panel with approval-gate status, review list with state-colored chips, and files-changed summary using the existing `/diff` endpoint.
+- **Approve / Request Changes / Comment buttons** in the detail page — calls the existing `POST /pulls/:number/reviews` endpoint. Merge button enables once `requiredReviewers` is satisfied and no `changes_requested` reviews are outstanding.
+- **Dashboard PR list cards are now clickable** — navigate to the detail page.
+- **`submit_review` MCP tool** — lets Claude.ai (and other MCP clients) approve, request changes, or leave a comment on a PR. Closes the loop that left `merge_pull` blocked by "Requires N approvals" with no way to satisfy it from MCP.
+
+### Changed
+- **`PRWithDetails.repository` now includes `ownerSlug`** — every PR fetch path (`by-id`, `by-number`, `getUserPullRequests`, `getUserReviewRequests`) returns a consistent envelope so the UI can build URLs without a separate repo lookup. Backed by a new `shapePR()` helper that unifies shape across fetch paths.
+- **`PRWithDetails.reviews`** now returned on every fetch so detail views avoid a second round-trip.
+
+### Fixed
+- Closes controlvector/cv-hub#44 — PR review/approve/merge UI was missing; `create_pull` worked via MCP but the flow dead-ended with no way to merge.
+
 ## [1.1.0] - 2026-04-20
 
 ### Fixed
