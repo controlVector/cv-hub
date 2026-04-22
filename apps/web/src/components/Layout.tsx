@@ -44,6 +44,8 @@ import {
   ViewKanban as BoardIcon,
   Shield as SafetyIcon,
   Computer as ComputerIcon,
+  Forum as ThreadIcon,
+  ArrowOutward as ExternalIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { colors } from '../theme';
@@ -66,9 +68,14 @@ const menuItems = [
   { text: 'Safety', icon: <SafetyIcon />, path: '/dashboard/safety' },
   { text: 'Knowledge Graph', icon: <GraphIcon />, path: '/dashboard/graph' },
   { text: 'Search', icon: <SearchIcon />, path: '/dashboard/search' },
-  { text: 'App Store', icon: <StoreIcon />, path: '/apps' },
+  // App Store intentionally omitted — gated via brand.features.appstore.
+  // The per-brand conditional render below adds it back when the flag is on.
   { text: 'Organizations', icon: <BusinessIcon />, path: '/dashboard/orgs' },
-];
+].concat(
+  brand.features.appstore
+    ? [{ text: 'App Store', icon: <StoreIcon />, path: '/apps' }]
+    : [],
+);
 
 export default function Layout() {
   const theme = useTheme();
@@ -216,6 +223,35 @@ export default function Layout() {
             )}
           </ListItemButton>
         ))}
+
+        {/* Sibling-product cross-link — external, opens in new tab. */}
+        <ListItemButton
+          component="a"
+          href={brand.products.thread.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{
+            mt: 1,
+            mb: 0.5,
+            borderRadius: 1,
+            border: `1px dashed ${colors.slateLighter}`,
+            '&:hover': {
+              borderColor: colors.orange,
+              backgroundColor: alpha(colors.orange, 0.06),
+            },
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: 40, color: colors.orange }}>
+            <ThreadIcon />
+          </ListItemIcon>
+          <ListItemText
+            primary={brand.products.thread.name}
+            secondary="Threaded AI"
+            primaryTypographyProps={{ sx: { fontWeight: 600 } }}
+            secondaryTypographyProps={{ sx: { fontSize: '0.7rem', color: colors.textMuted } }}
+          />
+          <ExternalIcon sx={{ fontSize: 16, color: colors.textMuted }} />
+        </ListItemButton>
       </List>
 
       <Divider sx={{ borderColor: colors.slateLighter }} />

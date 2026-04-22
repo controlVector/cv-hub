@@ -101,9 +101,9 @@ function App() {
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/oauth/consent" element={<ConsentPage />} />
 
-              {/* Public apps pages (viewable without login) */}
-              <Route path="/apps" element={<AppStore />} />
-              <Route path="/apps/:appId" element={<AppDetail />} />
+              {/* Public apps pages (gated behind brand.features.appstore — off until the seed data is rebuilt with real interpolated URLs) */}
+              {brand.features.appstore && <Route path="/apps" element={<AppStore />} />}
+              {brand.features.appstore && <Route path="/apps/:appId" element={<AppDetail />} />}
               <Route path="/orgs/:slug" element={<OrganizationStorefront />} />
 
               {/* Device authorization (CLI auth) */}

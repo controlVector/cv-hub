@@ -30,5 +30,20 @@ export const brand = {
     blog: import.meta.env.VITE_BRAND_ENABLE_BLOG !== 'false',
     research: import.meta.env.VITE_BRAND_ENABLE_RESEARCH !== 'false',
     pricing: import.meta.env.VITE_BRAND_ENABLE_PRICING !== 'false',
+    // Off by default — the current app-store seed has unrendered
+    // ${brand.domain} template strings baked into every URL, so every
+    // listing link 404s. Flip to "true" only once the seed is rebuilt
+    // with real data and real interpolation. See issue tracking work.
+    appstore: import.meta.env.VITE_BRAND_ENABLE_APPSTORE === 'true',
+  },
+  // External product surfaces we want to cross-link from cv-hub.
+  // Each product exposes its own domain; these URLs are interpolated
+  // at render time (no raw ${brand.domain} leakage like the seed had).
+  products: {
+    thread: {
+      name: 'cv-thread',
+      tagline: 'Threaded AI collaboration for teams',
+      url: `https://thread.${domain}`,
+    },
   },
 };

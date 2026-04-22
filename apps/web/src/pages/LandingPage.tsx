@@ -18,6 +18,8 @@ import {
   AccountTree as GraphIcon,
   Search as SearchIcon,
   Shield as ShieldIcon,
+  Forum as ThreadIcon,
+  ArrowOutward as ExternalIcon,
 } from '@mui/icons-material';
 import { colors } from '../theme';
 import { brand } from '../config/brand';
@@ -193,7 +195,11 @@ export default function LandingPage() {
             <Button
               variant="outlined"
               size="large"
-              onClick={() => navigate('/apps/cv-git')}
+              component="a"
+              href={brand.products.thread.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              endIcon={<ExternalIcon sx={{ fontSize: 16 }} />}
               sx={{
                 borderColor: extendedColors.border,
                 color: extendedColors.text,
@@ -206,9 +212,69 @@ export default function LandingPage() {
                 },
               }}
             >
-              Get cv-git
+              Try {brand.products.thread.name}
             </Button>
           </Box>
+        </Box>
+
+        {/* cv-thread spotlight — prominent product cross-link */}
+        <Box sx={{ mb: 10 }}>
+          <Card
+            component="a"
+            href={brand.products.thread.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{
+              display: 'block',
+              textDecoration: 'none',
+              background: `linear-gradient(135deg, ${colors.navy} 0%, ${extendedColors.navyDark} 100%)`,
+              border: `1px solid ${extendedColors.border}`,
+              transition: 'border-color 160ms, transform 160ms',
+              '&:hover': {
+                borderColor: colors.orange,
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            <CardContent sx={{ p: { xs: 3, md: 4 }, display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 64,
+                  height: 64,
+                  borderRadius: 2,
+                  backgroundColor: 'rgba(245, 166, 35, 0.12)',
+                  color: colors.orange,
+                  flexShrink: 0,
+                }}
+              >
+                <ThreadIcon sx={{ fontSize: 36 }} />
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 260 }}>
+                <Typography
+                  variant="overline"
+                  sx={{ color: colors.orange, fontWeight: 700, letterSpacing: 1.5 }}
+                >
+                  New · sibling product
+                </Typography>
+                <Typography
+                  variant="h5"
+                  sx={{ color: extendedColors.text, fontWeight: 700, mt: 0.5, mb: 0.5 }}
+                >
+                  {brand.products.thread.name} — {brand.products.thread.tagline}
+                </Typography>
+                <Typography variant="body1" sx={{ color: colors.textMuted }}>
+                  Separate app, same account. Open it at{' '}
+                  <Box component="span" sx={{ color: colors.orange, fontFamily: 'monospace' }}>
+                    {brand.products.thread.url.replace(/^https?:\/\//, '')}
+                  </Box>
+                </Typography>
+              </Box>
+              <ExternalIcon sx={{ color: colors.textMuted, fontSize: 28, flexShrink: 0 }} />
+            </CardContent>
+          </Card>
         </Box>
 
         {/* Value Props */}
