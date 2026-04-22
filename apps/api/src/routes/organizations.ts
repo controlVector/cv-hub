@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, optionalAuth } from '../middleware/auth';
 import {
   listOrganizations,
   getOrganizationById,
@@ -299,7 +299,7 @@ orgRoutes.delete('/:slug', requireAuth, async (c) => {
 //
 // Archived repos are included via ?includeArchived=true. Pagination via limit/offset.
 // ============================================================================
-orgRoutes.get('/:slug/repos', async (c) => {
+orgRoutes.get('/:slug/repos', optionalAuth, async (c) => {
   const slug = c.req.param('slug');
   const userId = c.get('userId') || null;
   const limit = parseInt(c.req.query('limit') || '50', 10);
