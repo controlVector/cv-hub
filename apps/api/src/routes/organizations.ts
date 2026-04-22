@@ -28,6 +28,7 @@ import {
   getInviteByToken,
 } from '../services/organization.service';
 import { listApps } from '../services/app-store.service';
+import { listRepositories } from '../services/repository.service';
 import { logAuditEvent, type AuditAction } from '../services/audit.service';
 import { NotFoundError, ForbiddenError, TierLimitError } from '../utils/errors';
 import { checkOrgMemberLimit } from '../services/tier-limits.service';
@@ -287,6 +288,66 @@ orgRoutes.delete('/:slug', requireAuth, async (c) => {
 // ============================================================================
 // Member Management APIs (admin only)
 // ============================================================================
+
+// ============================================================================
+// GET /api/v1/orgs/:slug/repos - List repos owned by an organization.
+//
+// Visibility rules:
+//   - Members (any role) see all repos (public + internal + private, non-archived)
+//   - Non-members see only public repos
+//   - Unauthenticated requests see only public repos of a public org
+//
+// Archived repos are included via ?includeArchived=true. Pagination via limit/offset.
+// ============================================================================
+orgRoutes.get('/:slug/repos', async (c) => {
+  const slug = c.req.param('slug');
+  const userId = c.get('userId') || null;
+  const limit = parseInt(c.req.query('limit') || '50', 10);
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+  const includeArchived = c.req.query('includeArchived') === 'true';
+
+  const org = await getOrganizationBySlug(slug);
+  if (!org) {
+    throw new NotFoundError('Organization');
+  }
+
+  // If the org is private and caller isn't a member, 404 (don't leak existence).
+  const callerRole = userId ? await getUserOrgRole(org.id, userId) : null;
+  if (!org.isPublic && !callerRole) {
+    throw new NotFoundError('Organization');
+  }
+
+  // Members see everything; non-members see only public repos.
+  const repos = await listRepositories({
+    organizationId: org.id,
+    visibility: callerRole ? undefined : 'public',
+    includeArchived,
+    limit: Math.min(limit, 200),
+    offset,
+  });
+
+  return c.json({
+    repositories: repos.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      description: r.description,
+      visibility: r.visibility,
+      isArchived: r.isArchived,
+      defaultBranch: r.defaultBranch,
+      starCount: r.starCount,
+      forkCount: r.forkCount,
+      openIssueCount: r.openIssueCount,
+      openPrCount: r.openPrCount,
+      branchCount: r.branchCount,
+      owner: r.owner,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    total: repos.length,
+    viewerRole: callerRole, // null = non-member/anonymous
+  });
+});
 
 // GET /api/v1/orgs/:slug/members - List organization members
 orgRoutes.get('/:slug/members', requireAuth, async (c) => {

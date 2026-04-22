@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -27,6 +28,8 @@ import { isTierLimitError } from '../lib/api';
 
 export default function NewRepository() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectOrgSlug = searchParams.get('org');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
@@ -36,6 +39,16 @@ export default function NewRepository() {
     queryKey: ['myOrganizations'],
     queryFn: getMyOrganizations,
   });
+
+  // Pre-select the org from the ?org=<slug> query param (used by "New Repository"
+  // buttons on org detail pages). Only fires once the user's org list loads.
+  useEffect(() => {
+    if (!preselectOrgSlug || !orgs) return;
+    const match = orgs.find((o) => o.slug === preselectOrgSlug);
+    if (match && ownerId === 'personal') {
+      setOwnerId(match.id);
+    }
+  }, [preselectOrgSlug, orgs, ownerId]);
 
   const createMutation = useMutation({
     mutationFn: () =>

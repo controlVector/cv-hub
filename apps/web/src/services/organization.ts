@@ -127,3 +127,44 @@ export async function cancelInvite(slug: string, inviteId: string): Promise<void
 export async function transferApp(slug: string, appId: string): Promise<void> {
   await api.post(`/v1/orgs/${slug}/apps/${appId}/transfer`);
 }
+
+// ============================================================================
+// Org-owned repositories
+// ============================================================================
+
+export interface OrgRepositorySummary {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  visibility: 'public' | 'internal' | 'private';
+  isArchived: boolean;
+  defaultBranch: string;
+  starCount: number;
+  forkCount: number;
+  openIssueCount: number;
+  openPrCount: number;
+  branchCount: number;
+  owner: { type: 'user' | 'organization'; id: string; slug: string; name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrgReposResponse {
+  repositories: OrgRepositorySummary[];
+  total: number;
+  viewerRole: OrgRole | null;
+}
+
+// List repos owned by an organization (member-scoped visibility — server filters).
+export async function listOrganizationRepos(
+  slug: string,
+  params?: { limit?: number; offset?: number; includeArchived?: boolean },
+): Promise<OrgReposResponse> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  if (params?.includeArchived) qs.set('includeArchived', 'true');
+  const response = await api.get<OrgReposResponse>(`/v1/orgs/${slug}/repos?${qs.toString()}`);
+  return response.data;
+}
