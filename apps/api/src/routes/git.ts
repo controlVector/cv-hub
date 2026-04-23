@@ -209,7 +209,15 @@ gitRoutes.post('/:owner/:repo/git-upload-pack', optionalAuth, async (c) => {
   // Ensure bare repo exists on disk (lazy-init if needed)
   await ensureRepoStorage(owner, repo);
 
-  const requestBody = Buffer.from(await c.req.arrayBuffer());
+  let requestBody = Buffer.from(await c.req.arrayBuffer());
+
+  // Git clients may gzip-compress upload-pack requests
+  const contentEncoding = c.req.header('content-encoding');
+  if (contentEncoding === 'gzip') {
+    const { gunzipSync } = await import('node:zlib');
+    requestBody = gunzipSync(requestBody);
+  }
+
   const result = await handleUploadPack(owner, repo, requestBody);
 
   return new Response(new Uint8Array(result.body), {
@@ -249,7 +257,14 @@ gitRoutes.post('/:owner/:repo/git-receive-pack', optionalAuth, async (c) => {
   // Ensure bare repo exists on disk (lazy-init if needed)
   await ensureRepoStorage(owner, repo);
 
-  const requestBody = Buffer.from(await c.req.arrayBuffer());
+  let requestBody = Buffer.from(await c.req.arrayBuffer());
+
+  // Git clients may gzip-compress receive-pack requests
+  const pushContentEncoding = c.req.header('content-encoding');
+  if (pushContentEncoding === 'gzip') {
+    const { gunzipSync } = await import('node:zlib');
+    requestBody = gunzipSync(requestBody);
+  }
 
   // Parse refs from the push request for branch protection validation
   const pushRefs = parseReceivedRefs(requestBody);

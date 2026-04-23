@@ -137,15 +137,30 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
   const body = c.req.valid('json');
   const patOrgId = c.get('patOrgId');
 
-  // Resolve org server-side
-  const orgResult = await resolveOrganizationId(userId, body.organization_id, patOrgId);
-  if (orgResult.error) {
-    return c.json({ error: orgResult.error }, 400);
-  }
-
-  // Resolve repository_id from repos slug if not explicitly provided
+  // Resolve repository first — used both to bind the executor and (when
+  // the user belongs to multiple orgs) to disambiguate which org to attach
+  // it to. Fixes #45: multi-org PATs were rejected even when the request
+  // already named a repo whose owning org was unambiguous.
   let repositoryId = body.repository_id;
-  if (!repositoryId && body.repos?.length === 1) {
+  let inferredOrgId: string | undefined;
+
+  if (repositoryId) {
+    const repo = await getRepositoryById(repositoryId);
+    if (repo) {
+      const { getUserOrgRole } = await import('../services/organization.service');
+      const isOrgMember = repo.organizationId
+        ? !!(await getUserOrgRole(repo.organizationId, userId))
+        : false;
+      const isPersonalOwner = repo.userId === userId;
+      if (isOrgMember || isPersonalOwner) {
+        inferredOrgId = repo.organizationId ?? undefined;
+      } else {
+        repositoryId = undefined;
+      }
+    } else {
+      repositoryId = undefined;
+    }
+  } else if (body.repos?.length === 1) {
     try {
       const userRepos = await getUserAccessibleRepositories(userId, {
         search: body.repos[0],
@@ -154,10 +169,21 @@ executors.post('/', zValidator('json', registerSchema), async (c) => {
       const match = userRepos.find((r) => r.slug === body.repos![0]);
       if (match) {
         repositoryId = match.id;
+        inferredOrgId = match.organizationId ?? undefined;
       }
     } catch {
       // Non-fatal — registration continues without repository_id
     }
+  }
+
+  // Resolve org server-side. Explicit organization_id beats the inferred one.
+  const orgResult = await resolveOrganizationId(
+    userId,
+    body.organization_id ?? inferredOrgId,
+    patOrgId,
+  );
+  if (orgResult.error) {
+    return c.json({ error: orgResult.error }, 400);
   }
 
   const { executor, registrationToken } = await registerExecutor({
