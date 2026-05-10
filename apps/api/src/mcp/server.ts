@@ -17,6 +17,7 @@ import { registerContextTools } from './tools/context';
 import { registerContextEngineTools } from './tools/context-engine';
 import { registerSafetyTools } from './tools/safety';
 import { registerPlatformTools } from './tools/platform';
+import { registerTimeTools } from './tools/time';
 
 /**
  * Create a fully-configured MCP server for a specific user session.
@@ -55,6 +56,7 @@ export function createMcpServer(userId: string, scopes: string[]): McpServer {
 
   // Platform status (no auth scopes needed)
   registerPlatformTools(server);
+  registerTimeTools(server);
 
   return server;
 }
